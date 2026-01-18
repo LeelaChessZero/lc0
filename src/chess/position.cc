@@ -55,6 +55,9 @@ Position Position::FromFen(std::string_view fen) {
 }
 
 Move Position::GetNextMove(const Position& next) const {
+  // A simple implementation to convert a position history to moves. It uses a
+  // naive implementation. If it becomes a bottleneck, we need to check if we
+  // can do the same using bitboard differences.
   auto legal_moves = us_board_.GenerateLegalMoves();
   for (Move m : legal_moves) {
     ChessBoard test_board = us_board_;

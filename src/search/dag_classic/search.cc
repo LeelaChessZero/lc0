@@ -1331,6 +1331,8 @@ void SearchWorker::InitializeIteration() {
   size_t time_remaining =
       latest_time_manager_hints_.GetEstimatedRemainingTimeMs();
   if (time_remaining >= 1000000000000) {
+    // Remaining Time is update when calling ShouldStop which is called after
+    // the first batch. Claim no time remaining to avoid very slow first batch.
     time_remaining = 0;
   }
   computation_ = search_->backend_->CreateComputation(time_remaining);

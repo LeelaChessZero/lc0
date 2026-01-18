@@ -125,6 +125,7 @@ class Square {
   constexpr bool operator!=(const Square& other) const = default;
   constexpr uint8_t as_idx() const { return idx_; }
 
+  // Serialization support for out of process backends.
   template <typename Archive>
   typename Archive::ResultType Serialize(
       Archive& ar, [[maybe_unused]] const unsigned version) {
@@ -182,6 +183,7 @@ class Move {
 
   uint16_t raw_data() const { return data_; }
 
+  // Serialization support for out of process backends.
   template <typename Archive>
   typename Archive::ResultType Serialize(
       Archive& ar, [[maybe_unused]] const unsigned version) {

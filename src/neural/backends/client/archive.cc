@@ -38,6 +38,9 @@ namespace lczero::client {
 
 namespace {
 
+// Integer serialization using variable-length encoding. Signed ingers use
+// zigzag encoding.
+// See: https://protobuf.dev/programming-guides/encoding/#varints
 template <typename R, typename T>
 auto SaveImpl(R&& successed, std::vector<char>& buffer, const T& value)
     -> std::enable_if_t<std::is_integral_v<T>, R> {
@@ -58,6 +61,7 @@ auto SaveImpl(R&& successed, std::vector<char>& buffer, const T& value)
   } while (uvalue);
   return std::forward<R>(successed);
 }
+// Integer deserialization from variable-length encoding.
 template <typename R, typename T>
 auto LoadImpl(R&& successed, std::span<const char>& buffer, T& value)
     -> std::enable_if_t<std::is_integral_v<T>, R> {
@@ -86,6 +90,7 @@ auto LoadImpl(R&& successed, std::span<const char>& buffer, T& value)
   }
   return std::forward<R>(successed);
 }
+// Calculate the size of a serialized integer.
 template <typename R, typename T>
 auto SizeImpl(R&& successed, size_t& size_archive, const T& value)
     -> std::enable_if_t<std::is_integral_v<T>, R> {
@@ -103,6 +108,7 @@ auto SizeImpl(R&& successed, size_t& size_archive, const T& value)
   return std::forward<R>(successed);
 }
 
+// Serialize an integer to a fixed size storage (little-endian).
 template <typename R, typename T>
 auto SaveImpl(R&& successed, std::vector<char>& buffer,
               const FixedInteger<T>& value)
@@ -113,10 +119,12 @@ auto SaveImpl(R&& successed, std::vector<char>& buffer,
   }
   for (size_t i = 0; i < sizeof(T); ++i) {
     buffer.push_back(static_cast<char>(v & 0xff));
+    // Silence compiler warning for 1-byte types.
     if constexpr (sizeof(T) > 1) v >>= 8;
   }
   return std::forward<R>(successed);
 }
+// Deserialize an integer from a fixed size storage (little-endian).
 template <typename R, typename T>
 auto LoadImpl(R&& successed, std::span<const char>& buffer,
               FixedInteger<T> value)
@@ -132,6 +140,7 @@ auto LoadImpl(R&& successed, std::span<const char>& buffer,
   value.value = v;
   return std::forward<R>(successed);
 }
+// Calculate the size of a fixed-size integer.
 template <typename R, typename T>
 auto SizeImpl(R&& successed, size_t& size_archive, const FixedInteger<T>&)
     -> std::enable_if_t<std::is_integral_v<T>, R> {
@@ -139,12 +148,14 @@ auto SizeImpl(R&& successed, size_t& size_archive, const FixedInteger<T>&)
   return std::forward<R>(successed);
 }
 
+// Serialize a boolean as a single byte.
 template <typename R>
 auto SaveImpl(R&& successed, std::vector<char>& buffer, const bool& value)
     -> R {
   uint8_t v = value ? 1 : 0;
   return SaveImpl(std::forward<R>(successed), buffer, FixedInteger{v});
 }
+// Deserialize a boolean from a single byte.
 template <typename R>
 auto LoadImpl(R&& successed, std::span<const char>& buffer, bool& value) -> R {
   uint8_t v;
@@ -158,7 +169,8 @@ auto SizeImpl(R&& successed, size_t& size_archive, const bool&) -> R {
   size_archive += 1;
   return std::forward<R>(successed);
 }
-
+// Serialize a floating-point number by bit-casting to an integer of the same
+// size.
 template <typename R, typename T>
 auto SaveImpl(R&& successed, std::vector<char>& buffer, const T& fvalue)
     -> std::enable_if_t<std::is_floating_point_v<T>, R> {
@@ -167,6 +179,8 @@ auto SaveImpl(R&& successed, std::vector<char>& buffer, const T& fvalue)
   IntType ivalue = bit_cast<IntType>(fvalue);
   return SaveImpl(std::forward<R>(successed), buffer, FixedInteger{ivalue});
 }
+// Deserialize a floating-point number by bit-casting from an integer of the
+// same size.
 template <typename R, typename T>
 auto LoadImpl(R&& successed, std::span<const char>& buffer, T& fvalue)
     -> std::enable_if_t<std::is_floating_point_v<T>, R> {
@@ -185,16 +199,21 @@ auto SizeImpl(R&& successed, size_t& size_archive, const T&)
   return std::forward<R>(successed);
 }
 
+// Archive for calculating the size of serialized data. It is used to set the
+// size parameter in message headers. The prediction is also used to reserve
+// memory for the serialization buffer.
 struct BinaryOSizeArchive {
   using ResultType = Expected<BinaryOSizeArchive&, ArchiveError>;
   static constexpr bool is_loading = false;
   static constexpr bool is_saving = true;
 
+  // Overloaded & operator to calculate size of serialized object.
   template <typename T>
   ResultType operator&(const T& value) {
     return Size(value);
   }
 
+  // Calculate size for complex types via Serialize function.
   template <typename T>
   std::enable_if_t<!std::is_integral_v<T> && !std::is_floating_point_v<T>,
                    ResultType>
@@ -204,6 +223,7 @@ struct BinaryOSizeArchive {
 
   size_t Size() const { return 0; }
 
+  // Calculate size for primitive types.
   template <typename T>
   std::enable_if_t<std::is_integral_v<T> || std::is_floating_point_v<T>,
                    ResultType>
@@ -211,16 +231,19 @@ struct BinaryOSizeArchive {
     return SizeImpl(ResultType{*this}, total_size_, value);
   }
 
+  // Calculate size for a boolean.
   ResultType Size(const bool& value) {
     return SizeImpl(ResultType{*this}, total_size_, value);
   }
 
+  // Calculate size for fixed-size integers.
   template <typename T>
   std::enable_if_t<std::is_integral_v<T>, ResultType> Size(
       const FixedInteger<T>& value) {
     return SizeImpl(ResultType{*this}, total_size_, value);
   }
 
+  // Calculate size for vectors.
   template <typename T>
   ResultType Size(const VectorLimits<T>& value) {
     ResultType r = SizeImpl(ResultType{*this}, total_size_,
@@ -232,6 +255,7 @@ struct BinaryOSizeArchive {
     }
     return r;
   }
+  // Calculate size for spans.
   template <typename T>
   ResultType Size(const std::span<T>& value) {
     ResultType r = SizeImpl(ResultType{*this}, total_size_,
@@ -244,6 +268,7 @@ struct BinaryOSizeArchive {
     return r;
   }
 
+  // Calculate size for strings.
   ResultType Size(const std::string_view& value) {
     auto r = SizeImpl(ResultType{*this}, total_size_,
                       static_cast<uint64_t>(value.size()));

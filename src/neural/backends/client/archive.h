@@ -36,6 +36,8 @@
 
 namespace lczero::client {
 
+// Possible errors during serialization/deserialization.
+// They are returned using Unexpected type.
 enum class ArchiveError {
   None,
   BufferOverflow,
@@ -47,8 +49,12 @@ enum class ArchiveError {
   OutOfMemory,
 };
 
+// ArchiveError logging support.
 std::ostream& operator<<(std::ostream& os, ArchiveError error);
 
+// Wrapper type to require fixed-width integer serialization. Fixed-width is
+// better when varaible has often highest bits set which would require more
+// space in variable-width base 128 encoding.
 template <typename T>
 struct FixedInteger {
   FixedInteger(T& v) : value(v) {}
@@ -66,42 +72,58 @@ struct VectorLimits {
   size_t max_size_;
 };
 
+// Default serialization implementation that calls Serialize method of the
+// object. Argument-dependent lookup allows overloading this function for types
+// which cannot have new member functions.
 template <typename T, typename Archive>
 typename Archive::ResultType Serialize(T& value, Archive& ar,
                                        const unsigned version) {
   return value.Serialize(ar, version);
 }
 
+// Binary serialization archive. It uses base-128 variable length encoding for
+// integers. Floating point numbers use fixed width integer serializartion.
 class BinaryOArchive {
  public:
+  // Boost serialization compatibility flags which can be used to implement
+  // different logic for saving and loading.
   static constexpr bool is_saving = true;
   static constexpr bool is_loading = false;
 
+  // Result type uses std::expected fallback implementation to signal errors.
   using ResultType = Expected<BinaryOArchive&, ArchiveError>;
 
   BinaryOArchive(unsigned version) : version_(version) {}
 
+  // Boost serialization compatibility operator.
   template <typename T>
   [[nodiscard]]
   ResultType operator<<(const T& value) {
     return Save(value);
   }
 
+  // Serialization operator which follows Boost serialization convention.
   template <typename T>
   [[nodiscard]]
   ResultType operator&(const T& value) {
     return *this << value;
   }
 
+  // Helper to add message size to header when starting serialization.
   template <typename T>
   [[nodiscard]]
   ResultType StartSerialize(T& value);
 
+  // Returns the size of the serialized data.
   size_t Size() const { return buffer_.size(); }
 
+  // Returns the buffer which can be sent over the network.
   const std::vector<char>& GetVector() const { return buffer_; }
 
  protected:
+  // Generic serialization function which calls Serialize function. Serialize
+  // function can be overloaded using argument-dependent lookup. The default
+  // implementation calls Serialize method of the object.
   template <typename T>
   ResultType Save(const T& value) {
     return Serialize(const_cast<T&>(value), *this, version_);
@@ -171,6 +193,14 @@ class BinaryIArchive {
 
   using ResultType = Expected<BinaryIArchive&, ArchiveError>;
 
+  // Deserialization archive from a network buffer.
+  // @param buffer Buffer to deserialize from.
+  // @param temporary_memory Used to deserialize content inside spans. It can be
+  //                         point to buffer is spans don't have variable
+  //                         ingers.
+  // @param temporary_memory_size Size of the temporary memory buffer in bytes.
+  //                             If zero, then using input buffer.
+  // @param version Serialization version to use.
   BinaryIArchive(std::span<const char> buffer, char* temporary_memory,
                  size_t temporary_memory_size, unsigned version)
       : buffer_(buffer),
@@ -180,11 +210,14 @@ class BinaryIArchive {
                                   : temporary_memory + temporary_memory_size),
         version_(version) {}
 
+  // Boost serialization compatibility operator.
   template <typename T>
   [[nodiscard]]
   ResultType operator>>(T& value) {
     return Load(value);
   }
+  // Specialization for FixedInteger wrappers. Parameter is passed by value to
+  // allow passing temporary FixedInteger objects.
   template <typename T>
   [[nodiscard]]
   ResultType operator>>(FixedInteger<T> value) {
@@ -196,11 +229,14 @@ class BinaryIArchive {
     return Load(value);
   }
 
+  // Serialization operator which follows Boost serialization convention.
   template <typename T>
   [[nodiscard]]
   ResultType operator&(T& value) {
     return *this >> value;
   }
+  // Specialization for FixedInteger wrappers. Parameter is passed by value to
+  // allow passing temporary FixedInteger objects.
   template <typename T>
   [[nodiscard]]
   ResultType operator&(FixedInteger<T> value) {
@@ -212,9 +248,13 @@ class BinaryIArchive {
     return *this >> value;
   }
 
+  // Returns remaining buffer size to deserialize.
   size_t Size() const { return buffer_.size(); }
 
  protected:
+  // Generic deserialization function which calls Serialize function. Serialize
+  // function can be overloaded using argument-dependent lookup. The default
+  // implementation calls Serialize method of the object.
   template <typename T>
   ResultType Load(T& value) {
     return Serialize(value, *this, version_);
@@ -261,6 +301,9 @@ class BinaryIArchive {
     }
     return r;
   }
+
+  // Helper to allocate span from temporary memory.
+  // Temporary memory must be large enough to hold all deserialized spans.
   template <typename T>
   std::span<T> AllocateSpan(size_t size) {
     T* ptr = reinterpret_cast<T*>(temporary_memory_);
@@ -273,6 +316,10 @@ class BinaryIArchive {
     return {ptr, size};
   }
 
+  // Span deserialization using temporary memory. Temporary memory must be
+  // preallocated to hold all deserialized items. Using input buffer is possible
+  // if items won't exceed already parse input buffer size. Practically this
+  // means items cannot have variable length integer members.
   template <typename T>
   ResultType Load(std::span<T>& container) {
     uint64_t size = 0;

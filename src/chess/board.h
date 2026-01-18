@@ -198,6 +198,7 @@ class ChessBoard {
     File our_kingside_rook;
     File their_kingside_rook;
 
+    // Serialization support for out of process backends.
     template <typename Archive>
     typename Archive::ResultType Serialize(
         Archive& ar, [[maybe_unused]] const unsigned version) {
@@ -234,6 +235,12 @@ class ChessBoard {
   bool operator==(const ChessBoard& other) const = default;
   bool operator!=(const ChessBoard& other) const = default;
 
+  // Serialization support for out of process backends.
+  // The data could be compressed efficiently using pdep/pext instructions,
+  // but many CPUs don't have required hardware support. Software fallback could
+  // be used. The size of uncompressed data is small enough for the first
+  // version.
+  // https://github.com/zwegner/zp7
   template <typename Archive>
   typename Archive::ResultType Serialize(
       Archive& ar, [[maybe_unused]] const unsigned version) {

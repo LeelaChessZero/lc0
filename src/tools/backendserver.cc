@@ -89,6 +89,8 @@ class ClientComputation;
 using Clock = std::chrono::steady_clock;
 using TimePoint = Clock::time_point;
 
+// Computation request from a client. It can be split into multiple batches if
+// other requests left space in a batch.
 struct QueueItem {
   QueueItem(BackendHandler* backend, ClientComputation* computation,
             size_t first, size_t last)
@@ -104,17 +106,26 @@ struct QueueItem {
   TimePoint enqueue_time_ = Clock::now();
 };
 
+// Manages a single backend instance and its worker threads.
 class BackendHandler {
  public:
+  // Stastics since the last output.
   struct Statistics {
+    // Batches evaluated.
     size_t batches_ = 0;
+    // Positions evaluated.
     size_t positions_ = 0;
+    // Current number of positions in the queue.
     size_t queue_positions_ = 0;
+    // Configured minibatch size.
     size_t minibatch_size_ = 0;
+    // Number of batches currently in flight.
     size_t batches_in_flight_ = 0;
+    // Maximum NPS observed for a batch.
     double max_nps_ = 0.0;
   };
 
+  // Multiplier to add some buffer time to GPU idle time estimation.
   static constexpr double kGpuIdleBufferMultiplier = 0.8;
 
   BackendHandler(const OptionsDict& params) : params_(params) {}
@@ -122,6 +133,7 @@ class BackendHandler {
   ~BackendHandler() {
     LCTRACE_FUNCTION_SCOPE;
     {
+      // Notify worker threads to exit.
       SpinMutex::Lock lock(mutex_);
       exit_ = true;
       cv_.notify_all();
@@ -131,9 +143,12 @@ class BackendHandler {
     }
   }
 
+  // Loads the backend if not already loaded. Callback will be called with
+  // backend attributes when it is ready.
   template <typename Callback>
   void EnsureLoaded(const std::string& net, Callback&& callback);
 
+  // isready checks that backends aren't deadlocked.
   void EnsureReady() const { SpinMutex::Lock lock(mutex_); }
 
   size_t Threads() const {
@@ -141,6 +156,8 @@ class BackendHandler {
     return backend_threads_.size();
   }
 
+  // Get backend attributes. It adjust attributes based on user provided
+  // options.
   BackendAttributes GetAttributes() {
     assert(backend_);
     auto attrs = backend_->GetAttributes();
@@ -151,6 +168,7 @@ class BackendHandler {
     return attrs;
   }
 
+  // Adds a computation request to the next batch.
   std::tuple<bool, unsigned> AddBatchToQueue(QueueItem& item, size_t& count) {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
@@ -174,11 +192,13 @@ class BackendHandler {
       cv_.notify_one();
       flushed = true;
     }
+    // Update the item to reflect how many positions were added to the queue.
     item.first_ += count;
     queue_size_ += count;
     return {flushed, batches};
   }
 
+  // Flush queued batch to GPU.
   unsigned Flush() {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
@@ -191,6 +211,7 @@ class BackendHandler {
     return batches;
   }
 
+  // Flush backend if it has partial batch queued but GPU is idle.
   void FlushIfIdling() {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
@@ -203,6 +224,7 @@ class BackendHandler {
     lock.unlock();
   }
 
+  // Worker thread is about to compute a batch.
   unsigned StartBatch(size_t size) REQUIRES(mutex_) {
     queued_computations_--;
     computations_in_flight_++;
@@ -211,8 +233,11 @@ class BackendHandler {
     return computations_in_flight_ + queued_computations_;
   }
 
+  // Worker thread completed a batch.
+  // @return Number of queued batches and estimated next idle time.
   std::tuple<unsigned, TimePoint> CompleteBatch(size_t size, TimePoint now) {
     SpinMutex::Lock lock(mutex_);
+    // Update statistics.
     statistics_.batches_++;
     statistics_.positions_ += size;
     TimePoint old = last_complete_time_;
@@ -221,6 +246,7 @@ class BackendHandler {
     unsigned queued_batches = computations_in_flight_--;
     queued_batches += queued_computations_;
     if (size == 0) return {queued_batches, now};
+    // The first batch doesn't know when it started.
     if (old == TimePoint()) {
       return {queued_batches, now};
     }
@@ -236,6 +262,7 @@ class BackendHandler {
     return {queued_batches, timer};
   }
 
+  // Get number of pending positions in the queue.
   size_t GetPendingSize() const {
     SpinMutex::Lock lock(mutex_);
     return PendingSize();
@@ -246,6 +273,7 @@ class BackendHandler {
     return computations_in_flight_;
   }
 
+  // Get and reset statistics.
   Statistics GetStatistics() {
     Statistics stats;
     SpinMutex::Lock lock(mutex_);
@@ -267,28 +295,47 @@ class BackendHandler {
   }
 
   void Worker();
+  // Backend mutex mutex protects shared data between worker threads and io
+  // threads. It must be held when accessing member variables. It must not be
+  // held when calling back to shared queue to avoid deadlocks.
   mutable SpinMutex mutex_;
+  // Condition variable to notify worker threads of new work.
   std::condition_variable_any cv_;
+  // Backend instance.
   std::unique_ptr<Backend> backend_;
+  // Worker threads.
   std::vector<std::thread> backend_threads_;
+  // Callbacks waiting for backend to be loaded.
   std::vector<
       std::function<void(const std::error_code&, const BackendAttributes&)>>
       pending_callbacks_;
   std::queue<QueueItem> queue_;
 
+  // The time when the last batch completed.
   TimePoint last_complete_time_;
 
+  // Maximum observed NPS for this backend.
   double max_nps_ = 0.0;
 
+  // Configured minibatch size.
   unsigned minibatch_size_ = 0;
+  // Number of positions currently in the queue waiting for a worker. Worker
+  // might not have been notified yet.
   unsigned queue_size_ = 0;
+  // Number of positions currently being processed by GPU.
   unsigned gpu_work_size_ = 0;
+  // Number of batches notified to workers but not yet picked
+  // up by them.
   unsigned queued_computations_ = 0;
+  // Number of batches currently being processed by GPU.
   unsigned computations_in_flight_ = 0;
+  // Exit flag for worker threads.
   bool exit_ = false;
 
+  // User provided parameters.
   const OptionsDict& params_;
 
+  // Statistics sine the last output.
   Statistics statistics_;
 };
 
@@ -296,18 +343,23 @@ class ClientComputation;
 
 using BackendMap = std::map<std::string, BackendHandler, std::less<void>>;
 
+// Shared queue with priority levels.
 class SharedQueue {
  public:
+  // Get the singleton instance.
   static SharedQueue& Get() {
     static SharedQueue instance;
     return instance;
   }
 
+  // Enqueue a computation request.
   void Enqueue(unsigned priority, BackendHandler* backend,
                ClientComputation* computation, size_t first, size_t last) {
     assert(priority < client::kMaxComputationPriority);
     SpinMutex::Lock lock(mutex_);
     priority_queue_[priority].emplace_back(backend, computation, first, last);
+    // Try to push work to backend if all backends are idle or flush timer has
+    // fired and none of backends has maximum number of batches queued..
     if (highest_backend_computations_ == 0 ||
         (highest_backend_computations_ < max_batches_in_flight_ &&
          !queue_has_pending_flush_)) {
@@ -315,24 +367,32 @@ class SharedQueue {
     }
   }
 
+  // Get the backend map and set options and responder. It is only used when
+  // starting the server. It is effectively constructor for the singleton.
   BackendMap& GetBackendMap(const OptionsDict& options,
                             StdoutUciResponder& responder) {
     options_ = &options;
     responder_ = &responder;
     return backend_map_;
   }
+  // Get the backend map.
   BackendMap& GetBackendMap() { return backend_map_; }
+  // Set the default backend for auto discovery.
   void SetDiscovery(const std::filesystem::path& path) {
     network_discovery_ = backend_map_.find(path.filename().string());
   }
 
+  // Get the default backend when client request auto discovery.
   BackendMap::iterator GetDiscovery() const { return network_discovery_; }
 
+  // Set number of backend threads which is the maximum number of batches in
+  // flight.
   void BackendThreads(size_t count) {
     SpinMutex::Lock lock(mutex_);
     max_batches_in_flight_ = count;
   }
 
+  // Notify that a computation batch is done.
   void ComputationDone(unsigned computations_in_flight, TimePoint idle_time) {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
@@ -344,12 +404,23 @@ class SharedQueue {
         assert(backend.second.GetComputationsInFlight() !=
                max_batches_in_flight_);
       }
+      // There must be only one backend with maximum number of batches active at
+      // any given time.
       highest_backend_computations_--;
       idle_timer_target_ = idle_time;
+      // schedule the next queue flush to backends when the only fully utilized
+      // backend is close to become idle.
       ScheduleFlush();
+      // If any backend has partial queued batch and idling, they should be
+      // flushed to avoid stalling while waiting for a full batch. It is done
+      // after the fully utlized backend completes a batch to allow other
+      // backends delay the flush timer based on expected GPU time usage.
       FlushIdlingBackends();
     } else {
       unsigned computations = 0;
+      // Ther can be any number of backends with less than maximum active
+      // batches. We need to check them to know the current highest number of
+      // active batches.
       for (const auto& backend : backend_map_) {
         computations =
             std::max(computations, backend.second.GetComputationsInFlight());
@@ -363,8 +434,11 @@ class SharedQueue {
     }
   }
 
+  // Extend the flush timer for secondary backends. A worker calls it when
+  // starting a batch without maximum number of active batches.
   void AddToFlushTimer(Clock::duration increment) {
     SpinMutex::Lock lock(mutex_);
+    // Only extend timer if it is active.
     if (!queue_has_pending_flush_) {
       return;
     }
@@ -373,11 +447,14 @@ class SharedQueue {
     WaitOnFlushTimer();
   }
 
+  // Stop the io context.
   void Stop() {
     LCTRACE_FUNCTION_SCOPE;
     io_context_.stop();
   }
 
+  // Called when the main thread is about to return on exit. It stops backends
+  // and cleanups resources.
   void Close() {
     LCTRACE_FUNCTION_SCOPE;
     BackendMap map;
@@ -386,6 +463,9 @@ class SharedQueue {
       SpinMutex::Lock lock(mutex_);
       statistics_timer_.cancel();
       flush_timer_.cancel();
+      // Move the backend map to local variable to release the lock for backend
+      // desctructors. Worker threads might call back to SharedQueue which could
+      // cause deadlock between thread join and SharedQueue::mutex_.
       map = std::move(backend_map_);
     }
     map.clear();
@@ -393,8 +473,10 @@ class SharedQueue {
 
   asio::io_context& GetContext() { return io_context_; }
 
+  // Construct the listener and start io context in the main thread.
   void StartServer();
 
+  // Called from isready command to ensure backends are responsive.
   void EnsureReady() const {
     SpinMutex::Lock lock(mutex_);
     for (auto& backend : backend_map_) {
@@ -402,6 +484,7 @@ class SharedQueue {
     }
   }
 
+  // New client connection.
   void NewConnection() {
     SpinMutex::Lock lock(mutex_);
     active_connections_++;
@@ -410,6 +493,7 @@ class SharedQueue {
     }
   }
 
+  // Client connection closed.
   void ConnectionClosed() {
     SpinMutex::Lock lock(mutex_);
     active_connections_--;
@@ -421,6 +505,7 @@ class SharedQueue {
   SharedQueue(const SharedQueue&) = delete;
   SharedQueue& operator=(const SharedQueue&) = delete;
 
+  // Check if all priority queues are empty.
   bool Empty() REQUIRES(mutex_) {
     for (const auto& q : priority_queue_) {
       if (!q.empty()) {
@@ -455,6 +540,7 @@ class SharedQueue {
   static constexpr Clock::duration kEstimatedNetworkEvaluationTime =
       std::chrono::milliseconds(12);
 
+  // Push work from the priority queues to backends.
   void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
     bool needs_flush = true;
@@ -484,6 +570,7 @@ class SharedQueue {
     }
   }
 
+  // Flush backends which have partial batches queued but GPU is idling.
   void FlushIdlingBackends() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
     for (auto& backend : backend_map_) {
@@ -491,6 +578,7 @@ class SharedQueue {
     }
   }
 
+  // Schedule a flush of queued work to backends.
   void ScheduleFlush() REQUIRES(mutex_) {
     if (!highest_backend_computations_) {
       DoFlush();
@@ -506,10 +594,12 @@ class SharedQueue {
     }
   }
 
+  // Flush queued work to backends.
   void DoFlush() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
     queue_has_pending_flush_ = false;
     if (highest_backend_computations_ == max_batches_in_flight_) return;
+    // Find the backend with most pending work.
     auto iter = std::max_element(backend_map_.begin(), backend_map_.end(),
                                  [](const auto& a, const auto& b) {
                                    return a.second.GetPendingSize() <
@@ -523,6 +613,7 @@ class SharedQueue {
         std::max(highest_backend_computations_, iter->second.Flush());
   }
 
+  // Register wait handler for flush timer.
   void WaitOnFlushTimer() REQUIRES(mutex_) {
     flush_timer_.async_wait([this](const std::error_code& ec) {
       if (ec) {
@@ -537,7 +628,9 @@ class SharedQueue {
     });
   }
 
+  // Setup statistics timer. It prints periodic performance statistics.
   void StatisticsTimerSetup(Clock::time_point now) {
+    // Statistics aren't needed if there are no active connections.
     if (active_connections_ == 0) {
       return;
     }
@@ -554,6 +647,8 @@ class SharedQueue {
         return;
       }
       std::vector<std::string> outputs;
+      // The map size is fixed. We can use it to allocate memory outside the
+      // lock.
       outputs.reserve(backend_map_.size() + 1);
       SpinMutex::Lock lock(mutex_);
       std::ostringstream oss;
@@ -584,26 +679,39 @@ class SharedQueue {
       StatisticsTimerSetup(statistics_timer_.expiry());
     });
   }
+
+  // Map from network name to backend manager object.
   BackendMap backend_map_;
+  // Default backend for auto discovery.
   BackendMap::iterator network_discovery_;
+  // User options.
   const OptionsDict* options_ = nullptr;
+  // Responder to send UCI messages to stdout.
   StdoutUciResponder* responder_ = nullptr;
 
   mutable SpinMutex mutex_;
   std::condition_variable_any cv_;
   unsigned highest_backend_computations_ = 0;
+  // The maximum number of batches which a backend can process in parallel.
   unsigned max_batches_in_flight_ = 0;
+  // Whether there is a pending flush scheduled.
   bool queue_has_pending_flush_ = false;
+  // Target time point for the flush timer.
   TimePoint idle_timer_target_{};
   std::array<std::deque<QueueItem>, client::kMaxComputationPriority>
       priority_queue_;
 
+  // Number of active client connections.
   size_t active_connections_ = 0;
   asio::io_context io_context_;
+  // Timer to delay moving computations from the shared priority queue to
+  // backends. It triggers a little before GPU is predicted to become idle.
   asio::steady_timer flush_timer_{io_context_};
+  // Timer to output periodic statistics.
   asio::steady_timer statistics_timer_{io_context_};
 };
 
+// Computation requested by a client.
 class ClientComputation {
  public:
   using CompletionType = std::function<void(ClientComputation&)>;
@@ -625,6 +733,7 @@ class ClientComputation {
 
   ~ClientComputation() { LCTRACE_FUNCTION_SCOPE; }
 
+  // Queue a new computation to the shared queue.
   int ComputeBlocking(std::vector<client::InputPosition>&& inputs) {
     if (inputs.empty()) {
       CERR << "ComputeBlocking called with empty inputs.";
@@ -647,6 +756,7 @@ class ClientComputation {
 
   auto GetId() const { return id_; }
   auto GetInput(size_t index) { return inputs_[index]; }
+  // Get a result object to be passed to the backend.
   EvalResultPtr GetEvalResult(size_t index, size_t legal_moves) {
     size_t policy_offset =
         policy_reserved_.fetch_add(legal_moves, std::memory_order_relaxed);
@@ -684,6 +794,7 @@ class ClientComputation {
   std::atomic<size_t> results_ready_{0};
 };
 
+// Connection to a single client.
 template <typename SocketType>
 class ServerConnection
     : public client::Connection<SocketType>,
@@ -705,6 +816,7 @@ class ServerConnection
   void Start() { Read(); }
 
  private:
+  // Start an asynchronous read of a message.
   void Read() {
     auto self = this->shared_from_this();
     Base::ReadHeader([this, self](auto& message, auto& ar) {
@@ -713,6 +825,7 @@ class ServerConnection
     });
   }
 
+  // Default handler for unexpected message types.
   template <typename MessageType, typename Archive>
   typename Archive::ResultType HandleMessage(const MessageType& message,
                                              Archive&) {
@@ -721,6 +834,7 @@ class ServerConnection
     return Unexpected(client::ArchiveError::UnknownType);
   }
 
+  // Handler for handshake message.
   template <typename Archive>
   typename Archive::ResultType HandleMessage(const client::Handshake& message,
                                              Archive& ar) {
@@ -767,6 +881,7 @@ class ServerConnection
     return {ar};
   }
 
+  // Handle computation request message.
   template <typename Archive>
   typename Archive::ResultType HandleMessage(client::ComputeBlocking& message,
                                              Archive& ar) {
@@ -815,6 +930,7 @@ class ServerConnection
     return {ar};
   }
 
+  // Complete a computation and send results to the client.
   void CompleteComputation(ClientComputation& computation) {
     LCTRACE_FUNCTION_SCOPE;
     auto iter = std::find_if(
@@ -834,6 +950,7 @@ class ServerConnection
   ComputationMapType computations_;
 };
 
+// Backend server listening for client connections.
 template <typename Proto>
 class BackendServer {
  public:
@@ -879,6 +996,7 @@ class BackendServer {
     }
   }
 
+  // Start an asynchronous accept operation.
   void do_accept() {
     LCTRACE_FUNCTION_SCOPE;
     acceptor_.async_accept([this](std::error_code ec, SocketType socket) {
@@ -986,6 +1104,7 @@ void BackendHandler::Worker() {
         SharedQueue::Get().AddToFlushTimer(increment_flush_timer);
       }
       auto computation = backend_->CreateComputation(0);
+      // Add inputs to the backend computation.
       PositionHistory history;
       history.Reserve(kMoveHistory);
       for (const auto& item : batch) {
@@ -1002,7 +1121,11 @@ void BackendHandler::Worker() {
           computation->AddInput({pos, legal_moves}, results);
         }
       }
+
+      // Perform the computation.
       if (size != 0) computation->ComputeBlocking();
+
+      // Complete the batch and notify clients.
       TimePoint now = Clock::now();
       auto [queued_batches, idle] = CompleteBatch(size, now);
       SharedQueue::Get().ComputationDone(queued_batches, idle);
@@ -1047,6 +1170,8 @@ class BackendserverEngine : public EngineControllerBase {
   void UnregisterUciResponder(UciResponder*) override {}
 };
 
+// Console thread allow asynchronous shutdown of stdin reads. It uses OS
+// specific methods to interrpy the blocking read.
 class ConsoleThread : public std::thread {
  public:
   using std::thread::thread;

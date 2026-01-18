@@ -54,6 +54,7 @@ const std::string kDefaultPipeName = "lczero_backend_pipe";
 const std::string kDefaultPipeName = "/tmp/lczero_backend_pipe";
 #endif
 
+// Message types.
 enum MessageType : uint8_t {
   HANDSHAKE = 0,
   HANDSHAKE_REPLY = 1,
@@ -71,6 +72,7 @@ static constexpr size_t kMaxSearchThreads = 2;
 static constexpr size_t kMaxMinibatchSizes = 1024;
 static constexpr size_t kLegalMovesInPosition = 120;
 
+// Shared message header structure for all messages.
 struct MessageHeader {
   MagicType magic_ = kMagic;  // "LCZB"
   uint32_t size_;
@@ -92,6 +94,7 @@ struct MessageHeader {
   size_t PredictedSize() const { return Size(); }
 };
 
+// Handshake message sent by the client to the backend.
 struct Handshake {
   MessageHeader header_ = {kMagic, 0, MessageType::HANDSHAKE};
   uint16_t backend_api_version_ = kBackendApiVersion;
@@ -108,6 +111,7 @@ struct Handshake {
   }
 };
 
+// Handshake reply message sent by the backend to the client.
 struct HandshakeReply {
   MessageHeader header_ = {kMagic, 0, MessageType::HANDSHAKE_REPLY};
   BackendAttributes attributes_{};
@@ -124,6 +128,7 @@ struct HandshakeReply {
   }
 };
 
+// Input position with move history.
 struct InputPosition {
   Position base_{};
   unsigned char history_length_{0};
@@ -145,6 +150,7 @@ struct InputPosition {
   }
 };
 
+// Compute blocking message sent by the client to the backend.
 struct ComputeBlocking {
   MessageHeader header_ = {kMagic, 0, MessageType::COMPUTE_BLOCKING};
   uint16_t computation_id_{};
@@ -165,6 +171,8 @@ struct ComputeBlocking {
   }
 };
 
+// Network result for a position.
+// TODO: maybe allow transmitting fp16 values.
 struct NetworkResult {
   float value_{};
   float draw_{};
@@ -182,6 +190,7 @@ struct NetworkResult {
   }
 };
 
+// Compute blocking reply message sent by the backend server to the client.
 struct ComputeBlockingReply {
   MessageHeader header_ = {kMagic, 0, MessageType::COMPUTE_BLOCKING_REPLY};
   uint16_t computation_id_{};
@@ -210,15 +219,20 @@ static constexpr size_t kBufferSize = std::bit_ceil(kMaxMessageSize);
 
 using InputBufferType = std::array<char, kBufferSize>;
 
+// Serialize a message to an output archive. The function fills the size field
+// of header.
 template <typename Archive, typename T>
 [[nodiscard]]
 typename Archive::ResultType SerializeMessage(Archive& oa, T& message);
 
+// Parse an incoming message header.
 template <typename Archive>
 [[nodiscard]]
 typename Archive::ResultType ParseMessageHeader(Archive& ia,
                                                 MessageHeader& header);
 
+// Parse an incoming message body. It will call the callback function if parsing
+// succeeds.
 template <typename Archive, typename T, typename Callback>
 [[nodiscard]]
 typename Archive::ResultType ParseMessageType(Archive& ia,
@@ -230,6 +244,7 @@ typename Archive::ResultType ParseMessageType(Archive& ia,
       [&out, &callback](Archive& ar) { return callback(out, ar); });
 }
 
+// Helper to select the correct body parsing function based on message type.
 template <typename Archive, typename Callback>
 [[nodiscard]]
 typename Archive::ResultType ParseMessage(Archive& ia,
@@ -264,6 +279,10 @@ typename Archive::ResultType ParseMessage(Archive& ia,
 }
 
 #ifdef ASIO_HAS_LOCAL_SOCKETS
+// Get a local socket endpoint.
+// TODO: These could parse a full URI to allow more flexible addressing.
+// Examples are unix:///path/to/socket, tcp://localhost:port or
+// tls://hostname:port.
 template <typename Endpoint>
 Endpoint GetEndpoint(const std::string& pipe_name) {
   return {pipe_name};
@@ -279,6 +298,8 @@ Endpoint GetEndpoint(asio::io_context& ctx, const std::string& host,
   return {endpoint.address(), endpoint.port()};
 }
 
+// Shared connection implementation for server and client. It handles socket
+// options, parsing and writing messages.
 template <typename SocketType>
 class Connection {
  public:
@@ -291,6 +312,7 @@ class Connection {
   bool IsOpen() const { return socket_.is_open(); }
 
  protected:
+  // Set common socket options.
   void SetSocketOptions() {
     if (socket_.is_open()) {
       if constexpr (std::is_same_v<SocketType, asio::ip::tcp::socket>) {
@@ -300,6 +322,13 @@ class Connection {
       socket_.set_option(keep_alive_option);
     }
   }
+
+  // Starting point for receiving a new message. It first reads and parses a
+  // header structure. Then it call ReadBody to receive and parsee the message
+  // body.
+  // The callback function is called when a full message has been parsed. If
+  // there are connection errors or parsing errors, the connection is closed and
+  // the callback is not called.
   template <bool async = true, bool new_request = true,
             typename MessageCallback>
   void ReadHeader(MessageCallback&& callback) {
@@ -319,6 +348,7 @@ class Connection {
       input_read_bytes_ = ReadyBytes();
       parsed_bytes_ = 0;
     }
+    // Shared message handling code for async and sync reads.
     auto handler = [this, callback = std::move(callback)](std::error_code ec,
                                                           size_t length) {
       if (ec) {
@@ -354,6 +384,7 @@ class Connection {
     }
   }
 
+  // Serialize and send a message.
   template <bool async = true, typename SelfType, typename MessageType>
   void SendMessage(SelfType&& self, MessageType& message) {
     BinaryOArchive output(kBackendApiVersion);
@@ -374,6 +405,7 @@ class Connection {
       });
     } else {
       asio::error_code ec;
+      // Synchronous write. asio::write restarts system calls if interrupted.
       asio::write(socket_, asio::buffer(output.GetVector()), ec);
       if (ec) {
         CERR << "Connection error in SendMessage: " << ec.message();
@@ -383,16 +415,21 @@ class Connection {
     }
   }
 
+  // Dispatch a function to be run on the socket's executor. If called from
+  // executing thread, the function is run immediately from asio::dispatch.
   template <typename FunctionType>
   void Dispatch(FunctionType&& func) {
     asio::dispatch(socket_.get_executor(), std::forward<FunctionType>(func));
   }
 
+  // Defer a function to be run on the socket's executor later. It typically
+  // will execute after the current handlers return to the event loop.
   template <typename FunctionType>
   void Defer(FunctionType&& func) {
     asio::defer(socket_.get_executor(), std::forward<FunctionType>(func));
   }
 
+  // Write an asynchronous queued message to the socket.
   template <typename SelfType>
   void Write(SelfType&& self) {
     asio::async_write(
@@ -413,27 +450,34 @@ class Connection {
         });
   }
 
+  // Synchronously connect to an endpoint.
   template <typename Endpoint>
   void Connect(const Endpoint& endpoint) {
     socket_.connect(endpoint);
     SetSocketOptions();
   }
 
+  // Close the connection.
   virtual void Close() {
     if (!socket_.is_open()) {
       return;
     }
+    // Make sure the socket is closed gracefully.
     socket_.shutdown(SocketType::shutdown_both);
     socket_.close();
   }
 
  private:
+  // Read the message body based on the pending header.
   template <bool async, bool new_request = true, typename MessageCallback>
   void ReadBody(MessageCallback&& callback) {
+    // Check if we already have the full body.
     if (ReadyBytes() >= pending_header_.size_) {
       ParseInput(std::move(callback));
       return;
     }
+    // Move unparsed data to the front if this is a new request and there is
+    // not enough space for full body.
     if (new_request && pending_header_.size_ >= input_.size() - parsed_bytes_) {
       if (ReadyBytes() > 0) {
         // Move unparsed data to the front.
@@ -466,6 +510,7 @@ class Connection {
       socket_.async_read_some(InputBuffer(), handler);
     } else {
       asio::error_code ec;
+      // Synchronous read. It can return less data than requested.
       size_t length = socket_.read_some(InputBuffer(), ec);
       handler(ec, length);
     }
@@ -474,11 +519,13 @@ class Connection {
   const char* InputBegin() { return input_.data() + parsed_bytes_; }
   const char* InputEnd() { return input_.data() + input_read_bytes_; }
 
+  // Get an io buffer which can receive network data.
   auto InputBuffer() {
     return asio::buffer(input_.data() + input_read_bytes_,
                         input_.size() - input_read_bytes_);
   }
 
+  // Parse a message header from the input buffer.
   template <bool async, typename MessageCallback>
   ArchiveError ParseHeader(MessageCallback&& callback) {
     if (ReadyBytes() == 0) return ArchiveError::BufferOverflow;
@@ -496,6 +543,7 @@ class Connection {
     return ArchiveError::None;
   }
 
+  // Parse a message body from the input buffer.
   template <typename MessageCallback>
   void ParseInput(MessageCallback&& callback) {
     assert(ReadyBytes() >= pending_header_.size_);
@@ -513,8 +561,12 @@ class Connection {
     parsed_bytes_ += size - ia.Size();
   }
 
+  // Get number of unparsed bytes in the input buffer.
   size_t ReadyBytes() const { return input_read_bytes_ - parsed_bytes_; }
 
+  // Queue of outgoing messages for asynchronous sending. It must only be
+  // accessed from the socket's executor. If executor runs in a thread pool,
+  // then a strand must be used to synchronize access.
   std::queue<BinaryOArchive> queue_;
 
   SocketType socket_;

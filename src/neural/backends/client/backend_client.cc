@@ -53,6 +53,8 @@ namespace lczero::client {
 
 namespace {
 
+// Parent class to hold asio context because it must be allocated before socket
+// inside Connection.
 class Context {
  public:
   Context() {}
@@ -66,6 +68,10 @@ class Context {
 template <typename Proto>
 class BackendClientComputation;
 
+// ClientConnection manages a single connection to a backend server. It uses
+// synchronous networing. Each search thread must have its own ClientConnection.
+// Backend will allocate connections for computations. It caches allocated
+// connections for reuse.
 template <typename Proto>
 class ClientConnection final : public Context,
                                public Connection<typename Proto::socket> {
@@ -75,6 +81,9 @@ class ClientConnection final : public Context,
   using Endpoint = typename Proto::endpoint;
 
  public:
+  // Connect to backend server based on backend options. If user gives
+  // server-arguments option, it will start a new server process after a
+  // failing to connect to an existing server.
   ClientConnection(const OptionsDict& options, const std::string& network)
       : Context(), Base(SocketType{this->io_context()}) {
     // Initialize connection.
@@ -113,6 +122,8 @@ class ClientConnection final : public Context,
           "info string Backend server listening on ");
       std::string buffer;
       buffer.resize(512);
+
+      // Wait until server has initialized.
       while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe_)) {
         if (buffer.find(ready_message) != std::string::npos) {
           break;
@@ -123,12 +134,14 @@ class ClientConnection final : public Context,
       // process running.
       close(fileno(pipe_));
 
+      // Connect to the newly started server.
       this->Connect(endpoint_);
     }
     Start(network);
     CERR << "Connected to backend server " << endpoint_;
   }
 
+  // Create a secondary connection to the same backend server as primary.
   ClientConnection(const ClientConnection& primary, const std::string& network)
       : Context(),
         Base(SocketType{this->io_context()}),
@@ -148,17 +161,25 @@ class ClientConnection final : public Context,
     }
   }
 
+  // Close the connection if there is any errors.
   void Close() override {
     Base::Close();
+    // TODO: Try reconnecting to a restarted server.
     throw Exception("Backend client connection closed");
   }
 
+  // Start a new connection. A client sends a handshake message first.
   void Start(const std::string& network) { WriteHandshake(network); }
 
+  // A fake self type for synchronous send/receive. Asynchronous operations
+  // require a shared pointer to keep the object alive during the operation.
+  // Synchronus operations won't access the object after a call returns.
   struct FakeSelf {};
 
+  // Get backend attributes after the server responds to a handshake.
   BackendAttributes GetAttributes() const { return attrs_; }
 
+  // Send a compute blocking request to the server and wait for reply.
   void ComputeBlocking(size_t computation_id, size_t priority,
                        std::vector<InputPosition>& inputs) {
     client::ComputeBlocking message;
@@ -169,21 +190,26 @@ class ClientConnection final : public Context,
     Read();
   }
 
+  // Reserve this connection for a computation. Returns true if successful.
   bool Reserve(BackendClientComputation<Proto>* computation) {
     BackendClientComputation<Proto>* old = nullptr;
     return reserved_.compare_exchange_strong(
         old, computation, std::memory_order_acquire, std::memory_order_relaxed);
   }
 
+  // Release the connection from a computation.
   void Release() { reserved_.store(nullptr, std::memory_order_release); }
 
  private:
+  // Get the owning computation for this connection.
   BackendClientComputation<Proto>* GetReservedComputation() {
     return reserved_.load(std::memory_order_relaxed);
   }
 
+  // Get a fake self object for synchronous operations.
   FakeSelf Self() { return {}; }
 
+  // Read a message from the server and dispatch to appropriate handler.
   void Read() {
     Base::template ReadHeader<false>(
         [this](const auto& message, auto& archive) {
@@ -192,6 +218,7 @@ class ClientConnection final : public Context,
         });
   }
 
+  // Send a handshake message to the server and wait for reply.
   void WriteHandshake(const std::string& network) {
     Handshake message;
     message.network_name_ = network;
@@ -201,6 +228,7 @@ class ClientConnection final : public Context,
     assert(!Base::IsOpen() || attrs_.maximum_batch_size);
   }
 
+  // Default handler for unexpected message types.
   template <typename MessageType, typename Archive>
   typename Archive::ResultType HandleMessage(const MessageType& message,
                                              Archive&) {
@@ -209,6 +237,7 @@ class ClientConnection final : public Context,
     return Unexpected(ArchiveError::UnknownType);
   }
 
+  // Handler for handshake reply message.
   template <typename Archive>
   typename Archive::ResultType HandleMessage(const HandshakeReply& message,
                                              Archive& ar) {
@@ -261,6 +290,7 @@ class ClientConnection final : public Context,
     return {ar};
   }
 
+  // Handler for compute blocking reply message.
   template <typename Archive>
   typename Archive::ResultType HandleMessage(
       const ComputeBlockingReply& message, Archive& ar);
@@ -273,6 +303,8 @@ class ClientConnection final : public Context,
   Endpoint endpoint_;
 };
 
+// BakendClient forwards evaluation requests to a backend server via a TCP or
+// UNIX socket connection.
 template <typename Proto>
 class BackendClient final : public Backend {
  public:
@@ -297,6 +329,7 @@ class BackendClient final : public Backend {
   std::unique_ptr<BackendComputation> CreateComputation(
       size_t time_remaining) override;
 
+  // A smart pointer providing RAII locking for a ClientConnection.
   struct ClientConnectionReference {
     ClientConnectionReference(ClientConnection<Proto>& connection,
                               BackendClient<Proto>& backend)
@@ -313,6 +346,8 @@ class BackendClient final : public Backend {
     BackendClient<Proto>& backend_;
   };
 
+  // Reserve a connection for a computation. If there is no free connections, it
+  // creates a new connection.
   ClientConnectionReference GetConnection(
       BackendClientComputation<Proto>* computation) {
     SpinMutex::Lock lock(mutex_);
@@ -358,6 +393,7 @@ class BackendClientComputation final : public BackendComputation {
     input_pos.history_length_ = len - 1;
     input_pos.base_ = pos.pos[pos.pos.size() - len];
     for (size_t i = 1; i < len; ++i) {
+      // Convert history planes to moves for smaller message size.
       Move move = pos.pos[pos.pos.size() - len + i - 1].GetNextMove(
           pos.pos[pos.pos.size() - len + i]);
       input_pos.history_[i - 1] = move;
@@ -378,6 +414,7 @@ class BackendClientComputation final : public BackendComputation {
     assert(!connection->IsOpen() || entries_.size() == 0);
   }
 
+  // Clears entries when the server reply has been processed.
   void NotifyComputationCompleted() {
     entries_.clear();
   }
@@ -389,6 +426,7 @@ class BackendClientComputation final : public BackendComputation {
   }
 
  private:
+  // Compute priority based on time remaining.
   size_t TimeToPriority(size_t time_remaining) {
     auto fixed = backend_.GetFixedPriority();
     if (fixed < kMaxComputationPriority) {

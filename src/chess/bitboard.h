@@ -158,6 +158,7 @@ class BitBoard {
     return {a.board_ & ~b.board_};
   }
 
+  // Serialization support for out of process backends.
   template <typename Archive>
   typename Archive::ResultType Serialize(
       Archive& ar, [[maybe_unused]] const unsigned version) {

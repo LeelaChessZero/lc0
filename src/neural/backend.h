@@ -48,6 +48,7 @@ struct BackendAttributes {
   int recommended_batch_size;
   int maximum_batch_size;
 
+  // Serialization support for out of process backends.
   template <typename Archive>
   typename Archive::ResultType Serialize(Archive& ar, const unsigned) {
     auto r = ar & has_mlh;

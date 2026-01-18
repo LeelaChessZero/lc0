@@ -50,6 +50,9 @@ class Unexpected {
   E value;
 };
 
+
+// A fallback implementation for std::expected. It can miss standard features
+// which should be added if code needs a missing feature.
 template <typename T, typename E>
 class ExpectedImpl {
  public:
