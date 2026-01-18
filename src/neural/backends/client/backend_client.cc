@@ -513,8 +513,6 @@ std::unique_ptr<BackendComputation> BackendClient<Proto>::CreateComputation(
       time_remaining);
 }
 
-}  // namespace
-
 class ClientFactory final : public BackendFactory {
  public:
   static BackendManager::Register reg_;
@@ -538,5 +536,7 @@ class ClientFactory final : public BackendFactory {
 };
 
 BackendManager::Register ClientFactory::reg_(std::make_unique<ClientFactory>());
+
+} // namespace
 
 }  // namespace lczero::client
