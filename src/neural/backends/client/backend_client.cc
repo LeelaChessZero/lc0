@@ -265,22 +265,22 @@ class ClientConnection final : public Context,
     }
     if (message.attributes_.maximum_batch_size >
             static_cast<int>(kMaxMinibatchSizes) ||
-        message.attributes_.maximum_batch_size < 0) {
+        message.attributes_.maximum_batch_size <= 0) {
       CERR << "maximum_batch_size outside accepted range: "
            << message.attributes_.maximum_batch_size;
       return Unexpected(ArchiveError::InvalidData);
     }
     if (message.attributes_.recommended_batch_size >
             message.attributes_.maximum_batch_size ||
-        message.attributes_.recommended_batch_size < 0) {
+        message.attributes_.recommended_batch_size <= 0) {
       CERR << "recommended_batch_size outside 0 < "
-           << message.attributes_.recommended_batch_size << " < "
-           << message.attributes_.maximum_batch_size;
+           << message.attributes_.recommended_batch_size
+           << " <= " << message.attributes_.maximum_batch_size;
       return Unexpected(ArchiveError::InvalidData);
     }
     if (message.attributes_.suggested_num_search_threads >
             static_cast<int>(kMaxSearchThreads) ||
-        message.attributes_.suggested_num_search_threads < 0) {
+        message.attributes_.suggested_num_search_threads <= 0) {
       CERR << "suggested_num_search_threads outside accepted range: "
            << message.attributes_.suggested_num_search_threads;
       return Unexpected(ArchiveError::InvalidData);
