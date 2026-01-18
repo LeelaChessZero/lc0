@@ -222,11 +222,11 @@ struct BinaryOSizeArchive {
   }
 
   template <typename T>
-  ResultType Size(const std::vector<T>& value) {
+  ResultType Size(const VectorLimits<T>& value) {
     ResultType r = SizeImpl(ResultType{*this}, total_size_,
-                            static_cast<uint64_t>(value.size()));
+                            static_cast<uint64_t>(value.value.size()));
     if (!r) return r;
-    for (const auto& item : value) {
+    for (const auto& item : value.value) {
       r = Size(item);
       if (!r) return r;
     }
@@ -279,6 +279,9 @@ std::ostream& operator<<(std::ostream& os, ArchiveError error) {
       break;
     case ArchiveError::RemoteError:
       os << "RemoteError";
+      break;
+    case ArchiveError::OutOfMemory:
+      os << "OutOfMemory";
       break;
   }
   return os;

@@ -43,7 +43,8 @@ enum class ArchiveError {
   ValueOverflow,
   SizeCalculationFailed,
   UnknownType,
-  RemoteError
+  RemoteError,
+  OutOfMemory,
 };
 
 std::ostream& operator<<(std::ostream& os, ArchiveError error);
@@ -52,6 +53,17 @@ template <typename T>
 struct FixedInteger {
   FixedInteger(T& v) : value(v) {}
   T& value;
+};
+
+// Wrapper type to add size limits to vector serialization. Used to prevent
+// malicious or corrupted data from causing large memory allocations.
+template <typename T>
+struct VectorLimits {
+  VectorLimits(std::vector<T>& v, size_t min_size, size_t max_size)
+      : value(v), min_size_(min_size), max_size_(max_size) {}
+  std::vector<T>& value;
+  size_t min_size_;
+  size_t max_size_;
 };
 
 template <typename T, typename Archive>
@@ -124,7 +136,8 @@ class BinaryOArchive {
 
   // Container serialization
   template <typename T>
-  ResultType Save(const std::vector<T>& container) {
+  ResultType Save(const VectorLimits<T>& wrapper) {
+    const std::vector<T>& container = wrapper.value;
     uint64_t size = container.size();
     auto r = Save(size);
     for (const T& item : container) {
@@ -159,9 +172,12 @@ class BinaryIArchive {
   using ResultType = Expected<BinaryIArchive&, ArchiveError>;
 
   BinaryIArchive(std::span<const char> buffer, char* temporary_memory,
-                 unsigned version)
+                 size_t temporary_memory_size, unsigned version)
       : buffer_(buffer),
         temporary_memory_(temporary_memory),
+        temporary_memory_end_(temporary_memory_size == 0
+                                  ? nullptr
+                                  : temporary_memory + temporary_memory_size),
         version_(version) {}
 
   template <typename T>
@@ -174,6 +190,11 @@ class BinaryIArchive {
   ResultType operator>>(FixedInteger<T> value) {
     return Load(value);
   }
+  template <typename T>
+  [[nodiscard]]
+  ResultType operator>>(VectorLimits<T> value) {
+    return Load(value);
+  }
 
   template <typename T>
   [[nodiscard]]
@@ -183,6 +204,11 @@ class BinaryIArchive {
   template <typename T>
   [[nodiscard]]
   ResultType operator&(FixedInteger<T> value) {
+    return *this >> value;
+  }
+  template <typename T>
+  [[nodiscard]]
+  ResultType operator&(VectorLimits<T> value) {
     return *this >> value;
   }
 
@@ -221,10 +247,14 @@ class BinaryIArchive {
   ResultType Load(float& value);
   // Container deserialization
   template <typename T>
-  ResultType Load(std::vector<T>& container) {
+  ResultType Load(VectorLimits<T> wrapper) {
+    auto& container = wrapper.value;
     uint64_t size = 0;
     ResultType r = Load(size);
     if (!r) return r;
+    if (size < wrapper.min_size_ || size > wrapper.max_size_) {
+      return Unexpected(ArchiveError::ValueOverflow);
+    }
     container.resize(size);
     for (T& item : container) {
       if (!(r = Load(item))) return r;
@@ -235,6 +265,11 @@ class BinaryIArchive {
   std::span<T> AllocateSpan(size_t size) {
     T* ptr = reinterpret_cast<T*>(temporary_memory_);
     temporary_memory_ += size * sizeof(T);
+    if (temporary_memory_end_ != nullptr &&
+        temporary_memory_ > temporary_memory_end_) {
+      ptr = nullptr;
+      size = 0;
+    }
     return {ptr, size};
   }
 
@@ -244,7 +279,18 @@ class BinaryIArchive {
     ResultType r = Load(size);
     if (!r) return r;
     container = AllocateSpan<T>(size);
+    // Check if caller provided enough temporary memory.
+    // case: temporary_memory_size != 0
+    if (container.data() == nullptr) {
+      return Unexpected(ArchiveError::OutOfMemory);
+    }
     for (T& item : container) {
+      // Check that item won't overwrite input data before it is parsed.
+      // case: temporary_memory_size == 0
+      if (temporary_memory_end_ == nullptr &&
+          buffer_.data() < reinterpret_cast<const char*>(&item + 1)) {
+        return Unexpected(ArchiveError::OutOfMemory);
+      }
       if (!(r = Load(item))) return r;
     }
     return r;
@@ -256,6 +302,7 @@ class BinaryIArchive {
  private:
   std::span<const char> buffer_;
   char* temporary_memory_;
+  char* temporary_memory_end_;
   unsigned version_;
 };
 

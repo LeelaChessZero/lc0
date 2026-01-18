@@ -67,6 +67,9 @@ static constexpr MagicType kMagic = 'L' << 0 | 'C' << 8 | 'Z' << 16 | 'B' << 24;
 // Must be incremented when any structure changes.
 static constexpr uint16_t kBackendApiVersion = 0;
 static constexpr unsigned kMaxComputationPriority = 12;
+static constexpr size_t kMaxSearchThreads = 2;
+static constexpr size_t kMaxMinibatchSizes = 1024;
+static constexpr size_t kLegalMovesInPosition = 120;
 
 struct MessageHeader {
   MagicType magic_ = kMagic;  // "LCZB"
@@ -132,7 +135,9 @@ struct InputPosition {
     auto r = ar & base_;
     r = r.and_then([this](Archive& ar) { return ar & history_length_; });
     const unsigned len = history_length_;
-    assert(len <= history_.size());
+    if (len > history_.size()) {
+      return Unexpected{ArchiveError::InvalidData};
+    }
     for (unsigned i = 0; i < len; ++i) {
       r = r.and_then([this, i](Archive& ar) { return ar & history_[i]; });
     }
@@ -153,7 +158,9 @@ struct ComputeBlocking {
     r = Archive::is_saving ? ar & header_ : r;
     r = r.and_then([this](Archive& ar) { return ar & computation_id_; });
     r = r.and_then([this](Archive& ar) { return ar & priority_; });
-    r = r.and_then([this](Archive& ar) { return ar & inputs_; });
+    r = r.and_then([this](Archive& ar) {
+      return ar & VectorLimits(inputs_, 1, kMaxMinibatchSizes);
+    });
     return r;
   }
 };
@@ -187,17 +194,16 @@ struct ComputeBlockingReply {
     typename Archive::ResultType r{ar};
     r = Archive::is_saving ? ar & header_ : r;
     r = r.and_then([this](Archive& ar) { return ar & computation_id_; });
-    r = r.and_then([this](Archive& ar) { return ar & results_; });
+    r = r.and_then([this](Archive& ar) {
+      return ar & VectorLimits(results_, 1, kMaxMinibatchSizes);
+    });
     r = r.and_then([this](Archive& ar) { return ar & error_message_; });
     return r;
   }
 };
 
-static constexpr size_t kMaxSearchThreads = 2;
-static constexpr size_t kMaxMinibatchSizes = 1024;
-static constexpr size_t kLegalMovesInPosition = 64;
 static constexpr size_t kMaxBytesPerPosition =
-    sizeof(float) * kLegalMovesInPosition;
+    sizeof(float) * kLegalMovesInPosition + sizeof(NetworkResult);
 static constexpr size_t kMaxMessageSize =
     kMaxBytesPerPosition * kMaxMinibatchSizes + sizeof(ComputeBlockingReply);
 static constexpr size_t kBufferSize = std::bit_ceil(kMaxMessageSize);
@@ -479,7 +485,7 @@ class Connection {
 
     auto first = InputBegin();
     BinaryIArchive ia(std::span<const char>(first, InputEnd()), input_.data(),
-                      kBackendApiVersion);
+                      0, kBackendApiVersion);
     size_t size = ia.Size();
     auto rv = ParseMessageHeader(ia, pending_header_);
     if (!rv) {
@@ -495,7 +501,7 @@ class Connection {
     assert(ReadyBytes() >= pending_header_.size_);
     auto first = InputBegin();
     BinaryIArchive ia(std::span<const char>(first, InputEnd()), input_.data(),
-                      kBackendApiVersion);
+                      0, kBackendApiVersion);
     size_t size = ia.Size();
     if (!ParseMessage(ia, pending_header_,
                       std::forward<MessageCallback>(callback))) {
