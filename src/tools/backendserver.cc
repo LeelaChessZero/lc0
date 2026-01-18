@@ -439,6 +439,7 @@ class SharedQueue {
         if (!Empty()) {
           PushWorkToBackend();
         }
+        FlushIdlingBackends();
       }
     }
   }
@@ -553,7 +554,7 @@ class SharedQueue {
   // Push work from the priority queues to backends.
   void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
-    bool needs_flush = true;
+    bool needs_flush = max_batches_in_flight_ == 0 || !queue_has_pending_flush_;
     auto evaluation_time = Clock::now();
     evaluation_time += kEstimatedNetworkEvaluationTime;
     while (!Empty() &&
@@ -575,8 +576,9 @@ class SharedQueue {
     }
     if (highest_backend_computations_ == max_batches_in_flight_) {
       flush_timer_.cancel();
+      queue_has_pending_flush_ = false;
     } else if (needs_flush) {
-      ScheduleFlush();
+      FlushIdlingBackends();
     }
   }
 
@@ -590,37 +592,15 @@ class SharedQueue {
 
   // Schedule a flush of queued work to backends.
   void ScheduleFlush() REQUIRES(mutex_) {
-    if (!highest_backend_computations_) {
-      DoFlush();
+    // If all backends are idle or queue target time is in the past, flush now.
+    if (!highest_backend_computations_ || idle_timer_target_ <= Clock::now()) {
+      FlushIdlingBackends();
       return;
     }
 
-    if (idle_timer_target_ <= Clock::now()) {
-      DoFlush();
-    } else {
-      queue_has_pending_flush_ = true;
-      flush_timer_.expires_at(idle_timer_target_);
-      WaitOnFlushTimer();
-    }
-  }
-
-  // Flush queued work to backends.
-  void DoFlush() REQUIRES(mutex_) {
-    LCTRACE_FUNCTION_SCOPE;
-    queue_has_pending_flush_ = false;
-    if (highest_backend_computations_ == max_batches_in_flight_) return;
-    // Find the backend with most pending work.
-    auto iter = std::max_element(backend_map_.begin(), backend_map_.end(),
-                                 [](const auto& a, const auto& b) {
-                                   return a.second.GetPendingSize() <
-                                          b.second.GetPendingSize();
-                                 });
-
-    if (iter == backend_map_.end()) {
-      return;
-    }
-    highest_backend_computations_ =
-        std::max(highest_backend_computations_, iter->second.Flush());
+    queue_has_pending_flush_ = true;
+    flush_timer_.expires_at(idle_timer_target_);
+    WaitOnFlushTimer();
   }
 
   // Register wait handler for flush timer.
@@ -633,8 +613,9 @@ class SharedQueue {
         return;
       }
       SpinMutex::Lock lock(mutex_);
+      assert(queue_has_pending_flush_);
+      queue_has_pending_flush_ = false;
       PushWorkToBackend();
-      DoFlush();
     });
   }
 
