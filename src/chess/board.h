@@ -32,6 +32,7 @@
 
 #include "chess/bitboard.h"
 #include "chess/types.h"
+#include "neural/backends/client/archive.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -202,7 +203,23 @@ class ChessBoard {
     template <typename Archive>
     typename Archive::ResultType Serialize(
         Archive& ar, [[maybe_unused]] const unsigned version) {
-      return ar & client::FixedInteger{data_};
+      uint16_t value = data_;
+      if (Archive::is_saving) {
+        value |= (our_queenside_rook.idx << 4);
+        value |= (their_queenside_rook.idx << 7);
+        value |= (our_kingside_rook.idx << 10);
+        value |= (their_kingside_rook.idx << 13);
+      }
+      auto r = ar & client::FixedInteger(value);
+      if (Archive::is_loading && r) {
+        our_queenside_rook = File::FromIdx((value >> 4) & 0x7);
+        their_queenside_rook = File::FromIdx((value >> 7) & 0x7);
+        our_kingside_rook = File::FromIdx((value >> 10) & 0x7);
+        their_kingside_rook = File::FromIdx((value >> 13) & 0x7);
+        data_ = value & 0xf;
+      }
+
+      return r;
     }
 
    private:
