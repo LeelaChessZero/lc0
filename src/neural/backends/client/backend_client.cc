@@ -200,12 +200,12 @@ class ClientConnection final : public Context,
   // Release the connection from a computation.
   void Release() { reserved_.store(nullptr, std::memory_order_release); }
 
- private:
   // Get the owning computation for this connection.
   BackendClientComputation<Proto>* GetReservedComputation() {
     return reserved_.load(std::memory_order_relaxed);
   }
 
+ private:
   // Get a fake self object for synchronous operations.
   FakeSelf Self() { return {}; }
 
@@ -331,19 +331,17 @@ class BackendClient final : public Backend {
 
   // A smart pointer providing RAII locking for a ClientConnection.
   struct ClientConnectionReference {
-    ClientConnectionReference(ClientConnection<Proto>& connection,
-                              BackendClient<Proto>& backend)
-        : connection_(connection), backend_{backend} {}
-
-    ~ClientConnectionReference() {
-      SpinMutex::Lock lock(backend_.mutex_);
-      connection_.Release();
+    ClientConnectionReference(ClientConnection<Proto>& connection)
+        : connection_(connection) {
+      assert(connection_.GetReservedComputation() != nullptr);
     }
+
+    ~ClientConnectionReference() { connection_.Release(); }
 
     ClientConnection<Proto>* operator->() { return &connection_; }
 
+  private:
     ClientConnection<Proto>& connection_;
-    BackendClient<Proto>& backend_;
   };
 
   // Reserve a connection for a computation. If there is no free connections, it
@@ -353,12 +351,12 @@ class BackendClient final : public Backend {
     SpinMutex::Lock lock(mutex_);
     for (auto& conn : connections_) {
       if (conn.Reserve(computation)) {
-        return {conn, *this};
+        return {conn};
       }
     }
     connections_.emplace_back(connections_.front(), network_);
     connections_.back().Reserve(computation);
-    return {connections_.back(), *this};
+    return {connections_.back()};
   }
 
   size_t GetFixedPriority() const { return fixed_priority_; }
@@ -465,6 +463,10 @@ typename Archive::ResultType ClientConnection<Proto>::HandleMessage(
     return Unexpected(ArchiveError::RemoteError);
   }
   auto* computation = GetReservedComputation();
+  if (!computation) {
+    CERR << "Received ComputeBlockingReply but no computation is reserved";
+    return Unexpected(ArchiveError::RemoteError);
+  }
   if (message.computation_id_ != computation->GetId()) {
     CERR << "Received ComputeBlockingReply for unknown computation ID "
          << message.computation_id_ << ", expected " << computation_id_;
