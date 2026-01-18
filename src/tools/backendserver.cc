@@ -681,7 +681,7 @@ class SharedQueue {
   StdoutUciResponder* responder_ = nullptr;
 
   mutable SpinMutex mutex_;
-  std::condition_variable_any cv_;
+  // The highest number of batches currently being processed by any backend.
   unsigned highest_backend_computations_ = 0;
   // The maximum number of batches which a backend can process in parallel.
   unsigned max_batches_in_flight_ = 0;
