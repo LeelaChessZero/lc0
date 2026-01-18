@@ -204,7 +204,9 @@ class BackendHandler {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
     unsigned batches = computations_in_flight_ + queued_computations_;
-    if (PendingSize() > 0 && batches < backend_threads_.size()) {
+    assert(batches < backend_threads_.size());
+    assert(PendingSize() <= minibatch_size_);
+    if (PendingSize() > 0) {
       queued_computations_++;
       batches++;
       cv_.notify_one();
