@@ -221,7 +221,8 @@ struct BinaryOSizeArchive {
     return Serialize(const_cast<T&>(value), *this, kBackendApiVersion);
   }
 
-  size_t Size() const { return 0; }
+  // The simulated serialization sizes.
+  size_t Size() const { return total_size_; }
 
   // Calculate size for primitive types.
   template <typename T>
@@ -400,13 +401,13 @@ BinaryOArchive::ResultType BinaryOArchive::StartSerialize(T& message) {
   if (!(size_archive & message)) {
     return Unexpected{ArchiveError::SizeCalculationFailed};
   }
-  size_t size = size_archive.total_size_ - header_size.total_size_;
+  size_t size = size_archive.Size() - header_size.Size();
   message.header_.size_ = size;
   while (size >= 0x80) {
     size_archive.total_size_++;
     size >>= 7;
   }
-  buffer_.reserve(size_archive.total_size_);
+  buffer_.reserve(size_archive.Size());
   return Save(message);
 }
 
