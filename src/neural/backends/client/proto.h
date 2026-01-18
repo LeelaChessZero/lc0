@@ -217,8 +217,6 @@ static constexpr size_t kMaxMessageSize =
     kMaxBytesPerPosition * kMaxMinibatchSizes + sizeof(ComputeBlockingReply);
 static constexpr size_t kBufferSize = std::bit_ceil(kMaxMessageSize);
 
-using InputBufferType = std::array<char, kBufferSize>;
-
 // Serialize a message to an output archive. The function fills the size field
 // of header.
 template <typename Archive, typename T>
