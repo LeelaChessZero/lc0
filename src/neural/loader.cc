@@ -263,8 +263,7 @@ std::string DiscoverWeightsFile() {
     // Open all files in <dir> amd <dir>/networks,
     // ones which are >= kMinFileSize are candidates.
     std::vector<std::filesystem::directory_entry> time_and_filename;
-    if (!std::filesystem::exists(dir) ||
-	!std::filesystem::is_directory(dir)) {
+    if (!std::filesystem::exists(dir) || !std::filesystem::is_directory(dir)) {
       continue;
     }
     for (const auto& file : std::filesystem::directory_iterator(dir)) {
