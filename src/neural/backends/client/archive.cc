@@ -332,10 +332,10 @@ BinaryOArchive::ResultType BinaryOArchive::Save(const int16_t& value) {
   return SaveImpl(ResultType{*this}, buffer_, value);
 }
 BinaryOArchive::ResultType BinaryOArchive::Save(const uint8_t& value) {
-  return SaveImpl(ResultType{*this}, buffer_, value);
+  return SaveImpl(ResultType{*this}, buffer_, FixedInteger(value));
 }
 BinaryOArchive::ResultType BinaryOArchive::Save(const int8_t& value) {
-  return SaveImpl(ResultType{*this}, buffer_, value);
+  return SaveImpl(ResultType{*this}, buffer_, FixedInteger(value));
 }
 
 BinaryOArchive::ResultType BinaryOArchive::Save(
@@ -439,10 +439,10 @@ BinaryIArchive::ResultType BinaryIArchive::Load(int16_t& value) {
   return LoadImpl(ResultType{*this}, buffer_, value);
 }
 BinaryIArchive::ResultType BinaryIArchive::Load(uint8_t& value) {
-  return LoadImpl(ResultType{*this}, buffer_, value);
+  return LoadImpl(ResultType{*this}, buffer_, FixedInteger(value));
 }
 BinaryIArchive::ResultType BinaryIArchive::Load(int8_t& value) {
-  return LoadImpl(ResultType{*this}, buffer_, value);
+  return LoadImpl(ResultType{*this}, buffer_, FixedInteger(value));
 }
 BinaryIArchive::ResultType BinaryIArchive::Load(FixedInteger<uint64_t> value) {
   return LoadImpl(ResultType{*this}, buffer_, value);
