@@ -91,9 +91,9 @@ using TimePoint = Clock::time_point;
 
 // Computation request from a client. It can be split into multiple batches if
 // other requests left space in a batch.
-struct QueueItem {
-  QueueItem(BackendHandler* backend, ClientComputation* computation,
-            size_t first, size_t last)
+struct ComputationRequest {
+  ComputationRequest(BackendHandler* backend, ClientComputation* computation,
+                     size_t first, size_t last)
       : backend_(backend),
         computation_(computation),
         first_(first),
@@ -151,7 +151,7 @@ class BackendHandler {
   // isready checks that backends aren't deadlocked.
   void EnsureReady() const { SpinMutex::Lock lock(mutex_); }
 
-  size_t Threads() const {
+  size_t GetNumThreads() const {
     SpinMutex::Lock lock(mutex_);
     return backend_threads_.size();
   }
@@ -169,7 +169,8 @@ class BackendHandler {
   }
 
   // Adds a computation request to the next batch.
-  std::tuple<bool, unsigned> AddBatchToQueue(QueueItem& item, size_t& count) {
+  std::tuple<bool, unsigned> AddComputationToQueue(ComputationRequest& item,
+                                                   size_t& count) {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
     unsigned batches = computations_in_flight_ + queued_computations_;
@@ -268,9 +269,10 @@ class BackendHandler {
     return PendingSize();
   }
 
-  unsigned GetComputationsInFlight() const {
+  // Get number of batches either queued or in flight.
+  unsigned GetNumberOfBatches() const {
     SpinMutex::Lock lock(mutex_);
-    return computations_in_flight_;
+    return computations_in_flight_ + queued_computations_;
   }
 
   // Get and reset statistics.
@@ -309,7 +311,8 @@ class BackendHandler {
   std::vector<
       std::function<void(const std::error_code&, const BackendAttributes&)>>
       pending_callbacks_;
-  std::queue<QueueItem> queue_;
+  // FIFO queue of computation requests.
+  std::queue<ComputationRequest> queue_;
 
   // The time when the last batch completed.
   TimePoint last_complete_time_;
@@ -401,8 +404,7 @@ class SharedQueue {
     }
     if (highest_backend_computations_ == max_batches_in_flight_) {
       for ([[maybe_unused]] const auto& backend : backend_map_) {
-        assert(backend.second.GetComputationsInFlight() !=
-               max_batches_in_flight_);
+        assert(backend.second.GetNumberOfBatches() != max_batches_in_flight_);
       }
       // There must be only one backend with maximum number of batches active at
       // any given time.
@@ -423,7 +425,7 @@ class SharedQueue {
       // active batches.
       for (const auto& backend : backend_map_) {
         computations =
-            std::max(computations, backend.second.GetComputationsInFlight());
+            std::max(computations, backend.second.GetNumberOfBatches());
       }
       highest_backend_computations_ = computations;
       if (!queue_has_pending_flush_) {
@@ -515,7 +517,8 @@ class SharedQueue {
     return true;
   }
 
-  std::tuple<unsigned, QueueItem&> Front(TimePoint evaluation_time)
+  // Get the most urgent computation based on priority and waiting time.
+  std::tuple<unsigned, ComputationRequest&> Front(TimePoint evaluation_time)
       REQUIRES(mutex_) {
     size_t selected_priority;
     TimePoint::duration preferred_delay;
@@ -553,7 +556,7 @@ class SharedQueue {
       auto& item = std::get<1>(queue_front);
       size_t batch_size = item.last_ - item.first_;
       auto [flushed, batches] =
-          item.backend_->AddBatchToQueue(item, batch_size);
+          item.backend_->AddComputationToQueue(item, batch_size);
       if (item.first_ == item.last_) {
         priority_queue_[priority].pop_front();
       }
@@ -668,7 +671,7 @@ class SharedQueue {
       for (auto& q : priority_queue_) {
         oss << " p" << (p++) << " nodes "
             << std::accumulate(std::begin(q), std::end(q), 0UL,
-                               [](size_t sum, const QueueItem& item) {
+                               [](size_t sum, const ComputationRequest& item) {
                                  return sum + (item.last_ - item.first_);
                                })
             << "/" << q.size();
@@ -698,7 +701,7 @@ class SharedQueue {
   bool queue_has_pending_flush_ = false;
   // Target time point for the flush timer.
   TimePoint idle_timer_target_{};
-  std::array<std::deque<QueueItem>, client::kMaxComputationPriority>
+  std::array<std::deque<ComputationRequest>, client::kMaxComputationPriority>
       priority_queue_;
 
   // Number of active client connections.
@@ -769,7 +772,7 @@ class ClientComputation {
             {policy_.data() + policy_offset, legal_moves}};
   }
 
-  void NotifyResultsReady(const QueueItem& item) {
+  void NotifyResultsReady(const ComputationRequest& item) {
     size_t count = item.last_ - item.first_;
     size_t done = results_ready_.fetch_add(count, std::memory_order_relaxed);
     if (done + count == inputs_.size()) {
@@ -1079,7 +1082,7 @@ void BackendHandler::Worker() {
       size_t size = 0;
       Clock::duration increment_flush_timer;
       bool update_flush_timer = false;
-      std::vector<QueueItem> batch;
+      std::vector<ComputationRequest> batch;
       {
         SpinMutex::Lock lock(mutex_);
         cv_.wait(lock, [this] { return queued_computations_ || exit_; });
