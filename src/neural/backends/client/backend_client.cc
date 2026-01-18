@@ -322,6 +322,7 @@ class BackendClient final : public Backend {
     }
     fixed_priority_ = fixed_priority;
   }
+  ~BackendClient() override {}
 
   BackendAttributes GetAttributes() const override {
     return connections_.front().GetAttributes();
@@ -380,7 +381,7 @@ class BackendClientComputation final : public BackendComputation {
         priority_(TimeToPriority(time_remaining)),
         entries_(backend_.GetAttributes().maximum_batch_size) {}
 
-  ~BackendClientComputation() {}
+  ~BackendClientComputation() override {}
 
   size_t UsedBatchSize() const override { return entries_.size(); }
 
