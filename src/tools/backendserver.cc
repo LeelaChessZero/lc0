@@ -760,9 +760,14 @@ class ClientComputation {
             {policy_.data() + policy_offset, legal_moves}};
   }
 
+  // Backend notifies that results are read for a computation request.
   void NotifyResultsReady(const ComputationRequest& item) {
     size_t count = item.last_ - item.first_;
-    size_t done = results_ready_.fetch_add(count, std::memory_order_relaxed);
+    // Update number of ready results. When all results are ready, client
+    // connections is nofified using the completion handler.
+    // memory_order_acq_rel is required to make sure that results from all
+    // worker threads are visible to the completion handler.
+    size_t done = results_ready_.fetch_add(count, std::memory_order_acq_rel);
     if (done + count == inputs_.size()) {
       LCTRACE_FUNCTION_SCOPE;
       results_.resize(inputs_.size());
