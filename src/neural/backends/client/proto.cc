@@ -34,7 +34,6 @@ namespace lczero::client {
 template <typename Archive>
 typename Archive::ResultType ParseMessageHeader(Archive& ia,
                                                 MessageHeader& header) {
-  TRACE << "Parsing MessageHeader";
 
   auto r = ia & header;
   if (!r) return r;
@@ -47,8 +46,6 @@ typename Archive::ResultType ParseMessageHeader(Archive& ia,
     CERR << "Message size too large: " << header.size_;
     return Unexpected{ArchiveError::InvalidData};
   }
-  TRACE << "Parsed MessageHeader: size=" << header.size_
-        << " type=" << static_cast<uint32_t>(header.type_);
   return r;
 }
 

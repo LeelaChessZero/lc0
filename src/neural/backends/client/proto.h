@@ -54,20 +54,6 @@ const std::string kDefaultPipeName = "lczero_backend_pipe";
 const std::string kDefaultPipeName = "/tmp/lczero_backend_pipe";
 #endif
 
-struct null_stream {
-  template <typename T>
-  null_stream& operator<<(const T&) {
-    return *this;
-  }
-};
-
-#if 1
-#define TRACE \
-  lczero::client::null_stream {}
-#else
-#define TRACE CERR
-#endif
-
 enum MessageType : uint8_t {
   HANDSHAKE = 0,
   HANDSHAKE_REPLY = 1,
@@ -93,8 +79,6 @@ struct MessageHeader {
     auto r = ar & FixedInteger(magic_);
     r = r.and_then([this](Archive& ar) { return ar & size_; });
     r = r.and_then([this](Archive& ar) { return ar & type_; });
-    TRACE << "MessageHeader::Serialize(" << ar.Size() << "): size=" << size_
-          << " type=" << static_cast<uint32_t>(type_);
     return r;
   }
 
@@ -117,9 +101,6 @@ struct Handshake {
     r = Archive::is_saving ? ar & header_ : r;
     r = r.and_then([this](Archive& ar) { return ar & backend_api_version_; });
     r = r.and_then([this](Archive& ar) { return ar & network_name_; });
-    TRACE << "Handshake::Serialize(" << ar.Size()
-          << "): backend_api_version=" << backend_api_version_
-          << " network_name=" << network_name_ << " size=" << ar.Size();
     return r;
   }
 };
@@ -132,8 +113,6 @@ struct HandshakeReply {
   template <typename Archive>
   typename Archive::ResultType Serialize(
       Archive& ar, [[maybe_unused]] const unsigned version) {
-    TRACE << "HandshakeReply::Serialize(" << ar.Size()
-          << "): error_message=" << error_message_;
     typename Archive::ResultType r{ar};
     r = Archive::is_saving ? ar & header_ : r;
     r = r.and_then([this](Archive& ar) { return ar & attributes_; });
@@ -250,7 +229,6 @@ template <typename Archive, typename Callback>
 typename Archive::ResultType ParseMessage(Archive& ia,
                                           const MessageHeader& header,
                                           Callback&& callback) {
-  TRACE << "Parsing message " << ia.Size() << " bytes available";
   assert(ia.Size() >= header.size_);
   switch (header.type_) {
     case MessageType::HANDSHAKE: {
@@ -378,14 +356,9 @@ class Connection {
       Close();
       return;
     }
-    TRACE << "Serialized message<" << typeid(MessageType).name() << "> of size "
-          << output.Size() << " for sending.";
     if (async) {
       Dispatch([this, self = std::move(self), output = std::move(output)] {
         bool empty = queue_.empty();
-        TRACE << "Queueing message<" << typeid(MessageType).name()
-              << "> of size " << output.Size()
-              << " for sending. Queue size was " << queue_.size();
         queue_.push(std::move(output));
         if (!empty) {
           // A write is already in progress.
@@ -502,7 +475,6 @@ class Connection {
 
   template <bool async, typename MessageCallback>
   ArchiveError ParseHeader(MessageCallback&& callback) {
-    TRACE << "Parsing header data " << ReadyBytes() << " bytes available. ";
     if (ReadyBytes() == 0) return ArchiveError::BufferOverflow;
 
     auto first = InputBegin();
@@ -520,9 +492,6 @@ class Connection {
 
   template <typename MessageCallback>
   void ParseInput(MessageCallback&& callback) {
-    TRACE << "Parsing client data " << ReadyBytes() << " bytes available. "
-          << "Expected " << pending_header_.size_ << " bytes. ";
-
     assert(ReadyBytes() >= pending_header_.size_);
     auto first = InputBegin();
     BinaryIArchive ia(std::span<const char>(first, InputEnd()), input_.data(),

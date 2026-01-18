@@ -175,34 +175,17 @@ class BackendHandler {
       flushed = true;
     }
     item.first_ += count;
-    size_t pending_size = queue_size_;
     queue_size_ += count;
-    TRACE << this << " Backend queue size: " << queue_size_
-          << " pending size: " << pending_size
-          << " computations in flight: " << computations_in_flight_
-          << " queued computations: " << queued_computations_
-          << " flushed: " << flushed << " batches: " << batches;
     return {flushed, batches};
   }
 
   unsigned Flush() {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
-    TRACE << this << " Flush called. Pending size: " << PendingSize()
-          << " computations in flight: " << computations_in_flight_
-          << " queued computations: " << queued_computations_;
     unsigned batches = computations_in_flight_ + queued_computations_;
     if (PendingSize() > 0 && batches < backend_threads_.size()) {
-      auto pending = PendingSize();
-      auto cif = computations_in_flight_;
-      auto qc = queued_computations_;
-      auto qs = queue_size_;
       queued_computations_++;
       batches++;
-      TRACE << this << " Forcing backend flush, new queue size: " << qs
-            << " pending size: " << pending
-            << " computations in flight: " << cif
-            << " queued computations: " << qc;
       cv_.notify_one();
     }
     return batches;
@@ -215,23 +198,14 @@ class BackendHandler {
         computations_in_flight_ + queued_computations_ > 0) {
       return;
     }
-    auto pending = PendingSize();
-    auto cif = computations_in_flight_;
-    auto qc = queued_computations_;
     queued_computations_++;
     cv_.notify_one();
     lock.unlock();
-    TRACE << this << " Idling flush called. Pending size: " << pending
-          << " computations in flight: " << cif
-          << " queued computations: " << qc;
   }
 
   unsigned StartBatch(size_t size) REQUIRES(mutex_) {
     queued_computations_--;
     computations_in_flight_++;
-    TRACE << this << " Starting batch of size: " << size
-          << " computations in flight " << computations_in_flight_
-          << " queued computations " << queued_computations_;
     queue_size_ -= size;
     gpu_work_size_ += size;
     return computations_in_flight_ + queued_computations_;
@@ -244,9 +218,6 @@ class BackendHandler {
     TimePoint old = last_complete_time_;
     last_complete_time_ = now;
     gpu_work_size_ -= size;
-    TRACE << this << " End of  batch " << size << " computations in flight "
-          << computations_in_flight_ << " queued computations "
-          << queued_computations_;
     unsigned queued_batches = computations_in_flight_--;
     queued_batches += queued_computations_;
     if (size == 0) return {queued_batches, now};
@@ -256,17 +227,12 @@ class BackendHandler {
     auto seconds = std::chrono::duration<double>(now - old).count();
     auto nps = size / seconds;
     if (nps > max_nps_) {
-      TRACE << "New max NPS for backend " << this << ": " << nps
-            << " previous: " << max_nps_;
       max_nps_ = nps;
     }
     TimePoint timer =
         now + std::chrono::duration_cast<Clock::duration>(
                   std::chrono::duration<double>{kGpuIdleBufferMultiplier *
                                                 gpu_work_size_ / max_nps_});
-    TRACE << this << " idle: " << (timer - now).count()
-          << " max_nps: " << max_nps_ << " gpu_work_size: " << gpu_work_size_
-          << " == " << kGpuIdleBufferMultiplier * gpu_work_size_ / max_nps_;
     return {queued_batches, timer};
   }
 
@@ -342,10 +308,6 @@ class SharedQueue {
     assert(priority < client::kMaxComputationPriority);
     SpinMutex::Lock lock(mutex_);
     priority_queue_[priority].emplace_back(backend, computation, first, last);
-    TRACE << "Enqueued work. Priority: " << priority
-          << " Queue size: " << priority_queue_[priority].size()
-          << " computations: " << highest_backend_computations_
-          << " pending flush: " << queue_has_pending_flush_;
     if (highest_backend_computations_ == 0 ||
         (highest_backend_computations_ < max_batches_in_flight_ &&
          !queue_has_pending_flush_)) {
@@ -377,10 +339,6 @@ class SharedQueue {
     if (highest_backend_computations_ != computations_in_flight) {
       return;
     }
-    TRACE << "Computation done. Adjusting highest_backend_computations_ from "
-          << highest_backend_computations_ << " based on "
-          << computations_in_flight
-          << " idle_time: " << idle_time.time_since_epoch();
     if (highest_backend_computations_ == max_batches_in_flight_) {
       for ([[maybe_unused]] const auto& backend : backend_map_) {
         assert(backend.second.GetComputationsInFlight() !=
@@ -411,8 +369,6 @@ class SharedQueue {
       return;
     }
     idle_timer_target_ += increment;
-    TRACE << "Adjusting flush timer for backend to "
-          << idle_timer_target_.time_since_epoch();
     flush_timer_.expires_at(idle_timer_target_);
     WaitOnFlushTimer();
   }
@@ -501,8 +457,6 @@ class SharedQueue {
 
   void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
-    TRACE << "Pushing work to backend: " << highest_backend_computations_ << "/"
-          << max_batches_in_flight_;
     bool needs_flush = true;
     auto evaluation_time = Clock::now();
     evaluation_time += kEstimatedNetworkEvaluationTime;
@@ -521,11 +475,9 @@ class SharedQueue {
         needs_flush = false;
         highest_backend_computations_ =
             std::max(highest_backend_computations_, batches);
-        TRACE << "Flushed " << batches;
       }
     }
     if (highest_backend_computations_ == max_batches_in_flight_) {
-      TRACE << "Backend queue full. Cancel flush timer.";
       flush_timer_.cancel();
     } else if (needs_flush) {
       ScheduleFlush();
@@ -534,7 +486,6 @@ class SharedQueue {
 
   void FlushIdlingBackends() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
-    TRACE << "Flushing idling backends.";
     for (auto& backend : backend_map_) {
       backend.second.FlushIfIdling();
     }
@@ -542,7 +493,6 @@ class SharedQueue {
 
   void ScheduleFlush() REQUIRES(mutex_) {
     if (!highest_backend_computations_) {
-      TRACE << "Scheduling flush with no backends in flight!";
       DoFlush();
       return;
     }
@@ -551,8 +501,6 @@ class SharedQueue {
       DoFlush();
     } else {
       queue_has_pending_flush_ = true;
-      TRACE << "Scheduling flush timer for backend at "
-            << idle_timer_target_.time_since_epoch();
       flush_timer_.expires_at(idle_timer_target_);
       WaitOnFlushTimer();
     }
@@ -573,9 +521,6 @@ class SharedQueue {
     }
     highest_backend_computations_ =
         std::max(highest_backend_computations_, iter->second.Flush());
-    TRACE << "Flushed backend with highest pending size: " << &iter->second
-          << " highest_backend_computations_: "
-          << highest_backend_computations_;
   }
 
   void WaitOnFlushTimer() REQUIRES(mutex_) {
@@ -586,7 +531,6 @@ class SharedQueue {
         }
         return;
       }
-      TRACE << "Flush timer triggered " << Clock::now().time_since_epoch();
       SpinMutex::Lock lock(mutex_);
       PushWorkToBackend();
       DoFlush();
@@ -751,12 +695,10 @@ class ServerConnection
   ServerConnection(SocketType&& socket)
       : Base(std::forward<SocketType>(socket)) {
     // Initialize connection.
-    TRACE << "New client connection.";
     SharedQueue::Get().NewConnection();
   }
 
   ~ServerConnection() {
-    TRACE << "Client connection closed.";
     SharedQueue::Get().ConnectionClosed();
   }
 
@@ -803,9 +745,6 @@ class ServerConnection
       return Unexpected(client::ArchiveError::InvalidData);
     }
     auto self = this->shared_from_this();
-
-    TRACE << "Received handshake for network: " << iter->first
-          << " backend: " << &iter->second;
 
     iter->second.EnsureLoaded(
         iter->first, [this, self, iter](const std::error_code& ec,
@@ -882,7 +821,6 @@ class ServerConnection
         computations_.begin(), computations_.end(),
         [&](const auto& pair) { return &pair.second == &computation; });
     assert(iter != computations_.end());
-    TRACE << "Computation completed, sending results. " << iter->first;
     client::ComputeBlockingReply message;
     message.computation_id_ = iter->first;
     message.results_ = std::move(computation.GetResults());
@@ -1028,7 +966,6 @@ void BackendHandler::Worker() {
         SpinMutex::Lock lock(mutex_);
         cv_.wait(lock, [this] { return queued_computations_ || exit_; });
         if (exit_) {
-          TRACE << this << " Backend worker exiting.";
           return;
         }
         while (size < minibatch_size_ && !queue_.empty()) {
@@ -1048,13 +985,10 @@ void BackendHandler::Worker() {
       if (update_flush_timer) {
         SharedQueue::Get().AddToFlushTimer(increment_flush_timer);
       }
-      TRACE << this << " Backend worker picked batch of size: " << size;
       auto computation = backend_->CreateComputation(0);
       PositionHistory history;
       history.Reserve(kMoveHistory);
       for (const auto& item : batch) {
-        TRACE << this << " Backend adding inputs from " << item.first_ << " to "
-              << item.last_;
         for (size_t i = item.first_; i < item.last_; ++i) {
           auto position = item.computation_->GetInput(i);
           history.Reset(position.base_);
@@ -1065,14 +999,10 @@ void BackendHandler::Worker() {
           auto legal_moves = pos.back().GetBoard().GenerateLegalMoves();
           auto results =
               item.computation_->GetEvalResult(i, legal_moves.size());
-          TRACE << this << " Adding input " << item.computation_->GetId() << "["
-                << i << "] legal moves: " << legal_moves.size() << " fen "
-                << pos.back().DebugString();
           computation->AddInput({pos, legal_moves}, results);
         }
       }
       if (size != 0) computation->ComputeBlocking();
-      TRACE << this << " Backend worker completed batch of size: " << size;
       TimePoint now = Clock::now();
       auto [queued_batches, idle] = CompleteBatch(size, now);
       SharedQueue::Get().ComputationDone(queued_batches, idle);

@@ -257,8 +257,6 @@ class ClientConnection final : public Context,
       return Unexpected(ArchiveError::InvalidData);
     }
     attrs_ = message.attributes_;
-    TRACE << "Received handshake response. Batch size: "
-          << attrs_.recommended_batch_size << "/" << attrs_.maximum_batch_size;
     // Handshake complete, ready to proceed.
     return {ar};
   }
@@ -364,9 +362,7 @@ class BackendClientComputation final : public BackendComputation {
           pos.pos[pos.pos.size() - len + i]);
       input_pos.history_[i - 1] = move;
     }
-    auto idx = entries_.emplace_back(input_pos, result);
-    TRACE << "Adding input " << id_ << "[" << idx << "] legal moves "
-          << pos.legal_moves.size() << " fen " << pos.pos.back().DebugString();
+    entries_.emplace_back(input_pos, result);
     return ENQUEUED_FOR_EVAL;
   }
 
@@ -380,11 +376,9 @@ class BackendClientComputation final : public BackendComputation {
     auto connection = backend_.GetConnection(this);
     connection->ComputeBlocking(GetId(), priority_, inputs);
     assert(!connection->IsOpen() || entries_.size() == 0);
-    TRACE << "Computation ID " << id_ << " completed. ";
   }
 
   void NotifyComputationCompleted() {
-    TRACE << "Notifying computation ID " << id_ << " completed.";
     entries_.clear();
   }
 
@@ -397,8 +391,6 @@ class BackendClientComputation final : public BackendComputation {
  private:
   size_t TimeToPriority(size_t time_remaining) {
     auto fixed = backend_.GetFixedPriority();
-    TRACE << "Computation ID " << id_ << " time remaining " << time_remaining
-          << " fixed priority " << fixed;
     if (fixed < kMaxComputationPriority) {
       return fixed;
     }

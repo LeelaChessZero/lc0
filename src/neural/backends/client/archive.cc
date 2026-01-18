@@ -47,8 +47,6 @@ auto SaveImpl(R&& successed, std::vector<char>& buffer, const T& value)
     // For signed types, use zigzag encoding.
     uvalue = (uvalue << 1) ^ static_cast<UnsignedT>(value < 0 ? -1 : 0);
   }
-  TRACE << "Saving(" << buffer.size() << ") integer<" << typeid(T).name()
-        << "> value " << std::hex << static_cast<uint64_t>(uvalue);
   do {
     char byte = static_cast<char>(uvalue & 0x7f);
     uvalue >>= 7;
@@ -68,7 +66,6 @@ auto LoadImpl(R&& successed, std::span<const char>& buffer, T& value)
   unsigned shift = 0;
   while (true) {
     if (buffer.size() == 0) {
-      TRACE << "Buffer overflow in LoadImpl<" << typeid(T).name() << ">";
       return Unexpected{ArchiveError::BufferOverflow};
     }
     char byte = buffer[0];
@@ -77,12 +74,9 @@ auto LoadImpl(R&& successed, std::span<const char>& buffer, T& value)
     if (!(byte & 0x80)) break;
     shift += 7;
     if (shift >= sizeof(UnsignedT) * 8) {
-      TRACE << "Value overflow in LoadImpl<" << typeid(T).name() << ">";
       return Unexpected{ArchiveError::ValueOverflow};
     }
   }
-  TRACE << "Loaded(" << buffer.size() << ") integer<" << typeid(T).name()
-        << "> value " << std::hex << static_cast<uint64_t>(uvalue);
   if (!std::is_same_v<T, UnsignedT>) {
     // Decode zigzag encoding for signed types.
     value =
@@ -105,8 +99,6 @@ auto SizeImpl(R&& successed, size_t& size_archive, const T& value)
     ++size;
     uvalue >>= 7;
   } while (uvalue);
-  TRACE << "Calculated size for integer<" << typeid(T).name() << "> value "
-        << std::hex << static_cast<UnsignedT>(value) << ": " << size;
   size_archive += size;
   return std::forward<R>(successed);
 }
@@ -117,13 +109,8 @@ auto SaveImpl(R&& successed, std::vector<char>& buffer,
     -> std::enable_if_t<std::is_integral_v<T>, R> {
   T v = static_cast<T>(value.value);
   if (buffer.size() + sizeof(T) > buffer.capacity()) {
-    TRACE << "Buffer overflow in FixedInteger SaveImpl<" << typeid(T).name()
-          << ">: required " << sizeof(T) << ", available "
-          << (buffer.capacity() - buffer.size());
     return Unexpected{ArchiveError::BufferOverflow};
   }
-  TRACE << "Saving(" << buffer.size() << ") FixedInteger<" << typeid(T).name()
-        << "> value " << std::hex << v;
   for (size_t i = 0; i < sizeof(T); ++i) {
     buffer.push_back(static_cast<char>(v & 0xff));
     if constexpr (sizeof(T) > 1) v >>= 8;
@@ -136,24 +123,18 @@ auto LoadImpl(R&& successed, std::span<const char>& buffer,
     -> std::enable_if_t<std::is_integral_v<T>, R> {
   T v = 0;
   if (buffer.size() < sizeof(T)) {
-    TRACE << "Buffer overflow in FixedInteger LoadImpl<" << typeid(T).name()
-          << ">: required " << sizeof(T) << ", available " << buffer.size();
     return Unexpected{ArchiveError::BufferOverflow};
   }
   for (size_t i = 0; i < sizeof(T); ++i) {
     v |= static_cast<T>(static_cast<unsigned char>(buffer[0])) << (i * 8);
     buffer = buffer.subspan(1);
   }
-  TRACE << "Loaded(" << buffer.size() << ") FixedInteger<" << typeid(T).name()
-        << "> value " << std::hex << v;
   value.value = v;
   return std::forward<R>(successed);
 }
 template <typename R, typename T>
 auto SizeImpl(R&& successed, size_t& size_archive, const FixedInteger<T>&)
     -> std::enable_if_t<std::is_integral_v<T>, R> {
-  TRACE << "Calculated size for FixedInteger<" << typeid(T).name()
-        << ">: " << sizeof(T);
   size_archive += sizeof(T);
   return std::forward<R>(successed);
 }
@@ -267,8 +248,6 @@ struct BinaryOSizeArchive {
     auto r = SizeImpl(ResultType{*this}, total_size_,
                       static_cast<uint64_t>(value.size()));
     if (!r) return r;
-    TRACE << "Calculated size for string value of size " << value.size() << ": "
-          << value.size();
     total_size_ += value.size();
     return r;
   }
@@ -377,19 +356,14 @@ BinaryOArchive::ResultType BinaryOArchive::Save(const std::string_view& value) {
   ResultType r = Save(static_cast<uint64_t>(value.size()));
   if (!r) return r;
   if (buffer_.size() + value.size() > buffer_.capacity()) {
-    TRACE << "Buffer overflow in string Save: required " << value.size()
-          << ", available " << (buffer_.capacity() - buffer_.size());
     return Unexpected{ArchiveError::BufferOverflow};
   }
-  TRACE << "Saving(" << buffer_.size() << ") string value of size "
-        << value.size();
   buffer_.insert(buffer_.end(), value.begin(), value.end());
   return r;
 }
 
 template <typename T>
 BinaryOArchive::ResultType BinaryOArchive::StartSerialize(T& message) {
-  TRACE << "StartSerialize for " << typeid(T).name();
   BinaryOSizeArchive header_size;
   BinaryOSizeArchive size_archive;
   if (!(header_size & message.header_)) {
@@ -405,8 +379,6 @@ BinaryOArchive::ResultType BinaryOArchive::StartSerialize(T& message) {
     size >>= 7;
   }
   buffer_.reserve(size_archive.total_size_);
-  TRACE << "Calculated size for " << typeid(T).name() << ": "
-        << size_archive.total_size_;
   return Save(message);
 }
 
@@ -483,7 +455,6 @@ BinaryIArchive::ResultType BinaryIArchive::Load(std::string_view& value) {
   if (buffer_.size() < size) {
     return Unexpected{ArchiveError::BufferOverflow};
   }
-  TRACE << "Loaded(" << Size() << ") string value of size " << size;
   value = std::string_view(buffer_.data(), size);
   buffer_ = buffer_.subspan(size);
   return res;
