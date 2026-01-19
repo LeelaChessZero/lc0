@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "chess/types.h"
+#include "neural/backends/client/archive.h"
 #include "utils/bititer.h"
 
 namespace lczero {
@@ -155,6 +156,13 @@ class BitBoard {
   // Returns difference (bitwise AND-NOT) of two boards.
   friend BitBoard operator-(const BitBoard& a, const BitBoard& b) {
     return {a.board_ & ~b.board_};
+  }
+
+  // Serialization support for out of process backends.
+  template <typename Archive>
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
+    return ar & client::FixedInteger{board_};
   }
 
  private:

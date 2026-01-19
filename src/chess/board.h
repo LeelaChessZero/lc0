@@ -32,6 +32,7 @@
 
 #include "chess/bitboard.h"
 #include "chess/types.h"
+#include "neural/backends/client/archive.h"
 #include "utils/hashcat.h"
 
 namespace lczero {
@@ -198,6 +199,29 @@ class ChessBoard {
     File our_kingside_rook;
     File their_kingside_rook;
 
+    // Serialization support for out of process backends.
+    template <typename Archive>
+    typename Archive::ResultType Serialize(
+        Archive& ar, [[maybe_unused]] const unsigned version) {
+      uint16_t value = data_;
+      if (Archive::is_saving) {
+        value |= (our_queenside_rook.idx << 4);
+        value |= (their_queenside_rook.idx << 7);
+        value |= (our_kingside_rook.idx << 10);
+        value |= (their_kingside_rook.idx << 13);
+      }
+      auto r = ar & client::FixedInteger(value);
+      if (Archive::is_loading && r) {
+        our_queenside_rook = File::FromIdx((value >> 4) & 0x7);
+        their_queenside_rook = File::FromIdx((value >> 7) & 0x7);
+        our_kingside_rook = File::FromIdx((value >> 10) & 0x7);
+        their_kingside_rook = File::FromIdx((value >> 13) & 0x7);
+        data_ = value & 0xf;
+      }
+
+      return r;
+    }
+
    private:
     // - Bit 0 -- "our" side's kingside castle.
     // - Bit 1 -- "our" side's queenside castle.
@@ -227,6 +251,27 @@ class ChessBoard {
 
   bool operator==(const ChessBoard& other) const = default;
   bool operator!=(const ChessBoard& other) const = default;
+
+  // Serialization support for out of process backends.
+  // The data could be compressed efficiently using pdep/pext instructions,
+  // but many CPUs don't have required hardware support. Software fallback could
+  // be used. The size of uncompressed data is small enough for the first
+  // version.
+  // https://github.com/zwegner/zp7
+  template <typename Archive>
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
+    auto r = ar & our_pieces_;
+    r = r.and_then([this](Archive& ar) { return ar & their_pieces_; });
+    r = r.and_then([this](Archive& ar) { return ar & rooks_; });
+    r = r.and_then([this](Archive& ar) { return ar & bishops_; });
+    r = r.and_then([this](Archive& ar) { return ar & pawns_; });
+    r = r.and_then([this](Archive& ar) { return ar & our_king_; });
+    r = r.and_then([this](Archive& ar) { return ar & their_king_; });
+    r = r.and_then([this](Archive& ar) { return ar & castlings_; });
+    r = r.and_then([this](Archive& ar) { return ar & flipped_; });
+    return r;
+  }
 
  private:
   // Sets the piece on the square.

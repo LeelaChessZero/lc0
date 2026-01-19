@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2024 The LCZero Authors
+  Copyright (C) 2026 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,31 +26,11 @@
 */
 
 #pragma once
+// clang-format off
+#ifdef _WIN32
+#include <winsock2.h>
+#include <windows.h>
+#endif
+// clang-format on
 
-#include <functional>
-#include <string>
-
-#include "neural/network.h"
-#include "neural/register.h"
-
-namespace lczero {
-
-class NetworkAsBackendFactory : public BackendFactory {
- public:
-  using FactoryFunc = std::function<std::unique_ptr<Network>(
-      const std::optional<WeightsFile>&, const OptionsDict&)>;
-
-  NetworkAsBackendFactory(const std::string& name, FactoryFunc factory,
-                          int priority = 0);
-
-  int GetPriority() const override { return priority_; }
-  std::string_view GetName() const override { return name_; }
-  std::unique_ptr<Backend> Create(const OptionsDict&, const std::string&) override;
-
- private:
-  std::string name_;
-  FactoryFunc factory_;
-  int priority_;
-};
-
-}  // namespace lczero
+#include <asio.hpp>
