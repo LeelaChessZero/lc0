@@ -203,6 +203,7 @@ files += [
 
 files += [
   'src/search/instamove/instamove.cc',
+  'src/search/codex/codex.cc',
 ]
 
 includes += include_directories('src')
