@@ -215,16 +215,17 @@ class BackendHandler {
   }
 
   // Flush backend if it has partial batch queued but GPU is idle.
-  void FlushIfIdling() {
+  unsigned FlushIfIdling() {
     LCTRACE_FUNCTION_SCOPE;
     SpinMutex::Lock lock(mutex_);
     if (PendingSize() == 0 ||
         computations_in_flight_ + queued_computations_ > 0) {
-      return;
+      return computations_in_flight_ + queued_computations_;
     }
     queued_computations_++;
     cv_.notify_one();
     lock.unlock();
+    return 1;
   }
 
   // Worker thread is about to compute a batch.
@@ -274,6 +275,13 @@ class BackendHandler {
   size_t GetPendingSize() const {
     SpinMutex::Lock lock(mutex_);
     return PendingSize();
+  }
+
+  // Get number of pending positions and number of batches active.
+  auto GetPendingSizeAndBatches() const {
+    SpinMutex::Lock lock(mutex_);
+    return std::make_tuple(PendingSize(),
+                           computations_in_flight_ + queued_computations_);
   }
 
   // Get number of batches either queued or in flight.
@@ -436,10 +444,7 @@ class SharedQueue {
       }
       highest_backend_computations_ = computations;
       if (!queue_has_pending_flush_) {
-        if (!Empty()) {
-          PushWorkToBackend();
-        }
-        FlushIdlingBackends();
+        PushWorkToBackend();
       }
     }
   }
@@ -554,7 +559,9 @@ class SharedQueue {
   // Push work from the priority queues to backends.
   void PushWorkToBackend() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
-    bool needs_flush = max_batches_in_flight_ == 0 || !queue_has_pending_flush_;
+    bool needs_flush =
+        highest_backend_computations_ == 0 || !queue_has_pending_flush_;
+    bool flush_all = highest_backend_computations_ == 0;
     auto evaluation_time = Clock::now();
     evaluation_time += kEstimatedNetworkEvaluationTime;
     while (!Empty() &&
@@ -577,8 +584,14 @@ class SharedQueue {
     if (highest_backend_computations_ == max_batches_in_flight_) {
       flush_timer_.cancel();
       queue_has_pending_flush_ = false;
-    } else if (needs_flush) {
+    } else if (flush_all) {
+      // We started with all backends idling. We flush all backend queues to
+      // allow GPU share compute between partial batches.
       FlushIdlingBackends();
+    } else if (needs_flush) {
+      // Flush the most filled backend. Idling backends will be flushed when
+      // the most filled backend completes a batch.
+      FlushMostFilledBackend();
     }
   }
 
@@ -586,15 +599,40 @@ class SharedQueue {
   void FlushIdlingBackends() REQUIRES(mutex_) {
     LCTRACE_FUNCTION_SCOPE;
     for (auto& backend : backend_map_) {
-      backend.second.FlushIfIdling();
+      highest_backend_computations_ = std::max(backend.second.FlushIfIdling(),
+                                               highest_backend_computations_);
     }
+  }
+
+  // Flush the most filled backend.
+  void FlushMostFilledBackend() REQUIRES(mutex_) {
+    LCTRACE_FUNCTION_SCOPE;
+    if (highest_backend_computations_ == max_batches_in_flight_) {
+      return;
+    }
+    using ComparisonType = std::tuple<unsigned, unsigned>;
+    ComparisonType maximum{0, 0};
+    BackendMap::iterator selected_backend = backend_map_.end();
+    for (auto iter = backend_map_.begin(); iter != backend_map_.end(); ++iter) {
+      auto [pending, batches] = iter->second.GetPendingSizeAndBatches();
+      ComparisonType current{batches, pending};
+      if (current <= maximum) continue;
+      maximum = current;
+      selected_backend = iter;
+    }
+    if (maximum == ComparisonType{0, 0}) {
+      // No backend has pending work.
+      return;
+    }
+    highest_backend_computations_ = std::max(highest_backend_computations_,
+                                             selected_backend->second.Flush());
   }
 
   // Schedule a flush of queued work to backends.
   void ScheduleFlush() REQUIRES(mutex_) {
     // If all backends are idle or queue target time is in the past, flush now.
     if (!highest_backend_computations_ || idle_timer_target_ <= Clock::now()) {
-      FlushIdlingBackends();
+      FlushMostFilledBackend();
       return;
     }
 
@@ -614,8 +652,9 @@ class SharedQueue {
       }
       SpinMutex::Lock lock(mutex_);
       assert(queue_has_pending_flush_);
-      queue_has_pending_flush_ = false;
       PushWorkToBackend();
+      queue_has_pending_flush_ = false;
+      FlushMostFilledBackend();
     });
   }
 
@@ -805,9 +844,7 @@ class ServerConnection
     SharedQueue::Get().NewConnection();
   }
 
-  ~ServerConnection() {
-    SharedQueue::Get().ConnectionClosed();
-  }
+  ~ServerConnection() { SharedQueue::Get().ConnectionClosed(); }
 
   void Start() { Read(); }
 
