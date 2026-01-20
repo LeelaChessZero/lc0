@@ -39,7 +39,6 @@ jobs:
             cuda:
               - 'src/neural/backends/cuda/**'
             onnx:
-              - 'src/neural/backends/network_onnx.cc'
               - 'src/neural/onnx/**'
             common_files:
               # Engine files
@@ -108,6 +107,7 @@ jobs:
               - 'third_party/**'
 
 
+  # --- Step 1: SYCL ---
   sycl-build:
     needs: build
     if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.sycl == 'true' }}
@@ -117,56 +117,72 @@ jobs:
       artifact_name: sycl-ubuntu-22.04
 
   sycl-build-24:
-    needs: build
-    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.sycl == 'true' }}
+    needs: [build, sycl-build]
+    if: always() && !cancelled() && 
+        (needs.build.outputs.common_files == 'true' || needs.build.outputs.sycl == 'true')
     uses: ./.github/workflows/sycl.yml
     with:
       os: ubuntu-24.04
       artifact_name: sycl-ubuntu-24.04
 
+  # --- Step 2: CUDA (Waits for SYCL completion) ---
   cuda-build:
-    needs: build
-    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.cuda == 'true' }}
+    needs: [build, sycl-build-24]
+    if: |
+      always() && !cancelled() &&
+      (needs.build.outputs.common_files == 'true' || needs.build.outputs.cuda == 'true')
     uses: ./.github/workflows/cuda.yml
     with:
       os: ubuntu-22.04
       artifact_name: cuda-12.9-ubuntu-22.04
 
   cuda-build-24:
-    needs: build
-    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.cuda == 'true' }}
+    needs: [build, cuda-build]
+    if: |
+      always() && !cancelled() &&
+      (needs.build.outputs.common_files == 'true' || needs.build.outputs.cuda == 'true')
     uses: ./.github/workflows/cuda.yml
     with:
       os: ubuntu-24.04
       artifact_name: cuda-12.9-ubuntu-24.04
 
+  # --- Step 3: BLAS (Waits for CUDA completion) ---
   blas-build:
-    needs: build
-    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.blas == 'true' }}
+    needs: [build, cuda-build-24]
+    if: |
+      always() && !cancelled() &&
+      (needs.build.outputs.common_files == 'true' || needs.build.outputs.blas == 'true')
     uses: ./.github/workflows/blas.yml
     with:
       os: ubuntu-22.04
       artifact_name: blas-ubuntu-22.04
 
   blas-build-24:
-    needs: build
-    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.blas == 'true' }}
+    needs: [build, blas-build]
+    if: |
+      always() && !cancelled() &&
+      (needs.build.outputs.common_files == 'true' || needs.build.outputs.blas == 'true')
     uses: ./.github/workflows/blas.yml
     with:
       os: ubuntu-24.04
       artifact_name: blas-ubuntu-24.04
 
+  # --- Step 4: ONNX (Waits for BLAS completion) ---
   onnx-trt-build:
-    needs: build
-    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.onnx == 'true' }}
+    needs: [build, blas-build-24]
+    if: |
+      always() && !cancelled() &&
+      (needs.build.outputs.common_files == 'true' || needs.build.outputs.onnx == 'true')
     uses: ./.github/workflows/onnx-trt.yml
     with:
       os: ubuntu-22.04
       artifact_name: onnx-trt-ubuntu-22.04
 
   onnx-trt-build-24:
-    needs: build
-    if: ${{ needs.build.outputs.common_files == 'true' || needs.build.outputs.onnx == 'true' }}
+    needs: [build, onnx-trt-build]
+    if: |
+      always() && !cancelled() &&
+      (needs.build.outputs.common_files == 'true' || needs.build.outputs.onnx == 'true')
     uses: ./.github/workflows/onnx-trt.yml
     with:
       os: ubuntu-24.04

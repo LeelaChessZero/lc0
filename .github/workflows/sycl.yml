@@ -29,43 +29,43 @@ jobs:
           meson --version
       - name: Install SYCL Dependencies (Intel oneAPI)
         run: |
-          wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-          sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
-          rm GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          # Use the modern key storage for Ubuntu 24.04 (Noble)
+          sudo wget -qO /etc/apt/trusted.gpg.d/intel-oneapi.asc https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
           echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update
           sudo apt-get install -y \
-            intel-oneapi-dpcpp-cpp-2025.2 \
-            intel-oneapi-dpcpp-ct \
-            intel-oneapi-mkl-devel \
+            intel-oneapi-base-toolkit-2025.2 \
             intel-opencl-icd \
             libtbbmalloc2 \
-            opencl-headers \
             ocl-icd-opencl-dev
-          export ICPX=/opt/intel/oneapi/compiler/2025.2/bin/icpx
-          if ! $ICPX --version; then
-            echo "Error: icpx compiler not found!"
-            exit 1
-          fi
-          $ICPX --version
-      - name: Remove Build Directory
+      - name: Setup Intel oneAPI environment
         run: |
-          echo "Cleaning old build..."
-          rm -rf build
+          # Source variables and pipe them into the GitHub Environment file
+          source /opt/intel/oneapi/setvars.sh
+          printenv >> $GITHUB_ENV
+
       - name: Configure Meson and Build SYCL
         run: |
-          source /opt/intel/oneapi/setvars.sh
+          # Now icpx and icx are in the PATH automatically
           unset AR
-          export CC=/opt/intel/oneapi/compiler/latest/bin/icx
-          export CXX=/opt/intel/oneapi/compiler/latest/bin/icpx
-          export RANLIB=/opt/intel/oneapi/compiler/latest/bin/xilib
-          export AR=/opt/intel/oneapi/compiler/latest/bin/compiler/llvm-ar
-          echo "Using CC compiler: $CC"
-          echo "Using CXX compiler: $CXX"
-          echo "Using AR: $AR"
-          echo "Using RANLIB: $RANLIB"
-          meson setup --buildtype release build -Dsycl=l0 \
-                      -Dgtest=false -Dnative_arch=false
+          export CC=icx
+          export CXX=icpx
+          
+          # Use the environment-initialized paths
+          export RANLIB=xilib
+          # Note: The AR path in oneAPI is specific; often it is 'llvm-ar' 
+          # but sourcing setvars.sh usually handles the underlying toolchain.
+          # Tell icpx to use the lld linker
+          export LDFLAGS="-fuse-ld=lld"
+          
+          meson setup --buildtype release build \
+            -Dsycl=l0 \
+            -Dgtest=false \
+            -Dnative_arch=false \
+            -Db_lto=true \
+            -Dcpp_link_args="-fuse-ld=lld" \
+            --clearcache
+            
           ninja -C build -v
       - name: Upload Meson Log on Failure
         if: failure()
