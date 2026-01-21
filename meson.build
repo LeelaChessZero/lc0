@@ -402,6 +402,76 @@ if get_option('build_backends')
 
   endif
 
+  ## ~~~~~
+  ## ROCm
+  ## ~~~~~
+  rocm_libdirs = get_option('hip_libdirs')
+  rocblas_lib = cc.find_library('rocblas', dirs: rocm_libdirs, required: false)
+  hipblas_lib = cc.find_library('hipblas', dirs: rocm_libdirs, required: false)
+  miopen_lib = cc.find_library('MIOpen', dirs: rocm_libdirs, required: false)
+  amdhip_lib = cc.find_library('amdhip64', dirs: rocm_libdirs, required: false)
+  hipcc = find_program('hipcc', '/opt/rocm/bin/hipcc', required: false)
+
+  if get_option('rocm') and rocblas_lib.found() and amdhip_lib.found() and miopen_lib.found() and hipcc.found()
+    deps += [rocblas_lib, hipblas_lib, amdhip_lib, miopen_lib]
+
+    rocm_files = ['src/neural/backends/rocm/rocm_common.cc',
+                  'src/neural/backends/rocm/layers.cc',
+                  'src/neural/backends/rocm/network_rocm.cc']
+
+    add_project_arguments('-DUSE_MIOPEN', language : 'cpp')
+
+    foreach d : get_option('hip_include')
+      if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
+        includes += include_directories(d, is_system: true)
+      endif
+    endforeach
+    includes += include_directories('src/neural/backends/rocm/')
+
+    add_project_arguments('-DUSE_HIP', '-D__HIP_PLATFORM_AMD__', language : 'cpp')
+
+    # ROCm kernel compilation arguments
+    rocm_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
+                      '-I', meson.current_source_dir() + '/src',
+                      '--std=c++14', '-fPIC',
+                      '--rocm-path=/opt/rocm',
+                      '--rocm-device-lib-path=/opt/rocm/lib/llvm/amdgcn/bitcode']
+
+    # Use amd_gfx option if specified, otherwise default to gfx1151
+    amd_gfx_target = get_option('amd_gfx')
+    if amd_gfx_target == ''
+      amd_gfx_target = 'gfx1151'
+    endif
+    rocm_arguments += ['--offload-arch=' + amd_gfx_target]
+
+    foreach x : get_option('hip_include')
+      rocm_arguments += ['-I', x]
+    endforeach
+
+    if host_machine.system() == 'windows'
+      outputname = '@BASENAME@.obj'
+    else
+      outputname = '@BASENAME@.o'
+    endif
+
+    files += rocm_files
+
+    files += custom_target('rocm fp32 kernels',
+      input : 'src/neural/backends/rocm/common_kernels.hip',
+      output : outputname,
+      depend_files: 'src/neural/backends/rocm/winograd_helper.inc',
+      command : [hipcc, rocm_arguments]
+    )
+
+    files += custom_target('rocm fp16 kernels',
+      input : 'src/neural/backends/rocm/fp16_kernels.hip',
+      output : outputname,
+      depend_files: 'src/neural/backends/rocm/winograd_helper.inc',
+      command : [hipcc, rocm_arguments]
+    )
+
+    has_backends = true
+  endif
 
   ## ~~~~~
   ## OpenCL

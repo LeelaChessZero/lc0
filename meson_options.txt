@@ -93,6 +93,11 @@ option('cutlass',
        value: true,
        description: 'Enable cutlass lib for cuda backend. Only supports Ampere+ right now')
 
+option('rocm',
+       type: 'boolean',
+       value: false,
+       description: 'Enable ROCm backend (requires MIOpen)')
+
 option('opencl',
        type: 'boolean',
        value: false,
