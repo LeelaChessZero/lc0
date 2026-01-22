@@ -26,20 +26,45 @@
 */
 
 #pragma once
+#include <atomic>
+#include <cassert>
+#include <memory>
 
 namespace lczero {
 
 template <typename T>
 class AtomicVector {
+  using Allocator = std::allocator<T>;
+
  public:
+  AtomicVector() = default;
   explicit AtomicVector(size_t capacity) : capacity_(capacity), size_(0) {
-    data_ = new
-        typename std::aligned_storage<sizeof(T), alignof(T)>::type[capacity];
+    data_ = Allocator().allocate(capacity);
   }
 
   ~AtomicVector() {
     clear();
-    delete[] data_;
+    if (data_) {
+      Allocator().deallocate(data_, capacity_);
+    }
+  }
+
+  // Not thread safe.
+  AtomicVector(AtomicVector&& other)
+      : capacity_(other.capacity_),
+        size_(other.size_.exchange(0, std::memory_order_relaxed)),
+        data_(other.data_) {
+    other.data_ = nullptr;
+  }
+
+  // Not thread safe.
+  AtomicVector& operator=(AtomicVector&& other) {
+    AtomicVector temp(std::move(*this));
+    const_cast<size_t&>(capacity_) = other.capacity_;
+    size_.store(other.size_.exchange(0, std::memory_order_relaxed),
+                std::memory_order_relaxed);
+    std::swap(data_, other.data_);
+    return *this;
   }
 
   // Thread safe, returns the index of the inserted element.
@@ -47,40 +72,51 @@ class AtomicVector {
   size_t emplace_back(Args&&... args) {
     size_t i = size_.fetch_add(1, std::memory_order_relaxed);
     assert(i < capacity_);
-    new (&data_[i]) T(std::forward<Args>(args)...);
+    std::construct_at(&data_[i], std::forward<Args>(args)...);
     return i;
   }
 
   T& operator[](size_t i) {
     assert(i < size());
-    return *reinterpret_cast<T*>(&data_[i]);
+    return data_[i];
   }
 
   const T& operator[](size_t i) const {
     assert(i < size());
-    return *reinterpret_cast<const T*>(&data_[i]);
+    return data_[i];
   }
 
+  bool empty() const { return size() == 0; }
   size_t size() const { return size_.load(std::memory_order_relaxed); }
   size_t capacity() const { return capacity_; }
 
   // Not thread safe.
   void clear() {
     for (size_t i = size_.load(std::memory_order_relaxed); i-- > 0;) {
-      reinterpret_cast<T*>(&data_[i])->~T();
+      std::destroy_at(&data_[i]);
     }
     size_.store(0, std::memory_order_relaxed);
   }
 
-  T* begin() { return reinterpret_cast<T*>(data_); }
-  T* end() { return reinterpret_cast<T*>(data_) + size(); }
-  const T* begin() const { return reinterpret_cast<const T*>(data_); }
-  const T* end() const { return reinterpret_cast<const T*>(data_) + size(); }
+  // Not thread safe.
+  void erase(T* start, T* end) {
+    assert(end == this->end());
+    size_t first = start - begin();
+    for (size_t i = size_.load(std::memory_order_relaxed); i-- > first;) {
+      std::destroy_at(&data_[i]);
+    }
+    size_.fetch_add(start - end, std::memory_order_relaxed);
+  }
+
+  T* begin() { return data_; }
+  T* end() { return data_ + size(); }
+  const T* begin() const { return data_; }
+  const T* end() const { return data_ + size(); }
 
  private:
-  const size_t capacity_;
-  std::atomic<size_t> size_;
-  typename std::aligned_storage<sizeof(T), alignof(T)>::type* data_;
+  const size_t capacity_ = 0;
+  std::atomic<size_t> size_ = 0;
+  T* data_ = nullptr;
 };
 
 }  // namespace lczero
