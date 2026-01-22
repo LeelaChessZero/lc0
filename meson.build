@@ -178,6 +178,7 @@ files += [
   'src/search/classic/params.cc',
   'src/search/classic/search.cc',
   'src/search/classic/stoppers/alphazero.cc',
+  'src/search/classic/stoppers/alphazero_autoscaled.cc',
   'src/search/classic/stoppers/common.cc',
   'src/search/classic/stoppers/factory.cc',
   'src/search/classic/stoppers/legacy.cc',
