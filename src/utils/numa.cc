@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2020-2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -36,54 +36,96 @@
 
 namespace lczero {
 
-int Numa::threads_per_core_ = 1;
+std::map<uint32_t, Numa::Group> Numa::groups = {};
+int Numa::thread_count = 0;
+int Numa::core_count = 0;
+int Numa::thread_groups = 0;
 
 void Numa::Init() {
 #if defined(_WIN64) && _WIN32_WINNT >= 0x0601
+  int group_count = 0;
+  thread_count = 0;
+  core_count = 0;
+  thread_groups = 0;
+
   SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* buffer;
   DWORD len = 0;
   GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
   buffer = static_cast<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*>(malloc(len));
   GetLogicalProcessorInformationEx(RelationProcessorCore, buffer, &len);
-  if (buffer->Processor.Flags & LTP_PC_SMT) {
-    threads_per_core_ = BitBoard(buffer->Processor.GroupMask[0].Mask).count();
+  for (int offset = 0; offset < len;) {
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* info =
+        (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)((char*)buffer + offset);
+    int efficiency_class = info->Processor.EfficiencyClass;
+    int group_id = info->Processor.GroupMask[0].Group;
+    int threads = BitBoard(info->Processor.GroupMask[0].Mask).count();
+
+    uint32_t key =
+        ((255 - efficiency_class) << 24) | (threads << 16) | group_id;
+    if (groups.find(key) == groups.end()) {
+      Group tmp = {};
+      groups.emplace(key, tmp);
+      group_count++;
+      if (threads > 1) thread_groups++;
+    }
+    thread_count += threads;
+    core_count++;
+    groups[key].efficiency_class = efficiency_class;
+    groups[key].cores++;
+    groups[key].threads += threads;
+    groups[key].group_id = group_id;
+    groups[key].mask |= info->Processor.GroupMask[0].Mask;
+    offset += info->Size;
   }
   free(buffer);
 
-  int group_count = GetActiveProcessorGroupCount();
-  int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-  int core_count = thread_count / threads_per_core_;
   CERR << "Detected " << core_count << " core(s) and " << thread_count
-       << " thread(s) in " << group_count << " group(s).";
-  for (int group_id = 0; group_id < group_count; group_id++) {
-    int group_threads = GetActiveProcessorCount(group_id);
-    int group_cores = group_threads / threads_per_core_;
-    CERR << "Group " << group_id << " has " << group_cores
-         << " core(s) and " << group_threads << " thread(s).";
+       << " thread(s)";
+
+  for (auto const & [ _, grp ] : groups) {
+    CERR << "Group " << grp.group_id << " has " << grp.cores << " core(s) and "
+         << grp.threads << " thread(s) in efficincy class "
+         << grp.efficiency_class << ".";
   }
 #endif
 }
 
 void Numa::BindThread(int id) {
 #if defined(_WIN64) && _WIN32_WINNT >= 0x0601
-  int group_count = GetActiveProcessorGroupCount();
-  int thread_count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-  int core_count = thread_count / threads_per_core_;
-  int core_id = id;
   GROUP_AFFINITY affinity = {};
-  for (int group_id = 0; group_id < group_count; group_id++) {
-    int group_threads = GetActiveProcessorCount(group_id);
-    int group_cores = group_threads / threads_per_core_;
-    // Allocate cores of each group in order, and distribute remaining threads
-    // to all groups.
-    if ((id < core_count && core_id < group_cores) ||
-        (id >= core_count && (id - core_count) % group_count == group_id)) {
-      affinity.Group = group_id;
-      affinity.Mask = ~0ULL >> (64 - group_threads);
-      SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
-      break;
+  // Allocate up to core_count threads in cores in order of efficiency, then
+  // distribute evenly, up
+  // to thread_count across all groups with threads > cores and the rest across
+  // all groups.
+  if (id < core_count) {
+    int core_id = id;
+    for (auto const & [ _, grp ] : groups) {
+      if (core_id < grp.cores) {
+        affinity.Group = grp.group_id;
+        affinity.Mask = grp.mask;
+        SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
+        break;
+      }
+      core_id -= grp.cores;
     }
-    core_id -= group_cores;
+  } else {
+    int idx = id - core_count;
+    if (id < thread_count) {
+      idx %= thread_groups;
+    } else {
+      idx %= groups.size();
+    }
+    int count = 0;
+    for (auto const & [ _, grp ] : groups) {
+      if (id < thread_count && grp.cores == grp.threads) continue;
+      if (idx == count) {
+        affinity.Group = grp.group_id;
+        affinity.Mask = grp.mask;
+        SetThreadGroupAffinity(GetCurrentThread(), &affinity, NULL);
+        break;
+      }
+      count++;
+    }
   }
 #else
   // Silence warning.
