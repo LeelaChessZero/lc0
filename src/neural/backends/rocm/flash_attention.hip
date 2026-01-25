@@ -291,9 +291,9 @@ static __device__ __forceinline__ void flash_attn_iter_lc0(
     constexpr int  nbatch_V2       = get_fattn_nbatch_V2(DKQ, DV, ncols);
     constexpr bool Q_in_reg        = get_fattn_Q_in_reg (DKQ, DV, ncols);
 
-    constexpr int stride_tile_Q = DKQ/2     + 4;
-    constexpr int stride_tile_K = nbatch_K2 + 4;
-    constexpr int stride_tile_V = nbatch_V2 + 4;
+    constexpr int stride_tile_Q = DKQ/2     + 2;
+    constexpr int stride_tile_K = nbatch_K2 + 2;
+    constexpr int stride_tile_V = nbatch_V2 + 2;
 
     const int k_VKQ_0 = kb0 * nbatch_fa;
     const int head_offset = head_idx * depth / 2; // In half2 units
@@ -338,8 +338,6 @@ static __device__ __forceinline__ void flash_attn_iter_lc0(
         }
     }
 
-    __syncthreads();
-
     // Online softmax: compute running max and sum
     float KQ_max_new = KQ_max[0];
     float KQ_rowsum_add = 0.0f;
@@ -358,7 +356,7 @@ static __device__ __forceinline__ void flash_attn_iter_lc0(
 
     // Reduce max across threads in warp
 #pragma unroll
-    for (int offset = 16; offset >= 16; offset >>= 1) {
+    for (int offset = 16; offset >= 1; offset >>= 1) {
         KQ_max_new = fmaxf(KQ_max_new, __shfl_xor(KQ_max_new, offset, WARP_SIZE));
     }
 
@@ -470,9 +468,9 @@ __global__ void flash_attention_kernel_lc0(
     constexpr int safe_DV = DV > 0 ? DV : 16;
 
     // Shared memory tiles (with safe minimum sizes)
-    __shared__ half2 tile_Q_smem[safe_ncols * (safe_DKQ/2 + 4)];
-    __shared__ half2 tile_K_smem[nbatch_fa * (safe_DKQ/2 + 4)];
-    __shared__ half2 tile_V_smem[nbatch_fa * (safe_DV/2 + 4)];
+    __shared__ half2 tile_Q_smem[safe_ncols * (safe_DKQ/2 + 2)];
+    __shared__ half2 tile_K_smem[nbatch_fa * (safe_DKQ/2 + 2)];
+    __shared__ half2 tile_V_smem[nbatch_fa * (safe_DV/2 + 2)];
 
     // Early return for invalid configurations
     if (nwarps_raw == 0 || nbatch_fa_raw == 0) {
@@ -501,7 +499,7 @@ __global__ void flash_attention_kernel_lc0(
 
     // Load Q tile for this column from interleaved layout
     // Q is at position: [batch][col_idx][head_offset + k]
-    half2 * tile_Q = tile_Q_smem + (threadIdx.y % nwarps) * (DKQ/2 + 4);
+    half2 * tile_Q = tile_Q_smem + (threadIdx.y % nwarps) * (DKQ/2 + 2);
 #pragma unroll
     for (int k = threadIdx.x; k < DKQ/2; k += WARP_SIZE) {
         const int global_idx = col_idx * d_model + head_offset + k;
@@ -523,7 +521,7 @@ __global__ void flash_attention_kernel_lc0(
     // Load Q into registers if configured
     constexpr bool Q_in_reg = get_fattn_Q_in_reg(DKQ, DV, ncols);
     if constexpr (Q_in_reg) {
-        constexpr int stride_tile_Q = DKQ/2 + 4;
+        constexpr int stride_tile_Q = DKQ/2 + 2;
 #pragma unroll
         for (int k = 0; k < DKQ/(2*T_B_KQ::J); ++k) {
             load_ldmatrix(Q_B[k], tile_Q + k*T_B_KQ::J, stride_tile_Q);

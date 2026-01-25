@@ -457,10 +457,12 @@ if get_option('build_backends')
         message('Using architecture: ' + arch_name + ' (' + amd_gfx_option + ')')
         message('  ✓ Performance tuned configuration')
 
-        # Add flash attention flags to rocm_arguments
+        # Add flash attention flags to both HIP kernels and C++ compilation
         foreach flag : arch_flags.split()
           rocm_arguments += [flag]
         endforeach
+        # Also add to C++ compiler for USE_FLASH_ATTENTION guards
+        add_project_arguments(arch_flags.split(), language : 'cpp')
       else
         error('Unknown architecture: ' + amd_gfx_option + '\nRun: python3 scripts/rocm_backend_amd_gfx_configs.py list')
       endif
@@ -475,10 +477,12 @@ if get_option('build_backends')
       warning('Find your architecture: rocminfo | grep gfx')
       message('Using optimized flash attention for gfx1151')
 
-      # Add flash attention flags
+      # Add flash attention flags to both HIP kernels and C++ compilation
       foreach flag : arch_flags.split()
         rocm_arguments += [flag]
       endforeach
+      # Also add to C++ compiler for USE_FLASH_ATTENTION guards
+      add_project_arguments(arch_flags.split(), language : 'cpp')
     endif
 
     rocm_arguments += ['--offload-arch=' + amd_gfx_target]
