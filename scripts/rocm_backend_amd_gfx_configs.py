@@ -9,8 +9,8 @@ CONFIGS = {
             'nthreads_d32': 256,
             'occupancy_d32': 2,
             'nbatch_fa_d32': 64,
-            'nbatch_k2_d32': 32,
-            'nbatch_v2_d32': 32,
+            'nbatch_k2_d32': 24,  # Optimized tile size for balance
+            'nbatch_v2_d32': 24,  # Optimized tile size for balance
             'nbatch_combine_d32': 32,
             'nstages_d32': 2,
         }
