@@ -811,11 +811,9 @@ class RocmNetwork : public Network {
 
     if (io->multi_stream_) {
       // Multi-stream: use per-batch resources from InputsOutputs
-      CERR << "[DEBUG] Using multi-stream mode";
       stream = io->stream_;
       cublas_handle = io->rocblas_;
       tensor_mem_ptr = (DataType**)io->tensor_mem_;
-      CERR << "[DEBUG] Stream: " << stream << ", rocBLAS handle: " << cublas_handle;
     } else {
       // Single-stream: use shared resources from RocmNetwork
       stream = compute_stream_;
@@ -838,10 +836,8 @@ class RocmNetwork : public Network {
     bool fp16 = std::is_same<half, DataType>::value;
     if (fp16) {
       // gfx1151 always uses NCHW layout
-      CERR << "[DEBUG] Expanding planes (FP16)...";
       expandPlanes_Fp16_NCHW((half*)(tensor_mem_ptr[0]), ipDataMasks, ipDataValues,
                              batchSize * kInputPlanes, stream);
-      CERR << "[DEBUG] Planes expanded successfully";
     } else {
       expandPlanes_Fp32_NCHW((float*)(tensor_mem_ptr[0]), ipDataMasks,
                              ipDataValues, batchSize * kInputPlanes, stream);
@@ -912,13 +908,11 @@ class RocmNetwork : public Network {
     }
 
     if (attn_body_) {
-      CERR << "[DEBUG] About to run attention body layer...";
       network_[l++]->Eval(batchSize, tensor_mem_ptr[1],
                           (numBlocks_ > 0) ? tensor_mem_ptr[2] : tensor_mem_ptr[0],
                           (numBlocks_ > 0) ? tensor_mem_ptr[0] : tensor_mem_ptr[2],
                           scratch_mem_ptr, scratch_size_, nullptr, cublas_handle, stream,
                           &head_offset_pointers_);  // Entire attention body
-      CERR << "[DEBUG] Attention body completed successfully";
 
       flow = tensor_mem_ptr[1];
       spare1 = tensor_mem_ptr[0];
@@ -927,22 +921,18 @@ class RocmNetwork : public Network {
 
     // Policy head.
     if (attn_policy_) {
-      CERR << "[DEBUG] About to run attention policy head...";
       network_[l++]->Eval(
           batchSize, spare1, flow, spare2, scratch_mem_ptr, scratch_size_, nullptr,
           cublas_handle, stream,
           &head_offset_pointers_);  // Entire Attention policy head except for
                                     // the policy map
-      CERR << "[DEBUG] Attention policy head completed";
       if (fp16) {
         // For FP16: use direct FP32 output from policy map (avoids FP16→FP32
         // conversion)
-        CERR << "[DEBUG] About to run policy map (FP32 output)...";
         auto* policy_map =
             static_cast<PolicyMapLayer<DataType>*>(network_[l++].get());
         policy_map->EvalFp32Output(batchSize, opPol, (const DataType*)spare1,
                                    stream);
-        CERR << "[DEBUG] Policy map completed";
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
                             scratch_mem_ptr, scratch_size_, nullptr, cublas_handle,
@@ -989,14 +979,10 @@ class RocmNetwork : public Network {
     }
 
     // value head
-    CERR << "[DEBUG] About to run value head...";
     network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2, scratch_mem_ptr,
                         scratch_size_, cudnn_, cublas_handle, stream);  // value head
-    CERR << "[DEBUG] Value head completed";
     // Record event after value computation (needed for CPU softmax)
-    CERR << "[DEBUG] Recording value_ready_event...";
     ReportHIPErrors(hipEventRecord(value_ready_event_, stream));
-    CERR << "[DEBUG] Event recorded";
 
     if (moves_left_) {
       // Moves left head
@@ -1013,28 +999,19 @@ class RocmNetwork : public Network {
     }
 
     // Defer policy copy until after all GPU work is queued (Optimization #3)
-    CERR << "[DEBUG] About to copy policy memory D2H...";
     ReportHIPErrors(hipMemcpyAsync(io->op_policy_mem_, io->op_policy_mem_gpu_,
                                    sizeof(float) * kNumOutputPolicy * batchSize,
                                    hipMemcpyDeviceToHost, stream));
-    CERR << "[DEBUG] Policy copy queued";
     // Record event after policy transfer
-    CERR << "[DEBUG] Recording policy_ready_event...";
     ReportHIPErrors(hipEventRecord(policy_ready_event_, stream));
-    CERR << "[DEBUG] Policy event recorded";
 
     // Wait ONLY for value (needed for CPU softmax)
-    CERR << "[DEBUG] Synchronizing value_ready_event...";
     ReportHIPErrors(hipEventSynchronize(value_ready_event_));
-    CERR << "[DEBUG] Value event synchronized";
 
     // Release lock early (moves_left and policy transfer can finish async)
-    CERR << "[DEBUG] Releasing lock...";
     if (lock.owns_lock()) {
       lock.unlock();
-      CERR << "[DEBUG] Lock released";
     } else {
-      CERR << "[DEBUG] No lock to release (multi-stream mode)";
     }
 
     if (wdl_) {
