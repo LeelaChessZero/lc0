@@ -35,8 +35,16 @@ namespace rocm_backend {
 struct InputsOutputs {
   InputsOutputs(int maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
-                bool rocblasDisableTensorCores = false, bool use_fp16 = false) {
+                bool rocblasDisableTensorCores = false, bool use_fp16 = false,
+                int gpu_id = 0) {
     (void)rocblasDisableTensorCores;
+
+    // Ensure correct device context (needed for multi-stream resource creation)
+    if (tensor_mem_size > 0) {
+      fprintf(stderr, "[DEBUG InputsOutputs] Setting device: %d\n", gpu_id);
+      ReportHIPErrors(hipSetDevice(gpu_id));
+      fprintf(stderr, "[DEBUG InputsOutputs] Device set successfully\n");
+    }
     ReportHIPErrors(hipHostMalloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         hipHostMallocMapped));
@@ -85,16 +93,27 @@ struct InputsOutputs {
     // memory for network execution managed inside this structure
     if (tensor_mem_size) {
       multi_stream_ = true;
-      ReportHIPErrors(hipStreamCreate(&stream_));
+      fprintf(stderr, "[DEBUG InputsOutputs] Creating stream...\n");
+      // Create stream with NonBlocking flag to match CUDA behavior
+      ReportHIPErrors(hipStreamCreateWithFlags(&stream_, hipStreamNonBlocking));
+      fprintf(stderr, "[DEBUG InputsOutputs] Stream created: %p\n", (void*)stream_);
+
+      fprintf(stderr, "[DEBUG InputsOutputs] Allocating scratch memory: %zu bytes\n", scratch_size);
       ReportHIPErrors(hipMalloc(&scratch_mem_, scratch_size));
+      fprintf(stderr, "[DEBUG InputsOutputs] Allocating tensor memory: %zu bytes x3\n", tensor_mem_size);
       for (auto& mem : tensor_mem_) {
         ReportHIPErrors(hipMalloc(&mem, tensor_mem_size));
-        ReportHIPErrors(hipMemsetAsync(mem, 0, tensor_mem_size, stream_));
+       ReportHIPErrors(hipMemsetAsync(mem, 0, tensor_mem_size, stream_));
       }
+      fprintf(stderr, "[DEBUG InputsOutputs] Memory allocated successfully\n");
+
+      // Create per-stream rocBLAS handle for thread-safe concurrent execution
+      fprintf(stderr, "[DEBUG InputsOutputs] Creating rocBLAS handle...\n");
       ReportROCBLASErrors(rocblas_create_handle(&rocblas_));
-      // Note: rocBLAS doesn't have the same math mode API as cuBLAS
-      // RDNA doesn't have matrix cores, so this is mostly a no-op
+      fprintf(stderr, "[DEBUG InputsOutputs] rocBLAS handle created: %p\n", (void*)rocblas_);
+      fprintf(stderr, "[DEBUG InputsOutputs] Setting stream for rocBLAS...\n");
       ReportROCBLASErrors(rocblas_set_stream(rocblas_, stream_));
+      fprintf(stderr, "[DEBUG InputsOutputs] All multi-stream resources created successfully\n");
     } else {
       multi_stream_ = false;
     }
@@ -123,7 +142,7 @@ struct InputsOutputs {
         ReportHIPErrors(hipFree(head_offset_pointers_));
       }
       (void)hipStreamDestroy(stream_);
-      rocblas_destroy_handle(rocblas_);
+      if (rocblas_) rocblas_destroy_handle(rocblas_);
     }
   }
   uint64_t* input_masks_mem_;

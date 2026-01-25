@@ -255,10 +255,33 @@ class RocmNetwork : public Network {
     ReportHIPErrors(hipSetDevice(gpu_id_));
     CERR << "Device set";
 
+    multi_stream_ = options.GetOrDefault<bool>("multi_stream", false);
+
+    // Initialize tensor_mem_ and scratch_mem_ to nullptr (will be allocated later)
+    for (auto& mem : tensor_mem_) {
+      mem = nullptr;
+    }
+    scratch_mem_ = nullptr;
+
+    if (!multi_stream_) {
+      // Create separate streams for compute, upload, and download
+      ReportHIPErrors(hipStreamCreateWithFlags(&compute_stream_, hipStreamNonBlocking));
+      ReportHIPErrors(hipStreamCreateWithFlags(&upload_stream_, hipStreamNonBlocking));
+      ReportHIPErrors(hipStreamCreateWithFlags(&download_stream_, hipStreamNonBlocking));
+      ReportHIPErrors(hipEventCreateWithFlags(&compute_ordering_event_, hipEventDisableTiming));
+
+      CERR << "Created separate HIP streams for compute/upload/download";
+    }
+
     ReportMIOPENErrors(miopenCreate(&cudnn_));
     CERR << "MIOpen created";
     ReportROCBLASErrors(rocblas_create_handle(&cublas_));
     CERR << "rocBLAS created";
+
+    if (!multi_stream_) {
+      // Set rocBLAS to use compute stream
+      ReportROCBLASErrors(rocblas_set_stream(cublas_, compute_stream_));
+    }
 
     // Default layout is nchw.
     nhwc_ = false;
@@ -744,9 +767,16 @@ class RocmNetwork : public Network {
       maxSize = std::max(maxSize, attentionBodySize);
     }
 
-    for (auto& mem : tensor_mem_) {
-      ReportHIPErrors(hipMalloc(&mem, maxSize));
+    if (!multi_stream_) {
+      // Pre-allocate shared memory for all batches (single-stream mode)
+      for (auto& mem : tensor_mem_) {
+        ReportHIPErrors(hipMalloc(&mem, maxSize));
+        ReportHIPErrors(hipMemset(mem, 0, maxSize));
+      }
     }
+
+    // Store tensor memory size for multi-stream per-batch allocation
+    tensor_mem_size_ = multi_stream_ ? maxSize : 0;
 
     // MIOpen uses miopenDestroyTensorDescriptor for both filters and tensors
     miopenDestroyTensorDescriptor(wDesc);
@@ -768,14 +798,38 @@ class RocmNetwork : public Network {
     // as all buffers are designed to handle max_batch_size
     // and the extra invalid results are never read.
     if (batchSize < min_batch_size_) batchSize = min_batch_size_;
-    std::unique_lock<std::mutex> lock(lock_);
+    auto lock = LockEval();  // Gets mutex lock if !multi_stream_, empty lock otherwise
 
 #ifdef DEBUG_RAW_NPS
     auto t_start = std::chrono::high_resolution_clock::now();
 #endif
 
-    // TODO: consider supporting multi-stream path for cudnn backend too.
-    hipStream_t stream = 0;  // default stream
+    // Use per-stream resources if multi-stream mode is enabled
+    hipStream_t stream;
+    rocblas_handle cublas_handle;
+    DataType** tensor_mem_ptr;
+
+    if (io->multi_stream_) {
+      // Multi-stream: use per-batch resources from InputsOutputs
+      CERR << "[DEBUG] Using multi-stream mode";
+      stream = io->stream_;
+      cublas_handle = io->rocblas_;
+      tensor_mem_ptr = (DataType**)io->tensor_mem_;
+      CERR << "[DEBUG] Stream: " << stream << ", rocBLAS handle: " << cublas_handle;
+    } else {
+      // Single-stream: use shared resources from RocmNetwork
+      stream = compute_stream_;
+      cublas_handle = cublas_;
+      tensor_mem_ptr = tensor_mem_;
+    }
+
+    void* scratch_mem_ptr = io->multi_stream_ ? io->scratch_mem_ : scratch_mem_;
+
+    // Set MIOpen to use the selected stream (only in single-stream mode)
+    // Multi-stream mode shouldn't modify shared cudnn_ handle from multiple threads
+    if (!multi_stream_) {
+      ReportMIOPENErrors(miopenSetStream(cudnn_, stream));
+    }
 
     // Expand packed planes to full planes.
     uint64_t* ipDataMasks = io->input_masks_mem_gpu_;
@@ -784,10 +838,12 @@ class RocmNetwork : public Network {
     bool fp16 = std::is_same<half, DataType>::value;
     if (fp16) {
       // gfx1151 always uses NCHW layout
-      expandPlanes_Fp16_NCHW((half*)(tensor_mem_[0]), ipDataMasks, ipDataValues,
+      CERR << "[DEBUG] Expanding planes (FP16)...";
+      expandPlanes_Fp16_NCHW((half*)(tensor_mem_ptr[0]), ipDataMasks, ipDataValues,
                              batchSize * kInputPlanes, stream);
+      CERR << "[DEBUG] Planes expanded successfully";
     } else {
-      expandPlanes_Fp32_NCHW((float*)(tensor_mem_[0]), ipDataMasks,
+      expandPlanes_Fp32_NCHW((float*)(tensor_mem_ptr[0]), ipDataMasks,
                              ipDataValues, batchSize * kInputPlanes, stream);
     }
 
@@ -799,101 +855,107 @@ class RocmNetwork : public Network {
 
     int l = 0;
 
-    DataType* flow = tensor_mem_[0];
-    DataType* spare1 = tensor_mem_[1];
-    DataType* spare2 = tensor_mem_[2];
+    DataType* flow = tensor_mem_ptr[0];
+    DataType* spare1 = tensor_mem_ptr[1];
+    DataType* spare2 = tensor_mem_ptr[2];
 
     if (numBlocks_ > 0) {
       // Input.
       network_[l++]->Eval(
           batchSize,
-          use_res_block_winograd_fuse_opt_ ? tensor_mem_[1] : tensor_mem_[2],
-          tensor_mem_[0], nullptr, scratch_mem_, scratch_size_, cudnn_, cublas_,
+          use_res_block_winograd_fuse_opt_ ? tensor_mem_ptr[1] : tensor_mem_ptr[2],
+          tensor_mem_ptr[0], nullptr, scratch_mem_ptr, scratch_size_, cudnn_, cublas_handle,
           stream);  // input conv
 
       // Residual block.
       for (int block = 0; block < numBlocks_; block++) {
         if (use_res_block_winograd_fuse_opt_) {
-          network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
-                              nullptr, scratch_mem_, scratch_size_, cudnn_,
-                              cublas_,
+          network_[l++]->Eval(batchSize, tensor_mem_ptr[2], tensor_mem_ptr[1],
+                              nullptr, scratch_mem_ptr, scratch_size_, cudnn_,
+                              cublas_handle,
                               stream);  // block
         } else {
-          network_[l++]->Eval(batchSize, tensor_mem_[0], tensor_mem_[2],
-                              nullptr, scratch_mem_, scratch_size_, cudnn_,
-                              cublas_,
+          network_[l++]->Eval(batchSize, tensor_mem_ptr[0], tensor_mem_ptr[2],
+                              nullptr, scratch_mem_ptr, scratch_size_, cudnn_,
+                              cublas_handle,
                               stream);  // conv1
 
           if (use_custom_winograd_) {
-            network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
-                                tensor_mem_[2], scratch_mem_, scratch_size_,
-                                cudnn_, cublas_, stream);  // conv2
+            network_[l++]->Eval(batchSize, tensor_mem_ptr[2], tensor_mem_ptr[0],
+                                tensor_mem_ptr[2], scratch_mem_ptr, scratch_size_,
+                                cudnn_, cublas_handle, stream);  // conv2
           } else {
             // For SE Resnet, skip connection is added after SE (and bias is
             // added as part of SE).
             if (has_se_) {
-              network_[l++]->Eval(batchSize, tensor_mem_[1], tensor_mem_[0],
-                                  nullptr, scratch_mem_, scratch_size_, cudnn_,
-                                  cublas_, stream);  // conv2
+              network_[l++]->Eval(batchSize, tensor_mem_ptr[1], tensor_mem_ptr[0],
+                                  nullptr, scratch_mem_ptr, scratch_size_, cudnn_,
+                                  cublas_handle, stream);  // conv2
             } else {
-              network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[0],
-                                  tensor_mem_[2], scratch_mem_, scratch_size_,
-                                  cudnn_, cublas_, stream);  // conv2
+              network_[l++]->Eval(batchSize, tensor_mem_ptr[2], tensor_mem_ptr[0],
+                                  tensor_mem_ptr[2], scratch_mem_ptr, scratch_size_,
+                                  cudnn_, cublas_handle, stream);  // conv2
             }
 
             if (has_se_) {
-              network_[l++]->Eval(batchSize, tensor_mem_[2], tensor_mem_[1],
-                                  tensor_mem_[2], scratch_mem_, scratch_size_,
-                                  cudnn_, cublas_, stream);  // SE layer
+              network_[l++]->Eval(batchSize, tensor_mem_ptr[2], tensor_mem_ptr[1],
+                                  tensor_mem_ptr[2], scratch_mem_ptr, scratch_size_,
+                                  cudnn_, cublas_handle, stream);  // SE layer
             }
           }
         }
       }
 
-      flow = tensor_mem_[2];
-      spare1 = tensor_mem_[0];
-      spare2 = tensor_mem_[1];
+      flow = tensor_mem_ptr[2];
+      spare1 = tensor_mem_ptr[0];
+      spare2 = tensor_mem_ptr[1];
     }
 
     if (attn_body_) {
-      network_[l++]->Eval(batchSize, tensor_mem_[1],
-                          (numBlocks_ > 0) ? tensor_mem_[2] : tensor_mem_[0],
-                          (numBlocks_ > 0) ? tensor_mem_[0] : tensor_mem_[2],
-                          scratch_mem_, scratch_size_, nullptr, cublas_, stream,
+      CERR << "[DEBUG] About to run attention body layer...";
+      network_[l++]->Eval(batchSize, tensor_mem_ptr[1],
+                          (numBlocks_ > 0) ? tensor_mem_ptr[2] : tensor_mem_ptr[0],
+                          (numBlocks_ > 0) ? tensor_mem_ptr[0] : tensor_mem_ptr[2],
+                          scratch_mem_ptr, scratch_size_, nullptr, cublas_handle, stream,
                           &head_offset_pointers_);  // Entire attention body
+      CERR << "[DEBUG] Attention body completed successfully";
 
-      flow = tensor_mem_[1];
-      spare1 = tensor_mem_[0];
-      spare2 = tensor_mem_[2];
+      flow = tensor_mem_ptr[1];
+      spare1 = tensor_mem_ptr[0];
+      spare2 = tensor_mem_ptr[2];
     }
 
     // Policy head.
     if (attn_policy_) {
+      CERR << "[DEBUG] About to run attention policy head...";
       network_[l++]->Eval(
-          batchSize, spare1, flow, spare2, scratch_mem_, scratch_size_, nullptr,
-          cublas_, stream,
+          batchSize, spare1, flow, spare2, scratch_mem_ptr, scratch_size_, nullptr,
+          cublas_handle, stream,
           &head_offset_pointers_);  // Entire Attention policy head except for
                                     // the policy map
+      CERR << "[DEBUG] Attention policy head completed";
       if (fp16) {
         // For FP16: use direct FP32 output from policy map (avoids FP16→FP32
         // conversion)
+        CERR << "[DEBUG] About to run policy map (FP32 output)...";
         auto* policy_map =
             static_cast<PolicyMapLayer<DataType>*>(network_[l++].get());
         policy_map->EvalFp32Output(batchSize, opPol, (const DataType*)spare1,
                                    stream);
+        CERR << "[DEBUG] Policy map completed";
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
-                            scratch_mem_, scratch_size_, nullptr, cublas_,
+                            scratch_mem_ptr, scratch_size_, nullptr, cublas_handle,
                             stream);  // policy map layer  // POLICY output
       }
 
     } else if (conv_policy_) {
-      network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem_,
-                          scratch_size_, cudnn_, cublas_,
+      network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem_ptr,
+                          scratch_size_, cudnn_, cublas_handle,
                           stream);  // policy conv1
 
-      network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem_,
-                          scratch_size_, cudnn_, cublas_,
+      network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem_ptr,
+                          scratch_size_, cudnn_, cublas_handle,
                           stream);  // policy conv2
 
       if (fp16) {
@@ -905,12 +967,12 @@ class RocmNetwork : public Network {
                                    stream);
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare2, nullptr,
-                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            scratch_mem_ptr, scratch_size_, cudnn_, cublas_handle,
                             stream);  // policy map layer  // POLICY output
       }
     } else {
-      network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem_,
-                          scratch_size_, cudnn_, cublas_, stream);  // pol conv
+      network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem_ptr,
+                          scratch_size_, cudnn_, cublas_handle, stream);  // pol conv
 
       if (fp16) {
         // For FP16: use direct FP32 output from policy map (avoids FP16→FP32
@@ -921,43 +983,59 @@ class RocmNetwork : public Network {
                                    stream);
       } else {
         network_[l++]->Eval(batchSize, (DataType*)opPol, spare1, nullptr,
-                            scratch_mem_, scratch_size_, cudnn_, cublas_,
+                            scratch_mem_ptr, scratch_size_, cudnn_, cublas_handle,
                             stream);  // pol FC  // POLICY
       }
     }
 
     // value head
-    network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2, scratch_mem_,
-                        scratch_size_, cudnn_, cublas_, stream);  // value head
+    CERR << "[DEBUG] About to run value head...";
+    network_[l++]->Eval(batchSize, (DataType*)opVal, flow, spare2, scratch_mem_ptr,
+                        scratch_size_, cudnn_, cublas_handle, stream);  // value head
+    CERR << "[DEBUG] Value head completed";
     // Record event after value computation (needed for CPU softmax)
+    CERR << "[DEBUG] Recording value_ready_event...";
     ReportHIPErrors(hipEventRecord(value_ready_event_, stream));
+    CERR << "[DEBUG] Event recorded";
 
     if (moves_left_) {
       // Moves left head
-      network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem_,
-                          scratch_size_, cudnn_, cublas_,
+      network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem_ptr,
+                          scratch_size_, cudnn_, cublas_handle,
                           stream);  // moves conv or embedding
 
-      network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem_,
-                          scratch_size_, cudnn_, cublas_, stream);  // moves FC1
+      network_[l++]->Eval(batchSize, spare2, spare1, nullptr, scratch_mem_ptr,
+                          scratch_size_, cudnn_, cublas_handle, stream);  // moves FC1
 
       // Moves left FC2
       network_[l++]->Eval(batchSize, (DataType*)opMov, spare2, nullptr,
-                          scratch_mem_, scratch_size_, cudnn_, cublas_, stream);
+                          scratch_mem_ptr, scratch_size_, cudnn_, cublas_handle, stream);
     }
 
     // Defer policy copy until after all GPU work is queued (Optimization #3)
+    CERR << "[DEBUG] About to copy policy memory D2H...";
     ReportHIPErrors(hipMemcpyAsync(io->op_policy_mem_, io->op_policy_mem_gpu_,
                                    sizeof(float) * kNumOutputPolicy * batchSize,
                                    hipMemcpyDeviceToHost, stream));
+    CERR << "[DEBUG] Policy copy queued";
     // Record event after policy transfer
+    CERR << "[DEBUG] Recording policy_ready_event...";
     ReportHIPErrors(hipEventRecord(policy_ready_event_, stream));
+    CERR << "[DEBUG] Policy event recorded";
 
     // Wait ONLY for value (needed for CPU softmax)
+    CERR << "[DEBUG] Synchronizing value_ready_event...";
     ReportHIPErrors(hipEventSynchronize(value_ready_event_));
+    CERR << "[DEBUG] Value event synchronized";
 
     // Release lock early (moves_left and policy transfer can finish async)
-    lock.unlock();
+    CERR << "[DEBUG] Releasing lock...";
+    if (lock.owns_lock()) {
+      lock.unlock();
+      CERR << "[DEBUG] Lock released";
+    } else {
+      CERR << "[DEBUG] No lock to release (multi-stream mode)";
+    }
 
     if (wdl_) {
       // Value softmax done cpu side.
@@ -1028,12 +1106,29 @@ class RocmNetwork : public Network {
     ReportHIPErrors(hipEventDestroy(value_ready_event_));
     ReportHIPErrors(hipEventDestroy(policy_ready_event_));
 
+    // Destroy streams and events if using single-stream mode
+    if (!multi_stream_) {
+      if (compute_stream_) ReportHIPErrors(hipStreamDestroy(compute_stream_));
+      if (upload_stream_) ReportHIPErrors(hipStreamDestroy(upload_stream_));
+      if (download_stream_) ReportHIPErrors(hipStreamDestroy(download_stream_));
+      if (compute_ordering_event_) ReportHIPErrors(hipEventDestroy(compute_ordering_event_));
+    }
+
     miopenDestroy(cudnn_);
     rocblas_destroy_handle(cublas_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities_;
+  }
+
+  // Return a lock if single-stream mode, empty lock if multi-stream
+  std::unique_lock<std::mutex> LockEval() {
+    if (multi_stream_) {
+      return {};  // Empty lock - no synchronization needed
+    } else {
+      return std::unique_lock<std::mutex>{lock_};  // Serialize batches
+    }
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {
@@ -1048,8 +1143,10 @@ class RocmNetwork : public Network {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
       constexpr bool fp16 = std::is_same<half, DataType>::value;
+      // When multi_stream_=true, pass tensor_mem_size_ to enable per-stream allocation
       return std::make_unique<InputsOutputs>(max_batch_size_, wdl_, moves_left_,
-                                             0, 0, false, fp16);
+                                             tensor_mem_size_, scratch_size_, false, fp16,
+                                             gpu_id_);
     } else {
       std::unique_ptr<InputsOutputs> resource =
           std::move(free_inputs_outputs_.front());
@@ -1089,8 +1186,16 @@ class RocmNetwork : public Network {
   bool use_res_block_winograd_fuse_opt_;  // Fuse operations inside the residual
                                           // tower.
 
+  // Multi-stream support (like CUDA backend)
+  bool multi_stream_;
+  hipStream_t compute_stream_ = nullptr;
+  hipStream_t upload_stream_ = nullptr;
+  hipStream_t download_stream_ = nullptr;
+  hipEvent_t compute_ordering_event_ = nullptr;
+  size_t tensor_mem_size_;  // Size needed for per-stream allocation
+
   // Currently only one NN Eval can happen a time (we can fix this if needed
-  // by allocating more memory).
+  // by allocating more memory). This lock is only used when multi_stream_=false.
   mutable std::mutex lock_;
 
   int numBlocks_;
