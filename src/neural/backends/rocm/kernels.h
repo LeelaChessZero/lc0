@@ -160,5 +160,23 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
 template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, hipStream_t stream);
+
+// Flash Attention kernel wrapper (fused Q·K^T → softmax → ·V)
+// Implements tiled flash attention algorithm for memory-efficient attention computation
+// Returns true if flash attention was used, false if fallback to rocBLAS is needed
+template <typename T>
+bool flash_attention_wrapper(
+    const T* Q,           // Query: [batch, seq_len, head0_depth, head1_depth, ..., headN_depth]
+    const T* K,           // Key: same layout as Q
+    const T* V,           // Value: same layout as Q
+    T* output,            // Output: same layout as Q/K/V
+    float scale,          // Scale factor: 1.0 / sqrt(depth)
+    int batch,            // Batch size (N)
+    int num_heads,        // Number of attention heads
+    int d_model,          // Total embedding dimension (depth * num_heads)
+    int depth,            // Per-head dimension
+    rocblas_handle cublas,
+    hipStream_t stream
+);
 }  // namespace rocm_backend
 }  // namespace lczero

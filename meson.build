@@ -433,15 +433,54 @@ if get_option('build_backends')
     # ROCm kernel compilation arguments
     rocm_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
                       '-I', meson.current_source_dir() + '/src',
-                      '--std=c++14', '-fPIC',
+                      '--std=c++20', '-fPIC',
                       '--rocm-path=/opt/rocm',
                       '--rocm-device-lib-path=/opt/rocm/lib/llvm/amdgcn/bitcode']
 
-    # Use amd_gfx option if specified, otherwise default to gfx1151
-    amd_gfx_target = get_option('amd_gfx')
-    if amd_gfx_target == ''
+    # Architecture configuration system
+    arch_config_script = meson.current_source_dir() / 'scripts/rocm_backend_amd_gfx_configs.py'
+    amd_gfx_option = get_option('amd_gfx')
+
+    # Determine GPU architecture and configuration
+    if amd_gfx_option != ''
+      # User specified architecture - auto-configure
+      amd_gfx_target = amd_gfx_option
+
+      # Get architecture info and flags
+      arch_name_result = run_command('python3', arch_config_script, 'name', amd_gfx_option, check: false)
+      arch_flags_result = run_command('python3', arch_config_script, 'flags', amd_gfx_option, check: false)
+
+      if arch_flags_result.returncode() == 0
+        # Valid architecture - get pre-tuned flags
+        arch_name = arch_name_result.stdout().strip()
+        arch_flags = arch_flags_result.stdout().strip()
+        message('Using architecture: ' + arch_name + ' (' + amd_gfx_option + ')')
+        message('  ✓ Performance tuned configuration')
+
+        # Add flash attention flags to rocm_arguments
+        foreach flag : arch_flags.split()
+          rocm_arguments += [flag]
+        endforeach
+      else
+        error('Unknown architecture: ' + amd_gfx_option + '\nRun: python3 scripts/rocm_backend_amd_gfx_configs.py list')
+      endif
+
+    else
+      # No architecture specified - use default with warning
       amd_gfx_target = 'gfx1151'
+      arch_flags = run_command('python3', arch_config_script, 'flags', 'gfx1151', check: true).stdout().strip()
+
+      warning('No GPU architecture specified, defaulting to gfx1151 (Radeon 8060S)')
+      warning('For your GPU, use: ./build.sh release -Drocm=true -Damd_gfx=<your_gfx>')
+      warning('Find your architecture: rocminfo | grep gfx')
+      message('Using optimized flash attention for gfx1151')
+
+      # Add flash attention flags
+      foreach flag : arch_flags.split()
+        rocm_arguments += [flag]
+      endforeach
     endif
+
     rocm_arguments += ['--offload-arch=' + amd_gfx_target]
 
     foreach x : get_option('hip_include')
@@ -467,6 +506,14 @@ if get_option('build_backends')
       input : 'src/neural/backends/rocm/fp16_kernels.hip',
       output : outputname,
       depend_files: 'src/neural/backends/rocm/winograd_helper.inc',
+      command : [hipcc, rocm_arguments]
+    )
+
+    files += custom_target('rocm flash attention wrapper',
+      input : 'src/neural/backends/rocm/flash_attention_wrapper.hip',
+      output : outputname,
+      depend_files: ['src/neural/backends/rocm/flash_attention.hip',
+                     'src/neural/backends/rocm/mma.hip'],
       command : [hipcc, rocm_arguments]
     )
 

@@ -36,6 +36,18 @@
 #include "rocm_common.h"
 #include "utils/fp16_utils.h"
 
+// Compile-time flag to enable flash attention (fused Q·K^T → softmax → ·V)
+// Set to 1 to use flash attention, 0 to use rocBLAS (default for stability)
+#ifndef USE_FLASH_ATTENTION
+#define USE_FLASH_ATTENTION 0
+#endif
+
+// Compile-time flag to verify flash attention correctness against rocBLAS
+// Set to 1 to run both and compare outputs (performance impact: 2x slower)
+#ifndef FLASH_ATTENTION_VERIFY
+#define FLASH_ATTENTION_VERIFY 0
+#endif
+
 namespace lczero {
 
 namespace rocm_backend {
@@ -1699,6 +1711,44 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   // shape(k)[-1] = depth
   float factor = 1.0f / sqrt((float)depth);
 
+#if USE_FLASH_ATTENTION
+  // Try to use flash attention (fused kernel)
+  static bool flash_log_once = false;
+  if (!flash_log_once) {
+    printf("[FLASH ATTENTION] Attempting to use fused attention kernel (depth=%d, heads=%d)\n", depth, encoder_heads_);
+    flash_log_once = true;
+  }
+
+#if FLASH_ATTENTION_VERIFY
+  // Verification mode: allocate buffer for rocBLAS reference output
+  DataType* buffer_reference = nullptr;
+  const size_t output_size = N * 64 * d_model * sizeof(DataType);
+  ReportHIPErrors(hipMalloc(&buffer_reference, output_size));
+#endif
+
+  bool flash_used = flash_attention_wrapper<DataType>(
+      mha_q, mha_k, mha_v, buffer2,
+      factor,
+      N, encoder_heads_, d_model, depth,
+      cublas, stream
+  );
+
+#if FLASH_ATTENTION_VERIFY
+  if (flash_used) {
+    // Save flash attention output
+    ReportHIPErrors(hipMemcpy(buffer_reference, buffer2, output_size, hipMemcpyDeviceToDevice));
+  }
+#endif
+
+  if (!flash_used) {
+    // Flash attention not supported for this configuration, fallback to rocBLAS
+    static bool fallback_log_once = false;
+    if (!fallback_log_once) {
+      printf("[FLASH ATTENTION] Fallback to rocBLAS (depth=%d not supported or kernel launch failed)\n", depth);
+      fallback_log_once = true;
+    }
+#endif
+
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
   {
     if (*offset_pointers == nullptr) {
@@ -1782,6 +1832,64 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         // 64 * d_model /*strideC*/,
         N * encoder_heads_);
   }
+
+#if USE_FLASH_ATTENTION
+  }  // end if (!flash_used) - close rocBLAS fallback block
+
+#if FLASH_ATTENTION_VERIFY
+  // Verification mode: compare flash attention output with rocBLAS reference
+  if (flash_used) {
+    // Compute max absolute difference
+    const int total_elements = N * 64 * d_model;
+    std::vector<DataType> flash_output(total_elements);
+    std::vector<DataType> rocblas_output(total_elements);
+
+    ReportHIPErrors(hipMemcpy(flash_output.data(), buffer_reference, output_size, hipMemcpyDeviceToHost));
+    ReportHIPErrors(hipMemcpy(rocblas_output.data(), buffer2, output_size, hipMemcpyDeviceToHost));
+
+    float max_error = 0.0f;
+    float sum_error = 0.0f;
+    int error_count = 0;
+
+    for (int i = 0; i < total_elements; i++) {
+      float flash_val = static_cast<float>(flash_output[i]);
+      float rocblas_val = static_cast<float>(rocblas_output[i]);
+      float error = std::abs(flash_val - rocblas_val);
+
+      if (error > max_error) {
+        max_error = error;
+      }
+      sum_error += error;
+      if (error > 1e-5f) {
+        error_count++;
+      }
+    }
+
+    static bool verify_log_once = false;
+    if (!verify_log_once) {
+      printf("[FLASH ATTENTION VERIFY] Max error: %.2e, Avg error: %.2e, Errors > 1e-5: %d/%d (%.2f%%)\n",
+             max_error, sum_error / total_elements, error_count, total_elements,
+             100.0f * error_count / total_elements);
+
+      if (max_error < 1e-5f) {
+        printf("[FLASH ATTENTION VERIFY] ✓ PASSED: Numerical correctness verified (max_error < 1e-5)\n");
+      } else if (max_error < 1e-4f) {
+        printf("[FLASH ATTENTION VERIFY] ⚠ WARNING: Acceptable error but higher than ideal (1e-5 < max_error < 1e-4)\n");
+      } else {
+        printf("[FLASH ATTENTION VERIFY] ✗ FAILED: Numerical error too high (max_error >= 1e-4)\n");
+      }
+      verify_log_once = true;
+    }
+
+    // Restore flash attention output to buffer2
+    ReportHIPErrors(hipMemcpy(buffer2, buffer_reference, output_size, hipMemcpyDeviceToDevice));
+  }
+
+  if (buffer_reference) {
+    ReportHIPErrors(hipFree(buffer_reference));
+  }
+#endif
+#endif
 
   // #final dense layer (mha_dense), buffer2 -> buffer1
   {
