@@ -291,9 +291,9 @@ static __device__ __forceinline__ void flash_attn_iter_lc0(
     constexpr int  nbatch_V2       = get_fattn_nbatch_V2(DKQ, DV, ncols);
     constexpr bool Q_in_reg        = get_fattn_Q_in_reg (DKQ, DV, ncols);
 
-    constexpr int stride_tile_Q = DKQ/2     + 2;
-    constexpr int stride_tile_K = nbatch_K2 + 2;
-    constexpr int stride_tile_V = nbatch_V2 + 2;
+    constexpr int stride_tile_Q = DKQ/2     + 1;
+    constexpr int stride_tile_K = nbatch_K2 + 1;
+    constexpr int stride_tile_V = nbatch_V2 + 1;
 
     const int k_VKQ_0 = kb0 * nbatch_fa;
     const int head_offset = head_idx * depth / 2; // In half2 units
@@ -431,7 +431,11 @@ static __device__ __forceinline__ void flash_attn_iter_lc0(
             }
         }
 
-        __syncthreads();
+        // Barrier only needed if loop runs multiple times
+        // With DV=32, nbatch_V2=24: loop runs once, barrier unnecessary
+        if constexpr (DV > 2*nbatch_V2) {
+            __syncthreads();
+        }
     }
 #else
     // No device code for non-RDNA architectures

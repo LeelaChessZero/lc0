@@ -1072,21 +1072,27 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
       for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &input[tensorIndex + 8]);
       for (int i = 0; i < 8; i++) val[i + 8] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &bias[biasIndex]);
-      for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
-      copyAs<uint4>(&inp[0], &bias[biasIndex + 8]);
-      for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
-      for (int i = 0; i < 16; i++) val[i] += oth[i];
+      // Only add bias if pointer is non-null (may be fused in hipBLASLt epilogue)
+      if (bias != nullptr) {
+        copyAs<uint4>(&inp[0], &bias[biasIndex]);
+        for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
+        copyAs<uint4>(&inp[0], &bias[biasIndex + 8]);
+        for (int i = 0; i < 8; i++) oth[i + 8] = (float)inp[i];
+        for (int i = 0; i < 16; i++) val[i] += oth[i];
+      }
     } else {
       copyAs<uint4>(&val[0], &input[tensorIndex]);
       copyAs<uint4>(&val[4], &input[tensorIndex + 4]);
       copyAs<uint4>(&val[8], &input[tensorIndex + 8]);
       copyAs<uint4>(&val[12], &input[tensorIndex + 12]);
-      copyAs<uint4>(&oth[0], &bias[biasIndex]);
-      copyAs<uint4>(&oth[4], &bias[biasIndex + 4]);
-      copyAs<uint4>(&oth[8], &bias[biasIndex + 8]);
-      copyAs<uint4>(&oth[12], &bias[biasIndex + 12]);
-      for (int i = 0; i < 16; i++) val[i] += oth[i];
+      // Only add bias if pointer is non-null (may be fused in hipBLASLt epilogue)
+      if (bias != nullptr) {
+        copyAs<uint4>(&oth[0], &bias[biasIndex]);
+        copyAs<uint4>(&oth[4], &bias[biasIndex + 4]);
+        copyAs<uint4>(&oth[8], &bias[biasIndex + 8]);
+        copyAs<uint4>(&oth[12], &bias[biasIndex + 12]);
+        for (int i = 0; i < 16; i++) val[i] += oth[i];
+      }
     }
   }
 
@@ -1447,6 +1453,76 @@ template void addBiasBatched<half>(half* output, const half* input,
                                    const half* bias, int Batch, int N, int C,
                                    int Nstride, ActivationFunction activation,
                                    hipStream_t stream);
+
+// Activation-only kernel (for use after hipBLASLt GEMM+bias fusion)
+template <typename T, ActivationFunction act>
+__global__ void applyActivation_kernel(T* data, int N) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= N) return;
+
+  const bool fp16 = std::is_same<half, T>::value;
+  float val;
+
+  if (fp16) {
+    val = (float)((half*)data)[idx];
+  } else {
+    val = ((float*)data)[idx];
+  }
+
+  val = activate(val, act);
+
+  if (fp16) {
+    ((half*)data)[idx] = (half)val;
+  } else {
+    ((float*)data)[idx] = val;
+  }
+}
+
+template <typename T>
+void applyActivation(T* data, int N, ActivationFunction activation,
+                     hipStream_t stream) {
+  const int kBlockSize = 256;
+  int blocks = (N + kBlockSize - 1) / kBlockSize;
+
+  switch (activation) {
+    case ACTIVATION_NONE:
+      return;  // Nothing to do
+    case ACTIVATION_RELU:
+      applyActivation_kernel<T, ACTIVATION_RELU>
+          <<<blocks, kBlockSize, 0, stream>>>(data, N);
+      break;
+    case ACTIVATION_TANH:
+      applyActivation_kernel<T, ACTIVATION_TANH>
+          <<<blocks, kBlockSize, 0, stream>>>(data, N);
+      break;
+    case ACTIVATION_SIGMOID:
+      applyActivation_kernel<T, ACTIVATION_SIGMOID>
+          <<<blocks, kBlockSize, 0, stream>>>(data, N);
+      break;
+    case ACTIVATION_SELU:
+      applyActivation_kernel<T, ACTIVATION_SELU>
+          <<<blocks, kBlockSize, 0, stream>>>(data, N);
+      break;
+    case ACTIVATION_MISH:
+      applyActivation_kernel<T, ACTIVATION_MISH>
+          <<<blocks, kBlockSize, 0, stream>>>(data, N);
+      break;
+    case ACTIVATION_SWISH:
+      applyActivation_kernel<T, ACTIVATION_SWISH>
+          <<<blocks, kBlockSize, 0, stream>>>(data, N);
+      break;
+    default:
+      break;
+  }
+  ReportHIPErrors(hipGetLastError());
+}
+
+template void applyActivation<float>(float* data, int N,
+                                     ActivationFunction activation,
+                                     hipStream_t stream);
+template void applyActivation<half>(half* data, int N,
+                                    ActivationFunction activation,
+                                    hipStream_t stream);
 
 template void addBias_NCHW<float>(float* c, float* a, float* b, int N, int C,
                                   int H, int W, ActivationFunction activation,

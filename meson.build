@@ -408,12 +408,22 @@ if get_option('build_backends')
   rocm_libdirs = get_option('hip_libdirs')
   rocblas_lib = cc.find_library('rocblas', dirs: rocm_libdirs, required: false)
   hipblas_lib = cc.find_library('hipblas', dirs: rocm_libdirs, required: false)
+  hipblaslt_lib = cc.find_library('hipblaslt', dirs: rocm_libdirs, required: false)
   miopen_lib = cc.find_library('MIOpen', dirs: rocm_libdirs, required: false)
   amdhip_lib = cc.find_library('amdhip64', dirs: rocm_libdirs, required: false)
   hipcc = find_program('hipcc', '/opt/rocm/bin/hipcc', required: false)
 
   if get_option('rocm') and rocblas_lib.found() and amdhip_lib.found() and miopen_lib.found() and hipcc.found()
     deps += [rocblas_lib, hipblas_lib, amdhip_lib, miopen_lib]
+
+    # Add hipBLASLt with Split-K for better GPU utilization on small batches
+    if hipblaslt_lib.found()
+      deps += hipblaslt_lib
+      add_project_arguments('-DUSE_HIPBLASLT', language : 'cpp')
+      message('hipBLASLt found - GEMM+bias fusion with Split-K enabled')
+    else
+      warning('hipBLASLt not found - GEMM+bias fusion disabled')
+    endif
 
     rocm_files = ['src/neural/backends/rocm/rocm_common.cc',
                   'src/neural/backends/rocm/layers.cc',

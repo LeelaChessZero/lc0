@@ -36,6 +36,10 @@
 #include "rocm_common.h"
 #include "utils/fp16_utils.h"
 
+#ifdef USE_HIPBLASLT
+#include "hipblaslt_wrapper.h"
+#endif
+
 // Compile-time flag to enable flash attention (fused Q·K^T → softmax → ·V)
 // Set to 1 to use flash attention, 0 to use rocBLAS (default for stability)
 #ifndef USE_FLASH_ATTENTION
@@ -1926,17 +1930,62 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     const int num_inputs = ffn_dense1_size_;  // encoder_dff
     const int num_outputs = embedding_op_size_;
     const int batch = N * 64;
+
+#ifdef USE_HIPBLASLT
+    // Use hipBLASLt with Split-K only for small batches (< 32)
+    // At larger batches, we already have enough parallelism (64*64 = 4096 rows)
+    constexpr int HIPBLASLT_BATCH_THRESHOLD = 32;
+    bool use_hipblaslt = (N < HIPBLASLT_BATCH_THRESHOLD);
+    bool hipblaslt_success = false;
+
+    if (use_hipblaslt) {
+      static bool logged_once_dense2 = false;
+      hipblaslt_success = HipblasLtGemmWithBias(
+          stream,
+          rocblas_operation_transpose,  // transpose_a
+          rocblas_operation_none,       // transpose_b
+          num_outputs, batch, num_inputs,  // m, n, k
+          1.0f,                          // alpha
+          (const DataType*)ffn_dense2_w, num_inputs,  // A, lda
+          in_out_tensor, num_inputs,     // B, ldb
+          0.0f,                          // beta
+          buffer1, num_outputs,          // C, ldc
+          ffn_dense2_b);                 // bias (fused in epilogue)
+
+      if (!logged_once_dense2) {
+        printf("[HIPBLASLT] FFN Dense 2: USING hipBLASLt for batches < %d (Split-K + bias fusion)\n",
+               HIPBLASLT_BATCH_THRESHOLD);
+        logged_once_dense2 = true;
+      }
+    }
+
+    // Fallback to rocBLAS for large batches or if hipBLASLt failed
+    if (!hipblaslt_success) {
+      cublasXgemm(cublas, rocblas_operation_transpose, rocblas_operation_none,
+                  num_outputs, batch, num_inputs, 1.0f,
+                  (const DataType*)ffn_dense2_w, num_inputs, in_out_tensor,
+                  num_inputs, 0.0f, buffer1, num_outputs);
+    }
+
+    // LN2: skip connection and layer normilization
+    // If hipBLASLt succeeded, bias is already added in GEMM epilogue
+    LayerNorm<DataType>(N * 64, embedding_op_size_, in_out_tensor, buffer1,
+                        hipblaslt_success ? nullptr : ffn_dense2_b,
+                        scratch, ln2_gammas, ln2_betas,
+                        default_eps_, alpha_, ACTIVATION_NONE, stream);
+#else
+    // rocBLAS GEMM (bias deferred to LayerNorm)
     cublasXgemm(cublas, rocblas_operation_transpose, rocblas_operation_none,
                 num_outputs, batch, num_inputs, 1.0f,
                 (const DataType*)ffn_dense2_w, num_inputs, in_out_tensor,
                 num_inputs, 0.0f, buffer1, num_outputs);
-  }
 
-  // LN2: skip connection and layer normilization (also bias add of prev gemm)
-  // buffer1/scratch -> in_out_tensor
-  LayerNorm<DataType>(N * 64, embedding_op_size_, in_out_tensor, buffer1,
-                      ffn_dense2_b, scratch, ln2_gammas, ln2_betas,
-                      default_eps_, alpha_, ACTIVATION_NONE, stream);
+    // LN2: skip connection and layer normilization (also bias add of prev gemm)
+    LayerNorm<DataType>(N * 64, embedding_op_size_, in_out_tensor, buffer1,
+                        ffn_dense2_b, scratch, ln2_gammas, ln2_betas,
+                        default_eps_, alpha_, ACTIVATION_NONE, stream);
+#endif
+  }
 }
 
 template <typename DataType>
