@@ -45,13 +45,6 @@ mx::array MakeArray(const std::vector<float>& data,
   return mx::array(data.data(), mlx_shape, mx::float32);
 }
 
-// Helper to create an MLX array from a float pointer.
-mx::array MakeArray(const float* data, size_t size,
-                    const std::vector<int>& shape) {
-  mx::Shape mlx_shape(shape.begin(), shape.end());
-  return mx::array(data, mlx_shape, mx::float32);
-}
-
 // Convert convolution weights from OIHW to OHWI format (MLX conv2d expects OHWI).
 // This creates a contiguous array with the proper memory layout.
 mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
