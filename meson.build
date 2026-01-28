@@ -692,6 +692,95 @@ if get_option('build_backends')
   endif
 
   ## ~~~~~~~~
+  ## MLX
+  ## ~~~~~~~~
+  # MLX backend only available on macOS (Apple Silicon).
+  mlx_opt = get_option('mlx')
+  if (mlx_opt.enabled() or mlx_opt.auto()) and host_machine.system() == 'darwin'
+    mlx_libdir = get_option('mlx_libdir')
+    mlx_include_dir = get_option('mlx_include')
+
+    # Try to find MLX library.
+    mlx_found = false
+
+    if mlx_libdir != '' and mlx_include_dir != ''
+      # User specified paths.
+      mlx_lib = cc.find_library('mlx', dirs: [mlx_libdir], required: mlx_opt)
+      if mlx_lib.found()
+        includes += include_directories(mlx_include_dir, is_system: true)
+        deps += mlx_lib
+        mlx_found = true
+      endif
+    else
+      # Try common installation paths first (avoid cmake dependency which has
+      # broken link_args on macOS - it incorrectly specifies frameworks).
+      # Check for brew installation.
+      brew_prefix = run_command('brew', '--prefix', check: false)
+      if brew_prefix.returncode() == 0
+        brew_path = brew_prefix.stdout().strip()
+        mlx_brew_libdir = brew_path / 'lib'
+        mlx_brew_include = brew_path / 'include'
+        mlx_lib = cc.find_library('mlx', dirs: [mlx_brew_libdir], required: false)
+        if mlx_lib.found() and cc.has_header('mlx/mlx.h', args: '-I' + mlx_brew_include)
+          includes += include_directories(mlx_brew_include, is_system: true)
+          # MLX requires Metal, Foundation, and Accelerate frameworks
+          mlx_frameworks = dependency('appleframeworks',
+            modules: ['Foundation', 'Metal', 'QuartzCore'],
+            required: false)
+          if mlx_frameworks.found()
+            deps += mlx_lib
+            deps += mlx_frameworks
+            mlx_found = true
+          endif
+        endif
+      endif
+
+      # Try pip-installed MLX (typical location).
+      if not mlx_found
+        python3 = find_program('python3', required: false)
+        if python3.found()
+          mlx_site_packages = run_command(python3, '-c',
+            'import mlx; import os; print(os.path.dirname(mlx.__file__))',
+            check: false)
+          if mlx_site_packages.returncode() == 0
+            mlx_pip_path = mlx_site_packages.stdout().strip()
+            mlx_pip_include = mlx_pip_path / 'include'
+            mlx_pip_lib = mlx_pip_path / 'lib'
+            mlx_lib = cc.find_library('mlx', dirs: [mlx_pip_lib], required: false)
+            if mlx_lib.found()
+              includes += include_directories(mlx_pip_include, is_system: true)
+              mlx_frameworks = dependency('appleframeworks',
+                modules: ['Foundation', 'Metal', 'QuartzCore'],
+                required: false)
+              if mlx_frameworks.found()
+                deps += mlx_lib
+                deps += mlx_frameworks
+                mlx_found = true
+              endif
+            endif
+          endif
+        endif
+      endif
+    endif
+
+    if mlx_found
+      message('Building with MLX backend')
+      # NOTE: When MLX is enabled, -march=native must be disabled due to
+      # Apple Clang bfloat16 compiler bug. Use -Dnative_arch=false.
+      if get_option('native_arch')
+        warning('MLX backend with -Dnative_arch=true may cause compiler errors due to bfloat16 bug in Apple Clang. Consider using -Dnative_arch=false.')
+      endif
+      files += [
+        'src/neural/backends/mlx/network_mlx.cc',
+        'src/neural/backends/mlx/layers.cc',
+      ]
+      has_backends = true
+    elif mlx_opt.enabled()
+      error('MLX backend was explicitly enabled but MLX library was not found.')
+    endif
+  endif
+
+  ## ~~~~~~~~
   ## XLA
   ## ~~~~~~~~
   if get_option('xla')

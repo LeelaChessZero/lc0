@@ -138,6 +138,21 @@ option('metal',
        value: 'auto',
        description: 'Enable Metal backend')
 
+option('mlx',
+       type: 'feature',
+       value: 'auto',
+       description: 'Enable MLX backend (Apple Silicon)')
+
+option('mlx_libdir',
+       type: 'string',
+       value: '',
+       description: 'Path to MLX library directory')
+
+option('mlx_include',
+       type: 'string',
+       value: '',
+       description: 'Path to MLX include directory')
+
 option('malloc',
        type : 'string',
        value: '',
