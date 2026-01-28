@@ -714,6 +714,13 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     mx::eval({policy, value});
   }
 
+  // Verify output arrays are valid before accessing data.
+  assert(policy.size() > 0 && policy.size() % batch_size == 0);
+  assert(value.size() == static_cast<size_t>(batch_size) * (wdl_ ? 3 : 1));
+  if (moves_left_) {
+    assert(moves_left_out.size() == static_cast<size_t>(batch_size));
+  }
+
   // Copy results to output buffers.
   // Policy map is applied on CPU for attention/conv policy.
   if (attn_policy_) {
