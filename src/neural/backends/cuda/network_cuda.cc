@@ -344,7 +344,9 @@ class CudaNetwork : public Network {
 
     bool use_fused_mha = false;
     if (deviceProp.major >= 8 && fp16) {
-      use_fused_mha = options.GetOrDefault<bool>("fused_mha", true);
+      use_fused_mha = options.GetOrDefault<bool>(
+          "fused_mha", file.format().network_format().ffn_activation() !=
+                           pblczero::NetworkFormat::ACTIVATION_RELU_2);
     }
 
     const bool use_gemm_ex = deviceProp.major >= 5;
