@@ -332,7 +332,7 @@ mx::array RmsNorm(const mx::array& input, const mx::array& gammas) {
   // RMS = sqrt(mean(x^2))
   mx::array squared = mx::multiply(input, input);
   mx::array mean_sq = mx::mean(squared, std::vector<int>{axis}, true);
-  mx::array rms = mx::sqrt(mean_sq);
+  mx::array rms = mx::sqrt(mx::add(mean_sq, mx::array(1e-6f)));
 
   // Normalize and apply gamma.
   return mx::multiply(mx::divide(input, rms), gammas);
