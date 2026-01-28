@@ -52,6 +52,13 @@ mx::array MakeArray(const std::vector<float>& data,
 mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
                                         int outChannels, int inChannels,
                                         int kH, int kW) {
+  // Validate inputs to prevent overflow and undefined behavior.
+  assert(outChannels > 0 && inChannels > 0 && kH > 0 && kW > 0);
+  [[maybe_unused]] const size_t expected_size =
+      static_cast<size_t>(outChannels) * static_cast<size_t>(inChannels) *
+      static_cast<size_t>(kH) * static_cast<size_t>(kW);
+  assert(weights.size() == expected_size);
+
   std::vector<float> converted(weights.size());
   for (int oc = 0; oc < outChannels; oc++) {
     for (int ic = 0; ic < inChannels; ic++) {
