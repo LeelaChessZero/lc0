@@ -659,7 +659,6 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
     case OnnxProvider::DML: {
       std::unordered_map<std::string, std::string> dml_options;
       dml_options["device_id"] = std::to_string(gpu_);
-      dml_options["performance_preference"] = "high_performance";
       options.AppendExecutionProvider("DML", dml_options);
       break;
     }
