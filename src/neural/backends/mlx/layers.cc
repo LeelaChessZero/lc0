@@ -413,43 +413,33 @@ mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
   int seq_len = static_cast<int>(queries.shape()[1]);
   int dmodel = static_cast<int>(queries.shape()[2]);
   int depth = dmodel / heads;
+  float scale = 1.0f / std::sqrt(static_cast<float>(depth));
 
-  // Reshape to [batch, 64, heads, depth] and transpose to [batch, heads, 64, depth].
-  // Use flatten+reshape to force contiguous layout after transpose.
-  mx::array q = mx::reshape(queries, {batch_size, seq_len, heads, depth});
-  q = mx::transpose(q, {0, 2, 1, 3});
-  q = mx::reshape(mx::flatten(q), q.shape());  // Force contiguous
+  // Reshape to [batch, seq, heads, depth] and transpose to [batch, heads, seq, depth].
+  mx::array q = mx::transpose(
+      mx::reshape(queries, {batch_size, seq_len, heads, depth}), {0, 2, 1, 3});
+  mx::array k = mx::transpose(
+      mx::reshape(keys, {batch_size, seq_len, heads, depth}), {0, 2, 1, 3});
+  mx::array v = mx::transpose(
+      mx::reshape(values, {batch_size, seq_len, heads, depth}), {0, 2, 1, 3});
 
-  mx::array k = mx::reshape(keys, {batch_size, seq_len, heads, depth});
-  k = mx::transpose(k, {0, 2, 1, 3});
-  k = mx::reshape(mx::flatten(k), k.shape());  // Force contiguous
+  mx::array output = [&]() {
+    if (smolgen_attn_weights != nullptr && smolgen_attn_weights->size() > 0) {
+      // Manual attention for smolgen (additive bias before softmax).
+      mx::array attn = mx::matmul(q, mx::transpose(k, {0, 1, 3, 2}));
+      attn = mx::multiply(attn, mx::array(scale));
+      attn = mx::add(attn, *smolgen_attn_weights);
+      attn = mx::softmax(attn, -1);
+      return mx::matmul(attn, v);
+    } else {
+      // Use optimized SDPA primitive.
+      return mx::fast::scaled_dot_product_attention(q, k, v, scale);
+    }
+  }();
 
-  mx::array v = mx::reshape(values, {batch_size, seq_len, heads, depth});
-  v = mx::transpose(v, {0, 2, 1, 3});
-  v = mx::reshape(mx::flatten(v), v.shape());  // Force contiguous
-
-  // Scaled dot-product attention: Q @ K^T / sqrt(depth).
-  mx::array k_t = mx::transpose(k, {0, 1, 3, 2});
-  mx::array attn = mx::matmul(q, k_t);
-  attn = mx::divide(attn, mx::array(std::sqrt(static_cast<float>(depth))));
-
-  // Add smolgen attention weights if present.
-  // smolgen_attn_weights shape: [batch, heads, 64, 64]
-  if (smolgen_attn_weights != nullptr && smolgen_attn_weights->size() > 0) {
-    attn = mx::add(attn, *smolgen_attn_weights);
-  }
-
-  // Softmax over the last dimension.
-  attn = mx::softmax(attn, -1);
-
-  // Multiply by values.
-  mx::array output = mx::matmul(attn, v);
-
-  // Transpose back to [batch, 64, heads, depth] and reshape to [batch, 64, dmodel].
-  output = mx::transpose(output, {0, 2, 1, 3});
-  output = mx::reshape(output, {batch_size, seq_len, dmodel});
-
-  return output;
+  // Transpose back and reshape to [batch, seq, dmodel].
+  return mx::reshape(mx::transpose(output, {0, 2, 1, 3}),
+                     {batch_size, seq_len, dmodel});
 }
 
 // Scaled Q*K matmul for attention policy.
