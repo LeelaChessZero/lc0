@@ -928,8 +928,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     } else {
       bool fp16 = kProvider == OnnxProvider::CPU ? false : true;
 #if ORT_API_VERSION < 24
-      CERR << "WARNING: CoreML with onnxruntime before v1.24 is very slow.";
-      if (kProvider == OnnxProvider::COREML) fp16 = false;
+      if (kProvider == OnnxProvider::COREML) {
+        CERR << "WARNING: CoreML with onnxruntime before v1.24 is very slow.";
+        fp16 = false;
+      }
 #endif
       fp16 = opts.GetOrDefault<bool>("fp16", fp16);
       datatype = fp16 ? "f16" : "f32";
