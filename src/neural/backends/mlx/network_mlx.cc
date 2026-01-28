@@ -717,6 +717,13 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     assert(moves_left_opt->size() == static_cast<size_t>(batch_size));
   }
 
+  // Validate output buffer pointers.
+  assert(output_mems.size() >= 2);
+  assert(output_mems[0] != nullptr && output_mems[1] != nullptr);
+  if (moves_left_) {
+    assert(output_mems.size() >= 3 && output_mems[2] != nullptr);
+  }
+
   // Copy results to output buffers.
   // Policy map is applied on CPU for attention/conv policy.
   if (attn_policy_) {
