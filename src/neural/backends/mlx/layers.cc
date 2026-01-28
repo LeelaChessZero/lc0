@@ -57,8 +57,8 @@ mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
     for (int ic = 0; ic < inChannels; ic++) {
       for (int h = 0; h < kH; h++) {
         for (int w = 0; w < kW; w++) {
-          int srcIdx = ((oc * inChannels + ic) * kH + h) * kW + w;
-          int dstIdx = ((oc * kH + h) * kW + w) * inChannels + ic;
+          size_t srcIdx = ((static_cast<size_t>(oc) * inChannels + ic) * kH + h) * kW + w;
+          size_t dstIdx = ((static_cast<size_t>(oc) * kH + h) * kW + w) * inChannels + ic;
           converted[dstIdx] = weights[srcIdx];
         }
       }

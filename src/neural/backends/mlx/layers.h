@@ -131,14 +131,6 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
                          const mx::array& global_w,
                          const std::string& smolgen_activation);
 
-// Encoder layer (transformer block).
-mx::array EncoderLayer(const mx::array& input,
-                       const MultiHeadWeights::EncoderLayer& weights, int heads,
-                       int embedding_size, const std::string& smolgen_activation,
-                       const std::string& ffn_activation, float alpha,
-                       float epsilon, const std::string& normtype,
-                       const float* global_smolgen_weights);
-
 // Policy map layer - maps raw policy to 1858 outputs.
 // input_data: source tensor data (read-only)
 // output_data: destination buffer for 1858 policy outputs per batch
@@ -146,43 +138,6 @@ mx::array EncoderLayer(const mx::array& input,
 // input_stride: number of elements between batches in input (e.g., 80*64 for conv policy)
 void ApplyPolicyMap(const float* input_data, float* output_data, int batch_size,
                     std::span<const short> policy_map, size_t input_stride);
-
-// Classical policy head.
-mx::array PolicyHeadClassical(const mx::array& input,
-                              const MultiHeadWeights::PolicyHead& head,
-                              const std::string& activation);
-
-// Convolution policy head.
-mx::array PolicyHeadConvolution(const mx::array& input,
-                                const MultiHeadWeights::PolicyHead& head,
-                                const std::string& activation);
-
-// Attention policy head.
-mx::array PolicyHeadAttention(const mx::array& input,
-                              const MultiHeadWeights::PolicyHead& head,
-                              bool attn_body,
-                              const std::string& default_activation,
-                              const std::string& smolgen_activation,
-                              const std::string& ffn_activation,
-                              const float* global_smolgen_weights);
-
-// Value head.
-mx::array ValueHead(const mx::array& input,
-                    const MultiHeadWeights::ValueHead& head, bool attn_body,
-                    bool wdl, const std::string& activation);
-
-// Moves left head.
-mx::array MovesLeftHead(const mx::array& input, const MultiHeadWeights& weights,
-                        bool attn_body, const std::string& activation);
-
-// Position encoding (PE_MAP style).
-mx::array PositionEncoding(const mx::array& input, const float* encodings,
-                           int encoding_size);
-
-// Dynamic position encoding (PE_DENSE style).
-mx::array DynamicPositionEncoding(const mx::array& input,
-                                  const mx::array& weights,
-                                  const mx::array& biases, int width);
 
 // Gating layer (multiply or add with learned weights).
 mx::array GatingLayer(const mx::array& input, const mx::array& weights,
