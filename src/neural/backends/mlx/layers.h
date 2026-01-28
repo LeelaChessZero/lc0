@@ -107,11 +107,13 @@ mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
                             float alpha, float epsilon = 1e-6f);
 
 // RMS normalization.
-mx::array RmsNorm(const mx::array& input, const mx::array& gammas);
+mx::array RmsNorm(const mx::array& input, const mx::array& gammas,
+                  float epsilon = 1e-6f);
 
 // RMS normalization with scaled secondary tensor (skip connection).
 mx::array RmsNormWithSkip(const mx::array& input, const mx::array& secondary,
-                          const mx::array& gammas, float alpha);
+                          const mx::array& gammas, float alpha,
+                          float epsilon = 1e-6f);
 
 // Multi-head attention.
 // smolgen_attn_weights: pre-computed [batch, heads, 64, 64] attention weights to add to Q@K^T.

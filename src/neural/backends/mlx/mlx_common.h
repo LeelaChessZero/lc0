@@ -63,6 +63,14 @@ struct InputsOutputs {
   std::vector<float> op_policy_raw_mem_;
 };
 
+// Epsilon values for layer normalization.
+// Smolgen layers always use 1e-3 epsilon.
+static constexpr float kSmolgenEpsilon = 1e-3f;
+// Default epsilon for older networks.
+static constexpr float kDefaultEpsilon = 1e-6f;
+// PE_DENSE networks use 1e-3 epsilon.
+static constexpr float kPeDenseEpsilon = 1e-3f;
+
 // Activation configuration for the network.
 struct Activations {
   std::string default_activation = "relu";

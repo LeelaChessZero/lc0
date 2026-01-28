@@ -333,13 +333,14 @@ mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
 }
 
 // RMS normalization.
-mx::array RmsNorm(const mx::array& input, const mx::array& gammas) {
+mx::array RmsNorm(const mx::array& input, const mx::array& gammas,
+                  float epsilon) {
   int axis = static_cast<int>(input.ndim()) - 1;
 
   // RMS = sqrt(mean(x^2))
   mx::array squared = mx::multiply(input, input);
   mx::array mean_sq = mx::mean(squared, std::vector<int>{axis}, true);
-  mx::array rms = mx::sqrt(mx::add(mean_sq, mx::array(1e-6f)));
+  mx::array rms = mx::sqrt(mx::add(mean_sq, mx::array(epsilon)));
 
   // Normalize and apply gamma.
   return mx::multiply(mx::divide(input, rms), gammas);
@@ -347,12 +348,12 @@ mx::array RmsNorm(const mx::array& input, const mx::array& gammas) {
 
 // RMS normalization with scaled secondary tensor (skip connection).
 mx::array RmsNormWithSkip(const mx::array& input, const mx::array& secondary,
-                          const mx::array& gammas, float alpha) {
+                          const mx::array& gammas, float alpha, float epsilon) {
   mx::array combined = (alpha != 1.0f)
       ? mx::add(input, mx::multiply(secondary, mx::array(alpha)))
       : mx::add(input, secondary);
 
-  return RmsNorm(combined, gammas);
+  return RmsNorm(combined, gammas, epsilon);
 }
 
 // Compute smolgen attention weights.
@@ -383,13 +384,13 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
   mx::array dense1 = mx::matmul(reshaped, dense1_w);
   dense1 = mx::add(dense1, dense1_b);
   dense1 = ApplyActivation(dense1, smolgen_activation);
-  dense1 = LayerNorm(dense1, ln1_gammas, ln1_betas, 1e-3f);  // smolgen uses 1e-3 epsilon
+  dense1 = LayerNorm(dense1, ln1_gammas, ln1_betas, kSmolgenEpsilon);
 
   // 4. Dense2 + activation + LayerNorm
   mx::array dense2 = mx::matmul(dense1, dense2_w);
   dense2 = mx::add(dense2, dense2_b);
   dense2 = ApplyActivation(dense2, smolgen_activation);
-  dense2 = LayerNorm(dense2, ln2_gammas, ln2_betas, 1e-3f);  // smolgen uses 1e-3 epsilon
+  dense2 = LayerNorm(dense2, ln2_gammas, ln2_betas, kSmolgenEpsilon);
 
   // 5. Global: reshape to [batch*heads, gen_sz_outputs/heads] and apply global weights
   int gen_sz_outputs = static_cast<int>(dense2.shape()[1]);

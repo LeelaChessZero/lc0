@@ -523,7 +523,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
 
     // Embedding layer norm (for PE_DENSE).
     if (ip_emb_ln_gammas_.has_value()) {
-      flow = LayerNorm(flow, *ip_emb_ln_gammas_, *ip_emb_ln_betas_, 1e-3f);
+      flow = LayerNorm(flow, *ip_emb_ln_gammas_, *ip_emb_ln_betas_, kPeDenseEpsilon);
     }
 
     // Input gating.
@@ -536,7 +536,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     // alpha = (2 * num_encoders)^(-0.25)
     float alpha = static_cast<float>(std::pow(2.0 * encoder_weights_.size(), -0.25));
     // Use 1e-3 epsilon for PE_DENSE, 1e-6 otherwise.
-    float default_eps = (embedding_ == INPUT_EMBEDDING_PE_DENSE) ? 1e-3f : 1e-6f;
+    float default_eps = (embedding_ == INPUT_EMBEDDING_PE_DENSE) ? kPeDenseEpsilon : kDefaultEpsilon;
 
     // Embedding FFN (for PE_DENSE).
     if (ip_emb_ffn_dense1_w_.has_value()) {
@@ -545,7 +545,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
                                      activations_.ffn_activation);
       ffn = FullyConnected(ffn, *ip_emb_ffn_dense2_w_, *ip_emb_ffn_dense2_b_, "");
       flow = LayerNormWithSkip(flow, ffn, *ip_emb_ffn_ln_gammas_,
-                               *ip_emb_ffn_ln_betas_, alpha, 1e-3f);
+                               *ip_emb_ffn_ln_betas_, alpha, kPeDenseEpsilon);
     }
 
     // Encoder layers.
