@@ -594,92 +594,92 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   }
 
   // Policy head.
-  mx::array policy = mx::array(0.0f);  // Dummy init, will be assigned.
+  std::optional<mx::array> policy_opt;
   if (attn_policy_) {
     // Attention policy head.
-    mx::array pol_flow = flow;
+    mx::array pol = flow;
 
     // Square embedding.
-    pol_flow = FullyConnected(pol_flow, *policy_weights_.ip_pol_w,
-                              *policy_weights_.ip_pol_b,
-                              attn_body_ ? activations_.default_activation
-                                         : "selu");
+    pol = FullyConnected(pol, *policy_weights_.ip_pol_w,
+                         *policy_weights_.ip_pol_b,
+                         attn_body_ ? activations_.default_activation : "selu");
 
     // Policy encoder layers.
     for (size_t i = 0; i < policy_weights_.pol_encoder.size(); i++) {
       const auto& ew = policy_weights_.pol_encoder[i];
 
-      mx::array q = FullyConnected(pol_flow, ew.mha_q_w, ew.mha_q_b, "");
-      mx::array k = FullyConnected(pol_flow, ew.mha_k_w, ew.mha_k_b, "");
-      mx::array v = FullyConnected(pol_flow, ew.mha_v_w, ew.mha_v_b, "");
+      mx::array q = FullyConnected(pol, ew.mha_q_w, ew.mha_q_b, "");
+      mx::array k = FullyConnected(pol, ew.mha_k_w, ew.mha_k_b, "");
+      mx::array v = FullyConnected(pol, ew.mha_v_w, ew.mha_v_b, "");
 
       mx::array mha = MultiHeadAttention(
           q, k, v, policy_weights_.pol_encoder_head_count, nullptr);
       mha = FullyConnected(mha, ew.mha_dense_w, ew.mha_dense_b, "");
 
-      pol_flow =
-          LayerNormWithSkip(pol_flow, mha, ew.ln1_gammas, ew.ln1_betas, 1.0f);
+      pol = LayerNormWithSkip(pol, mha, ew.ln1_gammas, ew.ln1_betas, 1.0f);
 
       mx::array ffn =
-          FullyConnected(pol_flow, ew.ffn_dense1_w, ew.ffn_dense1_b,
+          FullyConnected(pol, ew.ffn_dense1_w, ew.ffn_dense1_b,
                          attn_body_ ? activations_.ffn_activation : "selu");
       ffn = FullyConnected(ffn, ew.ffn_dense2_w, ew.ffn_dense2_b, "");
 
-      pol_flow =
-          LayerNormWithSkip(pol_flow, ffn, ew.ln2_gammas, ew.ln2_betas, 1.0f);
+      pol = LayerNormWithSkip(pol, ffn, ew.ln2_gammas, ew.ln2_betas, 1.0f);
     }
 
     // Self-attention Q and K.
-    mx::array queries = FullyConnected(pol_flow, *policy_weights_.ip2_pol_w,
+    mx::array queries = FullyConnected(pol, *policy_weights_.ip2_pol_w,
                                        *policy_weights_.ip2_pol_b, "");
-    mx::array keys = FullyConnected(pol_flow, *policy_weights_.ip3_pol_w,
+    mx::array keys = FullyConnected(pol, *policy_weights_.ip3_pol_w,
                                     *policy_weights_.ip3_pol_b, "");
 
     // Scaled Q*K matmul.
     int pol_dmodel = static_cast<int>(policy_weights_.ip2_pol_b->size());
-    policy = ScaledQKMatmul(queries, keys, 1.0f / std::sqrt(static_cast<float>(pol_dmodel)));
+    pol = ScaledQKMatmul(queries, keys,
+                         1.0f / std::sqrt(static_cast<float>(pol_dmodel)));
 
     // Promotion logits.
-    policy = AttentionPolicyPromoMatmulConcat(
-        policy, keys, *policy_weights_.ip4_pol_w, 56, pol_dmodel);
+    pol = AttentionPolicyPromoMatmulConcat(pol, keys, *policy_weights_.ip4_pol_w,
+                                           56, pol_dmodel);
 
     // Reshape and apply policy map on CPU.
-    policy = mx::reshape(policy, {batch_size, -1});
+    policy_opt = mx::reshape(pol, {batch_size, -1});
   } else if (conv_policy_) {
     // Convolution policy head.
-    policy = ConvBlock(flow, *policy_weights_.policy1_conv_weights,
-                       *policy_weights_.policy1_conv_biases, 3,
-                       activations_.default_activation);
-    policy = ConvBlock(policy, *policy_weights_.policy_conv_weights,
-                       *policy_weights_.policy_conv_biases, 3, "");
+    mx::array pol = ConvBlock(flow, *policy_weights_.policy1_conv_weights,
+                              *policy_weights_.policy1_conv_biases, 3,
+                              activations_.default_activation);
+    pol = ConvBlock(pol, *policy_weights_.policy_conv_weights,
+                    *policy_weights_.policy_conv_biases, 3, "");
     // ConvBlock returns NCHW [batch, C, H, W].
     // The kConvPolicyMap expects NCHW layout where index = plane * 64 + square.
     // Just reshape - no transpose needed since data is already NCHW.
-    policy = mx::reshape(policy, {batch_size, -1});
+    policy_opt = mx::reshape(pol, {batch_size, -1});
   } else {
     // Classical policy head.
-    policy = ConvBlock(flow, *policy_weights_.policy_conv_weights,
-                       *policy_weights_.policy_conv_biases, 1,
-                       activations_.default_activation);
-    policy = mx::reshape(policy, {batch_size, -1});
-    policy = FullyConnected(policy, *policy_weights_.ip_pol_w,
-                            *policy_weights_.ip_pol_b, "");
+    mx::array pol = ConvBlock(flow, *policy_weights_.policy_conv_weights,
+                              *policy_weights_.policy_conv_biases, 1,
+                              activations_.default_activation);
+    pol = mx::reshape(pol, {batch_size, -1});
+    policy_opt = FullyConnected(pol, *policy_weights_.ip_pol_w,
+                                *policy_weights_.ip_pol_b, "");
   }
+  mx::array policy = *policy_opt;
 
   // Value head.
-  mx::array value = mx::array(0.0f);  // Dummy init, will be assigned.
+  std::optional<mx::array> value_opt;
   if (attn_body_) {
     // Attention body value head - use embedding from encoder output.
-    value = FullyConnected(flow, *value_weights_.ip_val_w,
-                           *value_weights_.ip_val_b,
-                           activations_.default_activation);
-    value = mx::reshape(value, {batch_size, -1});
+    mx::array val = FullyConnected(flow, *value_weights_.ip_val_w,
+                                   *value_weights_.ip_val_b,
+                                   activations_.default_activation);
+    value_opt = mx::reshape(val, {batch_size, -1});
   } else {
-    value = ConvBlock(flow, *value_weights_.value_conv_weights,
-                      *value_weights_.value_conv_biases, 1,
-                      activations_.default_activation);
-    value = mx::reshape(value, {batch_size, -1});
+    mx::array val = ConvBlock(flow, *value_weights_.value_conv_weights,
+                              *value_weights_.value_conv_biases, 1,
+                              activations_.default_activation);
+    value_opt = mx::reshape(val, {batch_size, -1});
   }
+  mx::array value = *value_opt;
 
   value = FullyConnected(value, *value_weights_.ip1_val_w,
                          *value_weights_.ip1_val_b,
@@ -688,28 +688,24 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
                          *value_weights_.ip2_val_b, wdl_ ? "softmax" : "tanh");
 
   // Moves left head.
-  mx::array moves_left_out = mx::array(0.0f);  // Dummy init.
+  std::optional<mx::array> moves_left_opt;
   if (moves_left_) {
-    if (attn_body_) {
-      moves_left_out =
-          FullyConnected(flow, *ip_mov_w_, *ip_mov_b_,
-                         activations_.default_activation);
-      moves_left_out = mx::reshape(moves_left_out, {batch_size, -1});
-    } else {
-      moves_left_out = ConvBlock(flow, *moves_left_conv_weights_,
-                                 *moves_left_conv_biases_, 1,
-                                 activations_.default_activation);
-      moves_left_out = mx::reshape(moves_left_out, {batch_size, -1});
-    }
-    moves_left_out = FullyConnected(moves_left_out, *ip1_mov_w_, *ip1_mov_b_,
-                                    activations_.default_activation);
-    moves_left_out =
-        FullyConnected(moves_left_out, *ip2_mov_w_, *ip2_mov_b_, "relu");
+    mx::array mleft =
+        attn_body_
+            ? FullyConnected(flow, *ip_mov_w_, *ip_mov_b_,
+                             activations_.default_activation)
+            : ConvBlock(flow, *moves_left_conv_weights_,
+                        *moves_left_conv_biases_, 1,
+                        activations_.default_activation);
+    mleft = mx::reshape(mleft, {batch_size, -1});
+    mleft = FullyConnected(mleft, *ip1_mov_w_, *ip1_mov_b_,
+                           activations_.default_activation);
+    moves_left_opt = FullyConnected(mleft, *ip2_mov_w_, *ip2_mov_b_, "relu");
   }
 
   // Trigger MLX lazy evaluation.
   if (moves_left_) {
-    mx::eval({policy, value, moves_left_out});
+    mx::eval({policy, value, *moves_left_opt});
   } else {
     mx::eval({policy, value});
   }
@@ -718,7 +714,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   assert(policy.size() > 0 && policy.size() % batch_size == 0);
   assert(value.size() == static_cast<size_t>(batch_size) * (wdl_ ? 3 : 1));
   if (moves_left_) {
-    assert(moves_left_out.size() == static_cast<size_t>(batch_size));
+    assert(moves_left_opt->size() == static_cast<size_t>(batch_size));
   }
 
   // Copy results to output buffers.
@@ -750,7 +746,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
 
   // Moves left output.
   if (moves_left_) {
-    std::memcpy(output_mems[2], moves_left_out.data<float>(),
+    std::memcpy(output_mems[2], moves_left_opt->data<float>(),
                 batch_size * sizeof(float));
   }
 }
