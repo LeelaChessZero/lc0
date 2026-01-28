@@ -229,9 +229,12 @@ inline PieceType PieceType::Parse(char c) {
 }
 
 inline std::string Move::ToString(bool is_chess960) const {
-  if (is_castling() && !is_chess960) {
-    return from().ToString() + (to().file() > from().file() ? "g" : "c") +
-           to().rank().ToString();
+  if (is_castling() && !is_chess960 && from().file() == kFileE) {
+    if (to().file() == kFileA) {
+      return from().ToString() + "c" +  to().rank().ToString();
+    } else if (to().file() == kFileH) {
+      return from().ToString() + "g" +  to().rank().ToString();
+    }
   }
   return from().ToString() + to().ToString() +
          (is_promotion() ? promotion().ToString(false) : "");
