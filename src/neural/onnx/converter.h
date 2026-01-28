@@ -49,6 +49,7 @@ struct WeightsToOnnxConverterOptions {
   bool alt_mish = false;       // Use "Mish" approximation.
   bool real_mish = true;       // Use "Mish" operator (opset 18+ and !alt_mish).
   bool alt_layernorm = false;  // Discrete "LayerNormalization" implementation.
+  bool alt_selu = false;       // Use discrete "Selu" implementation.
   bool no_shape = false;       // Avoid use of "Shape" operator.
   bool no_wdl_softmax = false; // Skip wdl softmax.
   std::string policy_head = "vanilla";
