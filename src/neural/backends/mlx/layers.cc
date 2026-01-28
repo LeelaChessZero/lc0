@@ -302,8 +302,8 @@ mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
   // Normalize along the last axis.
   int axis = static_cast<int>(input.ndim()) - 1;
 
-  mx::array mean = mx::mean(input, {axis}, true);
-  mx::array variance = mx::var(input, {axis}, true);
+  mx::array mean = mx::mean(input, std::vector<int>{axis}, true);
+  mx::array variance = mx::var(input, std::vector<int>{axis}, true);
 
   mx::array normalized = mx::divide(
       mx::subtract(input, mean),
@@ -331,7 +331,7 @@ mx::array RmsNorm(const mx::array& input, const mx::array& gammas) {
 
   // RMS = sqrt(mean(x^2))
   mx::array squared = mx::multiply(input, input);
-  mx::array mean_sq = mx::mean(squared, {axis}, true);
+  mx::array mean_sq = mx::mean(squared, std::vector<int>{axis}, true);
   mx::array rms = mx::sqrt(mean_sq);
 
   // Normalize and apply gamma.
