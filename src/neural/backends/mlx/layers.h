@@ -195,7 +195,6 @@ mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
 mx::array AttentionPolicyPromoMatmulConcat(const mx::array& parent,
                                            const mx::array& keys,
                                            const mx::array& weights,
-                                           int input_size, int output_size,
                                            int slice_from, int channel_size);
 
 }  // namespace mlx_backend

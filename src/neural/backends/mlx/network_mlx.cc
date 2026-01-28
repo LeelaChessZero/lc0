@@ -641,7 +641,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
 
     // Promotion logits.
     policy = AttentionPolicyPromoMatmulConcat(
-        policy, keys, *policy_weights_.ip4_pol_w, 8, 4, 56, pol_dmodel);
+        policy, keys, *policy_weights_.ip4_pol_w, 56, pol_dmodel);
 
     // Reshape and apply policy map on CPU.
     policy = mx::reshape(policy, {batch_size, -1});
