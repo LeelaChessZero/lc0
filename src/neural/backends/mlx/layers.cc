@@ -30,6 +30,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <span>
 
 #include "neural/tables/attention_policy_map.h"
 #include "neural/tables/policy_map.h"
@@ -522,13 +523,11 @@ mx::array AttentionPolicyPromoMatmulConcat(const mx::array& parent,
 // Policy map layer - maps raw policy to 1858 outputs.
 // This is done on CPU as MLX may have issues with gather operations.
 void ApplyPolicyMap(const float* input_data, float* output_data, int batch_size,
-                    const short* policy_map, size_t input_stride,
-                    size_t map_size) {
+                    std::span<const short> policy_map, size_t input_stride) {
   assert(input_data != nullptr);
   assert(output_data != nullptr);
-  assert(policy_map != nullptr);
   assert(batch_size >= 0);
-  assert(map_size <= input_stride);  // Prevent reading past batch boundary
+  assert(policy_map.size() <= input_stride);  // Prevent reading past batch boundary
 
   // For each batch element, remap policy values.
   for (int b = 0; b < batch_size; b++) {
@@ -537,7 +536,7 @@ void ApplyPolicyMap(const float* input_data, float* output_data, int batch_size,
 
     // Apply mapping: for each input index, write to corresponding output index.
     const float* batch_input = input_data + b * input_stride;
-    for (size_t i = 0; i < map_size; i++) {
+    for (size_t i = 0; i < policy_map.size(); i++) {
       short j = policy_map[i];
       if (j >= 0 && j < kNumOutputPolicy) {
         output[j] = batch_input[i];

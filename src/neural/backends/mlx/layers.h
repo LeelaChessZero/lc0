@@ -28,6 +28,7 @@
 
 #include <mlx/mlx.h>
 
+#include <span>
 #include <string>
 #include <vector>
 
@@ -141,10 +142,10 @@ mx::array EncoderLayer(const mx::array& input,
 // Policy map layer - maps raw policy to 1858 outputs.
 // input_data: source tensor data (read-only)
 // output_data: destination buffer for 1858 policy outputs per batch
+// policy_map: span containing the mapping indices (size determines how many elements to read)
 // input_stride: number of elements between batches in input (e.g., 80*64 for conv policy)
-// map_size: number of elements to read from policy_map (e.g., 73*64 for conv policy)
 void ApplyPolicyMap(const float* input_data, float* output_data, int batch_size,
-                    const short* policy_map, size_t input_stride, size_t map_size);
+                    std::span<const short> policy_map, size_t input_stride);
 
 // Classical policy head.
 mx::array PolicyHeadClassical(const mx::array& input,
