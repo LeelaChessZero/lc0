@@ -719,14 +719,18 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   if (attn_policy_) {
     // Attention policy: tensor is [batch, 64*64 + 8*24], input_stride = map_size.
     constexpr size_t kAttnPolicySize = 64 * 64 + 8 * 24;
-    ApplyPolicyMap(policy.data<float>(), output_mems[0], batch_size,
-                   kAttnPolicyMap, kAttnPolicySize);
+    ApplyPolicyMap(
+        std::span<const float>(policy.data<float>(), batch_size * kAttnPolicySize),
+        std::span<float>(output_mems[0], batch_size * kNumOutputPolicy),
+        kAttnPolicyMap, kAttnPolicySize);
   } else if (conv_policy_) {
     // Conv policy: tensor is [batch, num_channels * 64] where num_channels >= 73.
     // The kConvPolicyMap reads 73*64 elements, but tensor stride is larger.
     size_t tensor_stride = policy.size() / batch_size;  // Actual elements per batch.
-    ApplyPolicyMap(policy.data<float>(), output_mems[0], batch_size,
-                   kConvPolicyMap, tensor_stride);
+    ApplyPolicyMap(
+        std::span<const float>(policy.data<float>(), policy.size()),
+        std::span<float>(output_mems[0], batch_size * kNumOutputPolicy),
+        kConvPolicyMap, tensor_stride);
   } else {
     // Classical policy: directly copy 1858 outputs.
     std::memcpy(output_mems[0], policy.data<float>(),

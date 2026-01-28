@@ -132,11 +132,13 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
                          const std::string& smolgen_activation);
 
 // Policy map layer - maps raw policy to 1858 outputs.
-// input_data: source tensor data (read-only)
-// output_data: destination buffer for 1858 policy outputs per batch
+// input_data: source tensor data, size must be >= batch_size * input_stride
+// output_data: destination buffer, size must be exactly batch_size * kNumOutputPolicy
 // policy_map: span containing the mapping indices (size determines how many elements to read)
 // input_stride: number of elements between batches in input (e.g., 80*64 for conv policy)
-void ApplyPolicyMap(const float* input_data, float* output_data, int batch_size,
+// Note: batch_size is derived from output_data.size() / kNumOutputPolicy
+void ApplyPolicyMap(std::span<const float> input_data,
+                    std::span<float> output_data,
                     std::span<const short> policy_map, size_t input_stride);
 
 // Gating layer (multiply or add with learned weights).
