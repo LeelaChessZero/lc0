@@ -935,20 +935,25 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
                              ew.smolgen_dense2_w_q.has_value() ||
                              smolgen_global_w_q_.has_value();
         if (use_quantized) {
+          // Build WeightVariant for each weight - quantized takes precedence.
+          auto make_variant = [](const OptQuantized& q,
+                                 const OptArray& f) -> WeightVariant {
+            if (q.has_value()) {
+              return *q;
+            } else {
+              return std::cref(*f);
+            }
+          };
           smolgen_attn = ComputeSmolgenQuantized(
               flow, encoder_head_count_,
-              ew.smolgen_compress_q,
-              ew.smolgen_compress.has_value() ? &*ew.smolgen_compress : nullptr,
-              ew.smolgen_dense1_w_q,
-              ew.smolgen_dense1_w.has_value() ? &*ew.smolgen_dense1_w : nullptr,
+              make_variant(ew.smolgen_compress_q, ew.smolgen_compress),
+              make_variant(ew.smolgen_dense1_w_q, ew.smolgen_dense1_w),
               *ew.smolgen_dense1_b,
               *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
-              ew.smolgen_dense2_w_q,
-              ew.smolgen_dense2_w.has_value() ? &*ew.smolgen_dense2_w : nullptr,
+              make_variant(ew.smolgen_dense2_w_q, ew.smolgen_dense2_w),
               *ew.smolgen_dense2_b,
               *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
-              smolgen_global_w_q_,
-              smolgen_global_w_.has_value() ? &*smolgen_global_w_ : nullptr,
+              make_variant(smolgen_global_w_q_, smolgen_global_w_),
               activations_.smolgen_activation);
         } else {
           smolgen_attn = ComputeSmolgen(

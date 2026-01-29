@@ -28,6 +28,8 @@
 
 #include <mlx/mlx.h>
 
+#include <functional>
+#include <variant>
 #include <vector>
 
 namespace lczero {
@@ -75,6 +77,11 @@ struct QuantizedWeight {
         group_size(gs),
         bits(bt) {}
 };
+
+// A weight can be either quantized or a float array reference.
+// Using variant ensures exactly one must be present (no null pointers).
+using WeightVariant =
+    std::variant<QuantizedWeight, std::reference_wrapper<const mx::array>>;
 
 static constexpr int kNumOutputPolicy = 1858;
 static constexpr int kInputPlanes = 112;
