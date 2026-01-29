@@ -616,5 +616,60 @@ mx::array GatingLayer(const mx::array& input, const mx::array& weights,
   return input;
 }
 
+// Quantize FC weights using MLX's quantize() function.
+// MLX quantize() expects weights in [output_size, input_size] format and
+// returns [packed, scales, biases].
+// Returns nullopt if the weight dimensions are not compatible with the group_size.
+std::optional<QuantizedWeight> QuantizeWeights(const mx::array& weights,
+                                               int group_size, int bits) {
+  // MLX quantize expects weights transposed: [output_size, input_size].
+  // Our weights are stored as [input_size, output_size], so transpose first.
+  mx::array w_transposed = mx::transpose(weights);
+
+  // Check if the last dimension (input_size after transpose = output_size before)
+  // is divisible by group_size. MLX requires this.
+  int last_dim = static_cast<int>(w_transposed.shape().back());
+  if (last_dim % group_size != 0) {
+    // Weight dimensions not compatible with group_size - skip quantization.
+    return std::nullopt;
+  }
+
+  // Quantize using affine mode (scale + bias per group).
+  auto quantized = mx::quantize(w_transposed, group_size, bits, "affine");
+
+  // quantize() returns a vector of 3 arrays: [packed, scales, biases].
+  assert(quantized.size() == 3);
+
+  return QuantizedWeight(std::move(quantized[0]), std::move(quantized[1]),
+                         std::move(quantized[2]), group_size, bits);
+}
+
+// Quantized fully connected layer using MLX's quantized_matmul().
+// quantized_matmul expects: x @ w^T where w is quantized (transposed weights).
+mx::array QuantizedFullyConnected(const mx::array& input,
+                                  const QuantizedWeight& qw,
+                                  const mx::array& biases,
+                                  const std::string& activation) {
+  // Ensure input is float16 for quantized matmul efficiency.
+  // Quantized matmul requires float16 input for efficiency.
+  mx::array x = (input.dtype() != mx::float16) ? mx::astype(input, mx::float16)
+                                               : input;
+
+  // quantized_matmul: x @ w^T where w is the packed quantized weight.
+  // transpose=true (default) means the weight is transposed internally.
+  mx::array output = mx::quantized_matmul(x, qw.packed, qw.scales, qw.biases,
+                                          /*transpose=*/true, qw.group_size,
+                                          qw.bits);
+
+  if (biases.size() > 0) {
+    // Biases should be float16 for addition.
+    mx::array b =
+        (biases.dtype() != mx::float16) ? mx::astype(biases, mx::float16) : biases;
+    output = mx::add(output, b);
+  }
+
+  return ApplyActivation(output, activation);
+}
+
 }  // namespace mlx_backend
 }  // namespace lczero

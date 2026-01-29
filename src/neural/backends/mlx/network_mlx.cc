@@ -52,6 +52,7 @@ namespace mx = mlx::core;
 
 // Use optional for MLX arrays since mx::array has no default constructor.
 using OptArray = std::optional<mx::array>;
+using OptQuantized = std::optional<QuantizedWeight>;
 
 // Helper to load FC weights from BLAS column-major format.
 // BLAS stores FC weights in column-major layout [output_size, input_size].
@@ -71,7 +72,8 @@ class MLXGraphBuilder {
              InputEmbedding embedding, bool attn_body, bool attn_policy,
              bool conv_policy, bool wdl, bool moves_left,
              Activations& activations, const std::string& policy_head,
-             const std::string& value_head, Precision precision);
+             const std::string& value_head, Precision precision,
+             int group_size = 64);
 
   void ForwardEval(float* values, uint64_t* masks, int batch_size,
                    std::vector<float*> output_mems);
@@ -119,6 +121,12 @@ class MLXGraphBuilder {
     OptArray smolgen_dense2_w, smolgen_dense2_b;
     OptArray smolgen_ln2_gammas, smolgen_ln2_betas;
 
+    // Quantized weight versions (populated when precision is Q8).
+    OptQuantized mha_q_w_q, mha_k_w_q, mha_v_w_q, mha_dense_w_q;
+    OptQuantized ffn_dense1_w_q, ffn_dense2_w_q;
+    // Note: Smolgen weights are NOT quantized (kept as float) because they're
+    // relatively small and ComputeSmolgen doesn't support quantized weights yet.
+
     EncoderWeights(mx::array q_w, mx::array q_b, mx::array k_w, mx::array k_b,
                    mx::array v_w, mx::array v_b, mx::array dense_w,
                    mx::array dense_b, mx::array ln1_g, mx::array ln1_b,
@@ -153,6 +161,11 @@ class MLXGraphBuilder {
   OptArray ip_emb_ffn_dense2_w_, ip_emb_ffn_dense2_b_;
   OptArray ip_emb_ffn_ln_gammas_, ip_emb_ffn_ln_betas_;
 
+  // Quantized embedding weights (for Q8 precision).
+  OptQuantized ip_emb_preproc_w_q_;
+  OptQuantized ip_emb_w_q_;
+  OptQuantized ip_emb_ffn_dense1_w_q_, ip_emb_ffn_dense2_w_q_;
+
   // Global smolgen weights.
   OptArray smolgen_global_w_;
   bool has_smolgen_ = false;
@@ -172,6 +185,11 @@ class MLXGraphBuilder {
     OptArray ip4_pol_w;
     int pol_encoder_head_count = 0;
     std::vector<EncoderWeights> pol_encoder;
+
+    // Quantized policy weights (for Q8 precision).
+    OptQuantized ip_pol_w_q;
+    OptQuantized ip2_pol_w_q, ip3_pol_w_q;
+    // Note: ip4_pol_w is NOT quantized - used by AttentionPolicyPromoMatmulConcat.
   };
   PolicyWeights policy_weights_;
 
@@ -182,6 +200,10 @@ class MLXGraphBuilder {
     OptArray ip_val_w, ip_val_b;
     OptArray ip1_val_w, ip1_val_b;
     OptArray ip2_val_w, ip2_val_b;
+
+    // Quantized value weights (for Q8 precision).
+    OptQuantized ip_val_w_q;
+    OptQuantized ip1_val_w_q, ip2_val_w_q;
   };
   ValueWeights value_weights_;
 
@@ -191,6 +213,10 @@ class MLXGraphBuilder {
   OptArray ip_mov_w_, ip_mov_b_;
   OptArray ip1_mov_w_, ip1_mov_b_;
   OptArray ip2_mov_w_, ip2_mov_b_;
+
+  // Quantized moves left weights (for Q8 precision).
+  OptQuantized ip_mov_w_q_;
+  OptQuantized ip1_mov_w_q_, ip2_mov_w_q_;
 
   // Configuration.
   bool attn_body_ = false;
@@ -206,6 +232,7 @@ class MLXGraphBuilder {
   // Precision configuration.
   Precision precision_ = Precision::FP32;
   mx::Dtype compute_dtype_ = mx::float32;
+  int group_size_ = 64;  // Quantization group size for Q8.
 
   // Position encoding data.
   std::vector<float> pos_enc_data_;
@@ -217,7 +244,7 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
                             bool moves_left, Activations& activations,
                             const std::string& policy_head,
                             const std::string& value_head,
-                            Precision precision) {
+                            Precision precision, int group_size) {
   attn_body_ = attn_body;
   attn_policy_ = attn_policy;
   conv_policy_ = conv_policy;
@@ -226,7 +253,13 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   embedding_ = embedding;
   activations_ = activations;
   precision_ = precision;
-  compute_dtype_ = PrecisionToDtype(precision);
+  group_size_ = group_size;
+
+  // For quantized precision, use float16 for activations and float32 for weight loading.
+  // For non-quantized, use the precision-mapped dtype.
+  compute_dtype_ = ActivationDtype(precision);
+  bool quantize = IsQuantized(precision);
+
 
   // Get filter count from input convolution.
   if (!attn_body) {
@@ -266,13 +299,27 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     // Embedding preprocessing (PE_DENSE only).
     if (!weights.ip_emb_preproc_w.empty()) {
       int preproc_out = static_cast<int>(weights.ip_emb_preproc_b.size());
-      ip_emb_preproc_w_ = MakeFCWeights(weights.ip_emb_preproc_w, 64 * 12, preproc_out, compute_dtype_);
+      auto w = MakeFCWeights(weights.ip_emb_preproc_w, 64 * 12, preproc_out, quantize ? mx::float32 : compute_dtype_);
+      if (quantize) {
+        ip_emb_preproc_w_q_ = QuantizeWeights(w, group_size_, 8);
+      }
+      if (!ip_emb_preproc_w_q_.has_value()) {
+        ip_emb_preproc_w_ = quantize ? mx::astype(w, compute_dtype_) : std::move(w);
+      }
       ip_emb_preproc_b_ = MakeArray(weights.ip_emb_preproc_b, {preproc_out}, compute_dtype_);
     }
 
     // Embedding layer.
     int ip_emb_in = static_cast<int>(weights.ip_emb_w.size()) / embedding_size_;
-    ip_emb_w_ = MakeFCWeights(weights.ip_emb_w, ip_emb_in, embedding_size_, compute_dtype_);
+    {
+      auto w = MakeFCWeights(weights.ip_emb_w, ip_emb_in, embedding_size_, quantize ? mx::float32 : compute_dtype_);
+      if (quantize) {
+        ip_emb_w_q_ = QuantizeWeights(w, group_size_, 8);
+      }
+      if (!ip_emb_w_q_.has_value()) {
+        ip_emb_w_ = quantize ? mx::astype(w, compute_dtype_) : std::move(w);
+      }
+    }
     ip_emb_b_ = MakeArray(weights.ip_emb_b, {embedding_size_}, compute_dtype_);
 
     // Embedding layer norm.
@@ -293,9 +340,25 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     if (!weights.ip_emb_ffn.dense1_w.empty()) {
       int ffn_hidden =
           static_cast<int>(weights.ip_emb_ffn.dense1_b.size());
-      ip_emb_ffn_dense1_w_ = MakeFCWeights(weights.ip_emb_ffn.dense1_w, embedding_size_, ffn_hidden, compute_dtype_);
+      {
+        auto w1 = MakeFCWeights(weights.ip_emb_ffn.dense1_w, embedding_size_, ffn_hidden, quantize ? mx::float32 : compute_dtype_);
+        if (quantize) {
+          ip_emb_ffn_dense1_w_q_ = QuantizeWeights(w1, group_size_, 8);
+        }
+        if (!ip_emb_ffn_dense1_w_q_.has_value()) {
+          ip_emb_ffn_dense1_w_ = quantize ? mx::astype(w1, compute_dtype_) : std::move(w1);
+        }
+      }
+      {
+        auto w2 = MakeFCWeights(weights.ip_emb_ffn.dense2_w, ffn_hidden, embedding_size_, quantize ? mx::float32 : compute_dtype_);
+        if (quantize) {
+          ip_emb_ffn_dense2_w_q_ = QuantizeWeights(w2, group_size_, 8);
+        }
+        if (!ip_emb_ffn_dense2_w_q_.has_value()) {
+          ip_emb_ffn_dense2_w_ = quantize ? mx::astype(w2, compute_dtype_) : std::move(w2);
+        }
+      }
       ip_emb_ffn_dense1_b_ = MakeArray(weights.ip_emb_ffn.dense1_b, {ffn_hidden}, compute_dtype_);
-      ip_emb_ffn_dense2_w_ = MakeFCWeights(weights.ip_emb_ffn.dense2_w, ffn_hidden, embedding_size_, compute_dtype_);
       ip_emb_ffn_dense2_b_ = MakeArray(weights.ip_emb_ffn.dense2_b, {embedding_size_}, compute_dtype_);
       ip_emb_ffn_ln_gammas_ = MakeArray(weights.ip_emb_ffn_ln_gammas, {embedding_size_}, compute_dtype_);
       ip_emb_ffn_ln_betas_ = MakeArray(weights.ip_emb_ffn_ln_betas, {embedding_size_}, compute_dtype_);
@@ -314,38 +377,64 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
       int qkv_size = static_cast<int>(enc.mha.q_b.size());
       int ffn_hidden = static_cast<int>(enc.ffn.dense1_b.size());
 
-
+      // Load weights in float32 for quantization, then convert/quantize.
       encoder_weights_.emplace_back(
-          MakeFCWeights(enc.mha.q_w, embedding_size_, qkv_size, compute_dtype_),
+          MakeFCWeights(enc.mha.q_w, embedding_size_, qkv_size, mx::float32),
           MakeArray(enc.mha.q_b, {qkv_size}, compute_dtype_),
-          MakeFCWeights(enc.mha.k_w, embedding_size_, qkv_size, compute_dtype_),
+          MakeFCWeights(enc.mha.k_w, embedding_size_, qkv_size, mx::float32),
           MakeArray(enc.mha.k_b, {qkv_size}, compute_dtype_),
-          MakeFCWeights(enc.mha.v_w, embedding_size_, qkv_size, compute_dtype_),
+          MakeFCWeights(enc.mha.v_w, embedding_size_, qkv_size, mx::float32),
           MakeArray(enc.mha.v_b, {qkv_size}, compute_dtype_),
-          MakeFCWeights(enc.mha.dense_w, qkv_size, embedding_size_, compute_dtype_),
+          MakeFCWeights(enc.mha.dense_w, qkv_size, embedding_size_, mx::float32),
           MakeArray(enc.mha.dense_b, {embedding_size_}, compute_dtype_),
           MakeArray(enc.ln1_gammas, {embedding_size_}, compute_dtype_),
           MakeArray(enc.ln1_betas, {embedding_size_}, compute_dtype_),
-          MakeFCWeights(enc.ffn.dense1_w, embedding_size_, ffn_hidden, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense1_w, embedding_size_, ffn_hidden, mx::float32),
           MakeArray(enc.ffn.dense1_b, {ffn_hidden}, compute_dtype_),
-          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, embedding_size_, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, embedding_size_, mx::float32),
           MakeArray(enc.ffn.dense2_b, {embedding_size_}, compute_dtype_),
           MakeArray(enc.ln2_gammas, {embedding_size_}, compute_dtype_),
           MakeArray(enc.ln2_betas, {embedding_size_}, compute_dtype_));
       auto& ew = encoder_weights_.back();
 
+      // Quantize encoder FC weights if requested, convert to compute_dtype_ if quantization fails.
+      if (quantize) {
+        ew.mha_q_w_q = QuantizeWeights(ew.mha_q_w, group_size_, 8);
+        ew.mha_k_w_q = QuantizeWeights(ew.mha_k_w, group_size_, 8);
+        ew.mha_v_w_q = QuantizeWeights(ew.mha_v_w, group_size_, 8);
+        ew.mha_dense_w_q = QuantizeWeights(ew.mha_dense_w, group_size_, 8);
+        ew.ffn_dense1_w_q = QuantizeWeights(ew.ffn_dense1_w, group_size_, 8);
+        ew.ffn_dense2_w_q = QuantizeWeights(ew.ffn_dense2_w, group_size_, 8);
+      }
+      // Convert weights to compute_dtype_ if not quantized.
+      if (!ew.mha_q_w_q.has_value()) ew.mha_q_w = mx::astype(ew.mha_q_w, compute_dtype_);
+      if (!ew.mha_k_w_q.has_value()) ew.mha_k_w = mx::astype(ew.mha_k_w, compute_dtype_);
+      if (!ew.mha_v_w_q.has_value()) ew.mha_v_w = mx::astype(ew.mha_v_w, compute_dtype_);
+      if (!ew.mha_dense_w_q.has_value()) ew.mha_dense_w = mx::astype(ew.mha_dense_w, compute_dtype_);
+      if (!ew.ffn_dense1_w_q.has_value()) ew.ffn_dense1_w = mx::astype(ew.ffn_dense1_w, compute_dtype_);
+      if (!ew.ffn_dense2_w_q.has_value()) ew.ffn_dense2_w = mx::astype(ew.ffn_dense2_w, compute_dtype_);
+
       ew.has_smolgen = enc.mha.has_smolgen;
       if (enc.mha.has_smolgen) {
         int hidden =
             static_cast<int>(enc.mha.smolgen.compress.size()) / embedding_size_;
-        ew.smolgen_compress = MakeFCWeights(enc.mha.smolgen.compress, embedding_size_, hidden, compute_dtype_);
         int dense1_out = static_cast<int>(enc.mha.smolgen.dense1_b.size());
-        ew.smolgen_dense1_w = MakeFCWeights(enc.mha.smolgen.dense1_w, 64 * hidden, dense1_out, compute_dtype_);
+        int dense2_out = static_cast<int>(enc.mha.smolgen.dense2_b.size());
+
+        auto compress_w = MakeFCWeights(enc.mha.smolgen.compress, embedding_size_, hidden, mx::float32);
+        auto d1_w = MakeFCWeights(enc.mha.smolgen.dense1_w, 64 * hidden, dense1_out, mx::float32);
+        auto d2_w = MakeFCWeights(enc.mha.smolgen.dense2_w, dense1_out, dense2_out, mx::float32);
+
+        // Note: Smolgen weights are NOT quantized - they're relatively small and
+        // the ComputeSmolgen function doesn't support quantized weights yet.
+        // Always store as compute_dtype_.
+        ew.smolgen_compress = mx::astype(compress_w, compute_dtype_);
+        ew.smolgen_dense1_w = mx::astype(d1_w, compute_dtype_);
+        ew.smolgen_dense2_w = mx::astype(d2_w, compute_dtype_);
+
         ew.smolgen_dense1_b = MakeArray(enc.mha.smolgen.dense1_b, {dense1_out}, compute_dtype_);
         ew.smolgen_ln1_gammas = MakeArray(enc.mha.smolgen.ln1_gammas, {dense1_out}, compute_dtype_);
         ew.smolgen_ln1_betas = MakeArray(enc.mha.smolgen.ln1_betas, {dense1_out}, compute_dtype_);
-        int dense2_out = static_cast<int>(enc.mha.smolgen.dense2_b.size());
-        ew.smolgen_dense2_w = MakeFCWeights(enc.mha.smolgen.dense2_w, dense1_out, dense2_out, compute_dtype_);
         ew.smolgen_dense2_b = MakeArray(enc.mha.smolgen.dense2_b, {dense2_out}, compute_dtype_);
         ew.smolgen_ln2_gammas = MakeArray(enc.mha.smolgen.ln2_gammas, {dense2_out}, compute_dtype_);
         ew.smolgen_ln2_betas = MakeArray(enc.mha.smolgen.ln2_betas, {dense2_out}, compute_dtype_);
@@ -358,15 +447,35 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   auto& pol_head = weights.policy_heads.at(policy_head);
   if (attn_policy) {
     int pol_emb_size = static_cast<int>(pol_head.ip_pol_b.size());
-    policy_weights_.ip_pol_w = MakeFCWeights(pol_head.ip_pol_w, embedding_size_, pol_emb_size, compute_dtype_);
+    {
+      auto w = MakeFCWeights(pol_head.ip_pol_w, embedding_size_, pol_emb_size, mx::float32);
+      if (quantize) {
+        policy_weights_.ip_pol_w_q = QuantizeWeights(w, group_size_, 8);
+      }
+      if (!policy_weights_.ip_pol_w_q.has_value()) {
+        policy_weights_.ip_pol_w = mx::astype(w, compute_dtype_);
+      }
+    }
     policy_weights_.ip_pol_b = MakeArray(pol_head.ip_pol_b, {pol_emb_size}, compute_dtype_);
 
     int pol_dmodel = static_cast<int>(pol_head.ip2_pol_b.size());
-    policy_weights_.ip2_pol_w = MakeFCWeights(pol_head.ip2_pol_w, pol_emb_size, pol_dmodel, compute_dtype_);
+    {
+      auto w2 = MakeFCWeights(pol_head.ip2_pol_w, pol_emb_size, pol_dmodel, mx::float32);
+      auto w3 = MakeFCWeights(pol_head.ip3_pol_w, pol_emb_size, pol_dmodel, mx::float32);
+      auto w4 = MakeFCWeights(pol_head.ip4_pol_w, pol_dmodel, 4, mx::float32);
+      if (quantize) {
+        policy_weights_.ip2_pol_w_q = QuantizeWeights(w2, group_size_, 8);
+        policy_weights_.ip3_pol_w_q = QuantizeWeights(w3, group_size_, 8);
+        // Note: ip4_pol_w is NOT quantized - it's used by AttentionPolicyPromoMatmulConcat
+        // which doesn't support quantized weights.
+      }
+      if (!policy_weights_.ip2_pol_w_q.has_value()) policy_weights_.ip2_pol_w = mx::astype(w2, compute_dtype_);
+      if (!policy_weights_.ip3_pol_w_q.has_value()) policy_weights_.ip3_pol_w = mx::astype(w3, compute_dtype_);
+      // Always set ip4_pol_w since AttentionPolicyPromoMatmulConcat uses it directly.
+      policy_weights_.ip4_pol_w = mx::astype(w4, compute_dtype_);
+    }
     policy_weights_.ip2_pol_b = MakeArray(pol_head.ip2_pol_b, {pol_dmodel}, compute_dtype_);
-    policy_weights_.ip3_pol_w = MakeFCWeights(pol_head.ip3_pol_w, pol_emb_size, pol_dmodel, compute_dtype_);
     policy_weights_.ip3_pol_b = MakeArray(pol_head.ip3_pol_b, {pol_dmodel}, compute_dtype_);
-    policy_weights_.ip4_pol_w = MakeFCWeights(pol_head.ip4_pol_w, pol_dmodel, 4, compute_dtype_);
     policy_weights_.pol_encoder_head_count = pol_head.pol_encoder_head_count;
 
     // Policy encoder layers.
@@ -376,23 +485,41 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
       int ffn_hidden = static_cast<int>(enc.ffn.dense1_b.size());
 
       policy_weights_.pol_encoder.emplace_back(
-          MakeFCWeights(enc.mha.q_w, pol_emb_size, qkv_size, compute_dtype_),
+          MakeFCWeights(enc.mha.q_w, pol_emb_size, qkv_size, mx::float32),
           MakeArray(enc.mha.q_b, {qkv_size}, compute_dtype_),
-          MakeFCWeights(enc.mha.k_w, pol_emb_size, qkv_size, compute_dtype_),
+          MakeFCWeights(enc.mha.k_w, pol_emb_size, qkv_size, mx::float32),
           MakeArray(enc.mha.k_b, {qkv_size}, compute_dtype_),
-          MakeFCWeights(enc.mha.v_w, pol_emb_size, qkv_size, compute_dtype_),
+          MakeFCWeights(enc.mha.v_w, pol_emb_size, qkv_size, mx::float32),
           MakeArray(enc.mha.v_b, {qkv_size}, compute_dtype_),
-          MakeFCWeights(enc.mha.dense_w, qkv_size, pol_emb_size, compute_dtype_),
+          MakeFCWeights(enc.mha.dense_w, qkv_size, pol_emb_size, mx::float32),
           MakeArray(enc.mha.dense_b, {pol_emb_size}, compute_dtype_),
           MakeArray(enc.ln1_gammas, {pol_emb_size}, compute_dtype_),
           MakeArray(enc.ln1_betas, {pol_emb_size}, compute_dtype_),
-          MakeFCWeights(enc.ffn.dense1_w, pol_emb_size, ffn_hidden, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense1_w, pol_emb_size, ffn_hidden, mx::float32),
           MakeArray(enc.ffn.dense1_b, {ffn_hidden}, compute_dtype_),
-          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, pol_emb_size, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, pol_emb_size, mx::float32),
           MakeArray(enc.ffn.dense2_b, {pol_emb_size}, compute_dtype_),
           MakeArray(enc.ln2_gammas, {pol_emb_size}, compute_dtype_),
           MakeArray(enc.ln2_betas, {pol_emb_size}, compute_dtype_));
-      policy_weights_.pol_encoder.back().has_smolgen = enc.mha.has_smolgen;
+      auto& pew = policy_weights_.pol_encoder.back();
+      pew.has_smolgen = enc.mha.has_smolgen;
+
+      // Quantize policy encoder FC weights if requested.
+      if (quantize) {
+        pew.mha_q_w_q = QuantizeWeights(pew.mha_q_w, group_size_, 8);
+        pew.mha_k_w_q = QuantizeWeights(pew.mha_k_w, group_size_, 8);
+        pew.mha_v_w_q = QuantizeWeights(pew.mha_v_w, group_size_, 8);
+        pew.mha_dense_w_q = QuantizeWeights(pew.mha_dense_w, group_size_, 8);
+        pew.ffn_dense1_w_q = QuantizeWeights(pew.ffn_dense1_w, group_size_, 8);
+        pew.ffn_dense2_w_q = QuantizeWeights(pew.ffn_dense2_w, group_size_, 8);
+      }
+      // Convert to compute_dtype_ if not quantized.
+      if (!pew.mha_q_w_q.has_value()) pew.mha_q_w = mx::astype(pew.mha_q_w, compute_dtype_);
+      if (!pew.mha_k_w_q.has_value()) pew.mha_k_w = mx::astype(pew.mha_k_w, compute_dtype_);
+      if (!pew.mha_v_w_q.has_value()) pew.mha_v_w = mx::astype(pew.mha_v_w, compute_dtype_);
+      if (!pew.mha_dense_w_q.has_value()) pew.mha_dense_w = mx::astype(pew.mha_dense_w, compute_dtype_);
+      if (!pew.ffn_dense1_w_q.has_value()) pew.ffn_dense1_w = mx::astype(pew.ffn_dense1_w, compute_dtype_);
+      if (!pew.ffn_dense2_w_q.has_value()) pew.ffn_dense2_w = mx::astype(pew.ffn_dense2_w, compute_dtype_);
     }
   } else if (conv_policy) {
     int pol1_channels = static_cast<int>(pol_head.policy1.biases.size());
@@ -422,7 +549,15 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   auto& val_head = weights.value_heads.at(value_head);
   if (attn_body) {
     int val_emb_size = static_cast<int>(val_head.ip_val_b.size());
-    value_weights_.ip_val_w = MakeFCWeights(val_head.ip_val_w, embedding_size_, val_emb_size, compute_dtype_);
+    {
+      auto w = MakeFCWeights(val_head.ip_val_w, embedding_size_, val_emb_size, mx::float32);
+      if (quantize) {
+        value_weights_.ip_val_w_q = QuantizeWeights(w, group_size_, 8);
+      }
+      if (!value_weights_.ip_val_w_q.has_value()) {
+        value_weights_.ip_val_w = mx::astype(w, compute_dtype_);
+      }
+    }
     value_weights_.ip_val_b = MakeArray(val_head.ip_val_b, {val_emb_size}, compute_dtype_);
   } else {
     int val_channels = static_cast<int>(val_head.value.biases.size());
@@ -433,10 +568,18 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   }
   int val_hidden = static_cast<int>(val_head.ip1_val_b.size());
   int ip1_val_in = static_cast<int>(val_head.ip1_val_w.size()) / val_hidden;
-  value_weights_.ip1_val_w = MakeFCWeights(val_head.ip1_val_w, ip1_val_in, val_hidden, compute_dtype_);
-  value_weights_.ip1_val_b = MakeArray(val_head.ip1_val_b, {val_hidden}, compute_dtype_);
   int val_outputs = static_cast<int>(val_head.ip2_val_b.size());
-  value_weights_.ip2_val_w = MakeFCWeights(val_head.ip2_val_w, val_hidden, val_outputs, compute_dtype_);
+  {
+    auto w1 = MakeFCWeights(val_head.ip1_val_w, ip1_val_in, val_hidden, mx::float32);
+    auto w2 = MakeFCWeights(val_head.ip2_val_w, val_hidden, val_outputs, mx::float32);
+    if (quantize) {
+      value_weights_.ip1_val_w_q = QuantizeWeights(w1, group_size_, 8);
+      value_weights_.ip2_val_w_q = QuantizeWeights(w2, group_size_, 8);
+    }
+    if (!value_weights_.ip1_val_w_q.has_value()) value_weights_.ip1_val_w = mx::astype(w1, compute_dtype_);
+    if (!value_weights_.ip2_val_w_q.has_value()) value_weights_.ip2_val_w = mx::astype(w2, compute_dtype_);
+  }
+  value_weights_.ip1_val_b = MakeArray(val_head.ip1_val_b, {val_hidden}, compute_dtype_);
   value_weights_.ip2_val_b = MakeArray(val_head.ip2_val_b, {val_outputs}, compute_dtype_);
 
   // Moves left head weights.
@@ -444,7 +587,15 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   if (moves_left) {
     if (attn_body) {
       int mov_emb_size = static_cast<int>(weights.ip_mov_b.size());
-      ip_mov_w_ = MakeFCWeights(weights.ip_mov_w, embedding_size_, mov_emb_size, compute_dtype_);
+      {
+        auto w = MakeFCWeights(weights.ip_mov_w, embedding_size_, mov_emb_size, mx::float32);
+        if (quantize) {
+          ip_mov_w_q_ = QuantizeWeights(w, group_size_, 8);
+        }
+        if (!ip_mov_w_q_.has_value()) {
+          ip_mov_w_ = mx::astype(w, compute_dtype_);
+        }
+      }
       ip_mov_b_ = MakeArray(weights.ip_mov_b, {mov_emb_size}, compute_dtype_);
     } else {
       int mov_channels = static_cast<int>(weights.moves_left.biases.size());
@@ -455,9 +606,17 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     }
     int mov_hidden = static_cast<int>(weights.ip1_mov_b.size());
     int ip1_mov_in = static_cast<int>(weights.ip1_mov_w.size()) / mov_hidden;
-    ip1_mov_w_ = MakeFCWeights(weights.ip1_mov_w, ip1_mov_in, mov_hidden, compute_dtype_);
+    {
+      auto w1 = MakeFCWeights(weights.ip1_mov_w, ip1_mov_in, mov_hidden, mx::float32);
+      auto w2 = MakeFCWeights(weights.ip2_mov_w, mov_hidden, 1, mx::float32);
+      if (quantize) {
+        ip1_mov_w_q_ = QuantizeWeights(w1, group_size_, 8);
+        ip2_mov_w_q_ = QuantizeWeights(w2, group_size_, 8);
+      }
+      if (!ip1_mov_w_q_.has_value()) ip1_mov_w_ = mx::astype(w1, compute_dtype_);
+      if (!ip2_mov_w_q_.has_value()) ip2_mov_w_ = mx::astype(w2, compute_dtype_);
+    }
     ip1_mov_b_ = MakeArray(weights.ip1_mov_b, {mov_hidden}, compute_dtype_);
-    ip2_mov_w_ = MakeFCWeights(weights.ip2_mov_w, mov_hidden, 1, compute_dtype_);
     ip2_mov_b_ = MakeArray(weights.ip2_mov_b, {1}, compute_dtype_);
   }
 }
@@ -503,15 +662,17 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     flow = mx::reshape(flow, {batch_size, 64, kInputPlanes});
 
     // Handle position encoding based on embedding type.
-    if (embedding_ == INPUT_EMBEDDING_PE_DENSE && ip_emb_preproc_w_.has_value()) {
+    bool has_preproc = ip_emb_preproc_w_.has_value() || ip_emb_preproc_w_q_.has_value();
+    if (embedding_ == INPUT_EMBEDDING_PE_DENSE && has_preproc) {
       // PE_DENSE: Take first 12 channels, flatten, FC, reshape, concat.
       // Extract first 12 channels (piece positions).
       mx::array input_12 = mx::slice(flow, {0, 0, 0}, {batch_size, 64, 12});
       // Flatten to [batch, 64*12].
       input_12 = mx::reshape(input_12, {batch_size, 64 * 12});
       // FC preproc to [batch, preproc_out] where preproc_out = 64 * enc_channels.
-      mx::array pos_enc = FullyConnected(input_12, *ip_emb_preproc_w_,
-                                         *ip_emb_preproc_b_, "");
+      mx::array pos_enc = ip_emb_preproc_w_q_.has_value()
+          ? QuantizedFullyConnected(input_12, *ip_emb_preproc_w_q_, *ip_emb_preproc_b_, "")
+          : FullyConnected(input_12, *ip_emb_preproc_w_, *ip_emb_preproc_b_, "");
       // Reshape to [batch, 64, enc_channels].
       int enc_channels = static_cast<int>(pos_enc.size()) / (batch_size * 64);
       pos_enc = mx::reshape(pos_enc, {batch_size, 64, enc_channels});
@@ -531,8 +692,13 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     // For INPUT_EMBEDDING_NONE, just use the 112 channels directly.
 
     // Main embedding.
-    flow = FullyConnected(flow, *ip_emb_w_, *ip_emb_b_,
-                          activations_.default_activation);
+    bool use_qfc = ip_emb_w_q_.has_value();
+    if (!use_qfc && !ip_emb_w_.has_value()) {
+      throw Exception("Neither ip_emb_w_ nor ip_emb_w_q_ has value!");
+    }
+    flow = use_qfc
+        ? QuantizedFullyConnected(flow, *ip_emb_w_q_, *ip_emb_b_, activations_.default_activation)
+        : FullyConnected(flow, *ip_emb_w_, *ip_emb_b_, activations_.default_activation);
 
     // Embedding layer norm (for PE_DENSE).
     if (ip_emb_ln_gammas_.has_value()) {
@@ -552,11 +718,14 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     float default_eps = (embedding_ == INPUT_EMBEDDING_PE_DENSE) ? kPeDenseEpsilon : kDefaultEpsilon;
 
     // Embedding FFN (for PE_DENSE).
-    if (ip_emb_ffn_dense1_w_.has_value()) {
-      mx::array ffn = FullyConnected(flow, *ip_emb_ffn_dense1_w_,
-                                     *ip_emb_ffn_dense1_b_,
-                                     activations_.ffn_activation);
-      ffn = FullyConnected(ffn, *ip_emb_ffn_dense2_w_, *ip_emb_ffn_dense2_b_, "");
+    bool has_emb_ffn = ip_emb_ffn_dense1_w_.has_value() || ip_emb_ffn_dense1_w_q_.has_value();
+    if (has_emb_ffn) {
+      mx::array ffn = ip_emb_ffn_dense1_w_q_.has_value()
+          ? QuantizedFullyConnected(flow, *ip_emb_ffn_dense1_w_q_, *ip_emb_ffn_dense1_b_, activations_.ffn_activation)
+          : FullyConnected(flow, *ip_emb_ffn_dense1_w_, *ip_emb_ffn_dense1_b_, activations_.ffn_activation);
+      ffn = ip_emb_ffn_dense2_w_q_.has_value()
+          ? QuantizedFullyConnected(ffn, *ip_emb_ffn_dense2_w_q_, *ip_emb_ffn_dense2_b_, "")
+          : FullyConnected(ffn, *ip_emb_ffn_dense2_w_, *ip_emb_ffn_dense2_b_, "");
       flow = LayerNormWithSkip(flow, ffn, *ip_emb_ffn_ln_gammas_,
                                *ip_emb_ffn_ln_betas_, alpha, kPeDenseEpsilon);
     }
@@ -565,12 +734,20 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     for (size_t i = 0; i < encoder_weights_.size(); i++) {
       const auto& ew = encoder_weights_[i];
 
-      // Q, K, V projections.
-      mx::array q = FullyConnected(flow, ew.mha_q_w, ew.mha_q_b, "");
-      mx::array k = FullyConnected(flow, ew.mha_k_w, ew.mha_k_b, "");
-      mx::array v = FullyConnected(flow, ew.mha_v_w, ew.mha_v_b, "");
+      // Q, K, V projections (use quantized if available).
+      mx::array q = ew.mha_q_w_q.has_value()
+          ? QuantizedFullyConnected(flow, *ew.mha_q_w_q, ew.mha_q_b, "")
+          : FullyConnected(flow, ew.mha_q_w, ew.mha_q_b, "");
+      mx::array k = ew.mha_k_w_q.has_value()
+          ? QuantizedFullyConnected(flow, *ew.mha_k_w_q, ew.mha_k_b, "")
+          : FullyConnected(flow, ew.mha_k_w, ew.mha_k_b, "");
+      mx::array v = ew.mha_v_w_q.has_value()
+          ? QuantizedFullyConnected(flow, *ew.mha_v_w_q, ew.mha_v_b, "")
+          : FullyConnected(flow, ew.mha_v_w, ew.mha_v_b, "");
 
       // Compute smolgen attention weights if needed.
+      // Note: Smolgen weights are NOT quantized (kept as float) because they're
+      // relatively small and ComputeSmolgen doesn't support quantized weights yet.
       std::optional<mx::array> smolgen_attn;
       if (ew.has_smolgen && smolgen_global_w_.has_value()) {
         smolgen_attn = ComputeSmolgen(
@@ -590,16 +767,20 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
           : MultiHeadAttention(q, k, v, encoder_head_count_, nullptr);
 
       // MHA dense layer.
-      mha = FullyConnected(mha, ew.mha_dense_w, ew.mha_dense_b, "");
+      mha = ew.mha_dense_w_q.has_value()
+          ? QuantizedFullyConnected(mha, *ew.mha_dense_w_q, ew.mha_dense_b, "")
+          : FullyConnected(mha, ew.mha_dense_w, ew.mha_dense_b, "");
 
       // Skip connection + layer norm.
       flow = LayerNormWithSkip(flow, mha, ew.ln1_gammas, ew.ln1_betas, alpha, default_eps);
 
       // FFN.
-      mx::array ffn =
-          FullyConnected(flow, ew.ffn_dense1_w, ew.ffn_dense1_b,
-                         activations_.ffn_activation);
-      ffn = FullyConnected(ffn, ew.ffn_dense2_w, ew.ffn_dense2_b, "");
+      mx::array ffn = ew.ffn_dense1_w_q.has_value()
+          ? QuantizedFullyConnected(flow, *ew.ffn_dense1_w_q, ew.ffn_dense1_b, activations_.ffn_activation)
+          : FullyConnected(flow, ew.ffn_dense1_w, ew.ffn_dense1_b, activations_.ffn_activation);
+      ffn = ew.ffn_dense2_w_q.has_value()
+          ? QuantizedFullyConnected(ffn, *ew.ffn_dense2_w_q, ew.ffn_dense2_b, "")
+          : FullyConnected(ffn, ew.ffn_dense2_w, ew.ffn_dense2_b, "");
 
       // Skip connection + layer norm.
       flow = LayerNormWithSkip(flow, ffn, ew.ln2_gammas, ew.ln2_betas, alpha, default_eps);
@@ -611,46 +792,60 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   if (attn_policy_) {
     // Attention policy head.
     mx::array pol = flow;
+    std::string pol_act = attn_body_ ? activations_.default_activation : "selu";
 
     // Square embedding.
-    pol = FullyConnected(pol, *policy_weights_.ip_pol_w,
-                         *policy_weights_.ip_pol_b,
-                         attn_body_ ? activations_.default_activation : "selu");
+    pol = policy_weights_.ip_pol_w_q.has_value()
+        ? QuantizedFullyConnected(pol, *policy_weights_.ip_pol_w_q, *policy_weights_.ip_pol_b, pol_act)
+        : FullyConnected(pol, *policy_weights_.ip_pol_w, *policy_weights_.ip_pol_b, pol_act);
 
     // Policy encoder layers.
     for (size_t i = 0; i < policy_weights_.pol_encoder.size(); i++) {
       const auto& ew = policy_weights_.pol_encoder[i];
 
-      mx::array q = FullyConnected(pol, ew.mha_q_w, ew.mha_q_b, "");
-      mx::array k = FullyConnected(pol, ew.mha_k_w, ew.mha_k_b, "");
-      mx::array v = FullyConnected(pol, ew.mha_v_w, ew.mha_v_b, "");
+      mx::array q = ew.mha_q_w_q.has_value()
+          ? QuantizedFullyConnected(pol, *ew.mha_q_w_q, ew.mha_q_b, "")
+          : FullyConnected(pol, ew.mha_q_w, ew.mha_q_b, "");
+      mx::array k = ew.mha_k_w_q.has_value()
+          ? QuantizedFullyConnected(pol, *ew.mha_k_w_q, ew.mha_k_b, "")
+          : FullyConnected(pol, ew.mha_k_w, ew.mha_k_b, "");
+      mx::array v = ew.mha_v_w_q.has_value()
+          ? QuantizedFullyConnected(pol, *ew.mha_v_w_q, ew.mha_v_b, "")
+          : FullyConnected(pol, ew.mha_v_w, ew.mha_v_b, "");
 
       mx::array mha = MultiHeadAttention(
           q, k, v, policy_weights_.pol_encoder_head_count, nullptr);
-      mha = FullyConnected(mha, ew.mha_dense_w, ew.mha_dense_b, "");
+      mha = ew.mha_dense_w_q.has_value()
+          ? QuantizedFullyConnected(mha, *ew.mha_dense_w_q, ew.mha_dense_b, "")
+          : FullyConnected(mha, ew.mha_dense_w, ew.mha_dense_b, "");
 
       pol = LayerNormWithSkip(pol, mha, ew.ln1_gammas, ew.ln1_betas, 1.0f);
 
-      mx::array ffn =
-          FullyConnected(pol, ew.ffn_dense1_w, ew.ffn_dense1_b,
-                         attn_body_ ? activations_.ffn_activation : "selu");
-      ffn = FullyConnected(ffn, ew.ffn_dense2_w, ew.ffn_dense2_b, "");
+      std::string ffn_act = attn_body_ ? activations_.ffn_activation : "selu";
+      mx::array ffn = ew.ffn_dense1_w_q.has_value()
+          ? QuantizedFullyConnected(pol, *ew.ffn_dense1_w_q, ew.ffn_dense1_b, ffn_act)
+          : FullyConnected(pol, ew.ffn_dense1_w, ew.ffn_dense1_b, ffn_act);
+      ffn = ew.ffn_dense2_w_q.has_value()
+          ? QuantizedFullyConnected(ffn, *ew.ffn_dense2_w_q, ew.ffn_dense2_b, "")
+          : FullyConnected(ffn, ew.ffn_dense2_w, ew.ffn_dense2_b, "");
 
       pol = LayerNormWithSkip(pol, ffn, ew.ln2_gammas, ew.ln2_betas, 1.0f);
     }
 
     // Self-attention Q and K.
-    mx::array queries = FullyConnected(pol, *policy_weights_.ip2_pol_w,
-                                       *policy_weights_.ip2_pol_b, "");
-    mx::array keys = FullyConnected(pol, *policy_weights_.ip3_pol_w,
-                                    *policy_weights_.ip3_pol_b, "");
+    mx::array queries = policy_weights_.ip2_pol_w_q.has_value()
+        ? QuantizedFullyConnected(pol, *policy_weights_.ip2_pol_w_q, *policy_weights_.ip2_pol_b, "")
+        : FullyConnected(pol, *policy_weights_.ip2_pol_w, *policy_weights_.ip2_pol_b, "");
+    mx::array keys = policy_weights_.ip3_pol_w_q.has_value()
+        ? QuantizedFullyConnected(pol, *policy_weights_.ip3_pol_w_q, *policy_weights_.ip3_pol_b, "")
+        : FullyConnected(pol, *policy_weights_.ip3_pol_w, *policy_weights_.ip3_pol_b, "");
 
     // Scaled Q*K matmul.
     int pol_dmodel = static_cast<int>(policy_weights_.ip2_pol_b->size());
     pol = ScaledQKMatmul(queries, keys,
                          1.0f / std::sqrt(static_cast<float>(pol_dmodel)));
 
-    // Promotion logits.
+    // Promotion logits (ip4_pol_w is NOT quantized - used by AttentionPolicyPromoMatmulConcat).
     pol = AttentionPolicyPromoMatmulConcat(pol, keys, *policy_weights_.ip4_pol_w,
                                            56, pol_dmodel);
 
@@ -682,9 +877,9 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   std::optional<mx::array> value_opt;
   if (attn_body_) {
     // Attention body value head - use embedding from encoder output.
-    mx::array val = FullyConnected(flow, *value_weights_.ip_val_w,
-                                   *value_weights_.ip_val_b,
-                                   activations_.default_activation);
+    mx::array val = value_weights_.ip_val_w_q.has_value()
+        ? QuantizedFullyConnected(flow, *value_weights_.ip_val_w_q, *value_weights_.ip_val_b, activations_.default_activation)
+        : FullyConnected(flow, *value_weights_.ip_val_w, *value_weights_.ip_val_b, activations_.default_activation);
     value_opt = mx::reshape(val, {batch_size, -1});
   } else {
     mx::array val = ConvBlock(flow, *value_weights_.value_conv_weights,
@@ -694,26 +889,32 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   }
   mx::array value = *value_opt;
 
-  value = FullyConnected(value, *value_weights_.ip1_val_w,
-                         *value_weights_.ip1_val_b,
-                         activations_.default_activation);
-  value = FullyConnected(value, *value_weights_.ip2_val_w,
-                         *value_weights_.ip2_val_b, wdl_ ? "softmax" : "tanh");
+  value = value_weights_.ip1_val_w_q.has_value()
+      ? QuantizedFullyConnected(value, *value_weights_.ip1_val_w_q, *value_weights_.ip1_val_b, activations_.default_activation)
+      : FullyConnected(value, *value_weights_.ip1_val_w, *value_weights_.ip1_val_b, activations_.default_activation);
+  value = value_weights_.ip2_val_w_q.has_value()
+      ? QuantizedFullyConnected(value, *value_weights_.ip2_val_w_q, *value_weights_.ip2_val_b, wdl_ ? "softmax" : "tanh")
+      : FullyConnected(value, *value_weights_.ip2_val_w, *value_weights_.ip2_val_b, wdl_ ? "softmax" : "tanh");
 
   // Moves left head.
   std::optional<mx::array> moves_left_opt;
   if (moves_left_) {
-    mx::array mleft =
-        attn_body_
-            ? FullyConnected(flow, *ip_mov_w_, *ip_mov_b_,
-                             activations_.default_activation)
-            : ConvBlock(flow, *moves_left_conv_weights_,
-                        *moves_left_conv_biases_, 1,
-                        activations_.default_activation);
+    mx::array mleft = [&]() {
+      if (attn_body_) {
+        return ip_mov_w_q_.has_value()
+            ? QuantizedFullyConnected(flow, *ip_mov_w_q_, *ip_mov_b_, activations_.default_activation)
+            : FullyConnected(flow, *ip_mov_w_, *ip_mov_b_, activations_.default_activation);
+      } else {
+        return ConvBlock(flow, *moves_left_conv_weights_, *moves_left_conv_biases_, 1, activations_.default_activation);
+      }
+    }();
     mleft = mx::reshape(mleft, {batch_size, -1});
-    mleft = FullyConnected(mleft, *ip1_mov_w_, *ip1_mov_b_,
-                           activations_.default_activation);
-    moves_left_opt = FullyConnected(mleft, *ip2_mov_w_, *ip2_mov_b_, "relu");
+    mleft = ip1_mov_w_q_.has_value()
+        ? QuantizedFullyConnected(mleft, *ip1_mov_w_q_, *ip1_mov_b_, activations_.default_activation)
+        : FullyConnected(mleft, *ip1_mov_w_, *ip1_mov_b_, activations_.default_activation);
+    moves_left_opt = ip2_mov_w_q_.has_value()
+        ? QuantizedFullyConnected(mleft, *ip2_mov_w_q_, *ip2_mov_b_, "relu")
+        : FullyConnected(mleft, *ip2_mov_w_, *ip2_mov_b_, "relu");
   }
 
   // Cast outputs back to float32 for memcpy if needed.
@@ -892,7 +1093,7 @@ MLXNetwork::MLXNetwork(const WeightsFile& file, const OptionsDict& options)
   auto embedding = static_cast<InputEmbedding>(
       file.format().network_format().input_embedding());
 
-  // Parse precision option: fp32 (default), fp16, or bf16.
+  // Parse precision option: fp32 (default), fp16, bf16, or q8 (int8 quantized).
   std::string precision_str = options.GetOrDefault<std::string>("precision", "fp32");
   Precision precision = Precision::FP32;
   if (precision_str == "fp16") {
@@ -901,11 +1102,22 @@ MLXNetwork::MLXNetwork(const WeightsFile& file, const OptionsDict& options)
   } else if (precision_str == "bf16") {
     precision = Precision::BF16;
     CERR << "Using bf16 precision";
+  } else if (precision_str == "q8" || precision_str == "int8") {
+    precision = Precision::Q8;
+  }
+
+  // Parse group_size option for quantization (default 64).
+  int group_size = options.GetOrDefault<int>("group_size", 64);
+
+  if (precision == Precision::Q8) {
+    CERR << "Using int8 quantization with group_size=" << group_size;
+    CERR << "NOTE: Layers with dimensions not divisible by " << group_size
+         << " will use float16 instead of int8.";
   }
 
   builder_->Build(kInputPlanes, weights, embedding, attn_body, attn_policy_,
                   conv_policy_, wdl_, moves_left_, activations, policy_head,
-                  value_head, precision);
+                  value_head, precision, group_size);
 }
 
 MLXNetwork::~MLXNetwork() = default;

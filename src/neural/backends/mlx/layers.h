@@ -151,6 +151,27 @@ void ApplyPolicyMap(std::span<const float> input_data,
 mx::array GatingLayer(const mx::array& input, const mx::array& weights,
                       const std::string& operation);
 
+// Quantize FC weights using MLX's quantize() function.
+// Returns a QuantizedWeight struct containing packed weights, scales, and biases.
+// Returns nullopt if weight dimensions are not compatible with group_size.
+// weights: Float weights in row-major [input_size, output_size] format.
+// group_size: Number of elements per quantization group (default 64).
+// bits: Quantization bits (default 8 for int8).
+std::optional<QuantizedWeight> QuantizeWeights(const mx::array& weights,
+                                               int group_size = 64,
+                                               int bits = 8);
+
+// Quantized fully connected layer using MLX's quantized_matmul().
+// Uses int8 quantized weights with per-group scales and biases.
+// input: Activations in float16 format [batch, ..., input_size].
+// qw: Quantized weight struct from QuantizeWeights().
+// biases: Optional biases to add after matmul.
+// activation: Optional activation function name.
+mx::array QuantizedFullyConnected(const mx::array& input,
+                                  const QuantizedWeight& qw,
+                                  const mx::array& biases,
+                                  const std::string& activation);
+
 // Scaled Q*K matmul for attention policy.
 mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
                          float scale);

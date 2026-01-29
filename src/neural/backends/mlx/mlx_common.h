@@ -36,9 +36,9 @@ namespace mlx_backend {
 namespace mx = mlx::core;
 
 // Precision configuration for compute and storage.
-enum class Precision { FP32, FP16, BF16 };
+enum class Precision { FP32, FP16, BF16, Q8 };
 
-// Convert Precision enum to MLX dtype.
+// Convert Precision enum to MLX dtype for non-quantized weights.
 inline mx::Dtype PrecisionToDtype(Precision p) {
   switch (p) {
     case Precision::FP16:
@@ -49,6 +49,32 @@ inline mx::Dtype PrecisionToDtype(Precision p) {
       return mx::float32;
   }
 }
+
+// Check if precision is quantized.
+inline bool IsQuantized(Precision p) { return p == Precision::Q8; }
+
+// Get activation dtype for quantized inference.
+// Quantized weights use float16 activations for efficiency.
+inline mx::Dtype ActivationDtype(Precision p) {
+  return IsQuantized(p) ? mx::float16 : PrecisionToDtype(p);
+}
+
+// Quantized weight storage for int8 (or int4) quantization.
+// Holds packed quantized weights, per-group scales, and biases.
+struct QuantizedWeight {
+  mx::array packed;     // Packed quantized weights (uint32)
+  mx::array scales;     // Per-group scale factors
+  mx::array biases;     // Per-group bias values
+  int group_size;       // Number of elements per quantization group
+  int bits;             // Quantization bits (8 or 4)
+
+  QuantizedWeight(mx::array p, mx::array s, mx::array b, int gs, int bt)
+      : packed(std::move(p)),
+        scales(std::move(s)),
+        biases(std::move(b)),
+        group_size(gs),
+        bits(bt) {}
+};
 
 static constexpr int kNumOutputPolicy = 1858;
 static constexpr int kInputPlanes = 112;
