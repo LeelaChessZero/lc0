@@ -124,8 +124,9 @@ class MLXGraphBuilder {
     // Quantized weight versions (populated when precision is Q8).
     OptQuantized mha_q_w_q, mha_k_w_q, mha_v_w_q, mha_dense_w_q;
     OptQuantized ffn_dense1_w_q, ffn_dense2_w_q;
-    // Note: Smolgen weights are NOT quantized (kept as float) because they're
-    // relatively small and ComputeSmolgen doesn't support quantized weights yet.
+    OptQuantized smolgen_compress_q;
+    OptQuantized smolgen_dense1_w_q;
+    OptQuantized smolgen_dense2_w_q;
 
     EncoderWeights(mx::array q_w, mx::array q_b, mx::array k_w, mx::array k_b,
                    mx::array v_w, mx::array v_b, mx::array dense_w,
@@ -168,6 +169,7 @@ class MLXGraphBuilder {
 
   // Global smolgen weights.
   OptArray smolgen_global_w_;
+  OptQuantized smolgen_global_w_q_;
   bool has_smolgen_ = false;
 
   // Policy head weights.
@@ -368,11 +370,24 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     has_smolgen_ = weights.has_smolgen;
     if (has_smolgen_) {
       int smolgen_out = static_cast<int>(weights.smolgen_w.size()) / 64 / 64;
-      smolgen_global_w_ = MakeFCWeights(weights.smolgen_w, smolgen_out, 64 * 64, compute_dtype_);
+      auto w = MakeFCWeights(weights.smolgen_w, smolgen_out, 64 * 64,
+                             quantize ? mx::float32 : compute_dtype_);
+      if (quantize) {
+        smolgen_global_w_q_ = QuantizeWeights(w, group_size_, 8);
+        if (!smolgen_global_w_q_.has_value()) {
+          CERR << "Warning: smolgen_global_w [" << smolgen_out << ", " << 64 * 64
+               << "] not divisible by group_size=" << group_size_
+               << ", using float16.";
+        }
+      }
+      if (!smolgen_global_w_q_.has_value()) {
+        smolgen_global_w_ = quantize ? mx::astype(w, compute_dtype_) : std::move(w);
+      }
     }
 
     // Encoder layers - use MakeFCWeights for all FC weight matrices.
     encoder_weights_.reserve(weights.encoder.size());
+    bool smolgen_quant_warned = false;  // Only warn once for smolgen quantization failures.
     for (const auto& enc : weights.encoder) {
       int qkv_size = static_cast<int>(enc.mha.q_b.size());
       int ffn_hidden = static_cast<int>(enc.ffn.dense1_b.size());
@@ -425,12 +440,40 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
         auto d1_w = MakeFCWeights(enc.mha.smolgen.dense1_w, 64 * hidden, dense1_out, mx::float32);
         auto d2_w = MakeFCWeights(enc.mha.smolgen.dense2_w, dense1_out, dense2_out, mx::float32);
 
-        // Note: Smolgen weights are NOT quantized - they're relatively small and
-        // the ComputeSmolgen function doesn't support quantized weights yet.
-        // Always store as compute_dtype_.
-        ew.smolgen_compress = mx::astype(compress_w, compute_dtype_);
-        ew.smolgen_dense1_w = mx::astype(d1_w, compute_dtype_);
-        ew.smolgen_dense2_w = mx::astype(d2_w, compute_dtype_);
+        if (quantize) {
+          ew.smolgen_compress_q = QuantizeWeights(compress_w, group_size_, 8);
+          ew.smolgen_dense1_w_q = QuantizeWeights(d1_w, group_size_, 8);
+          ew.smolgen_dense2_w_q = QuantizeWeights(d2_w, group_size_, 8);
+
+          // Warn once if any smolgen weight can't be quantized.
+          if (!smolgen_quant_warned) {
+            if (!ew.smolgen_compress_q.has_value()) {
+              CERR << "Warning: smolgen_compress [" << embedding_size_ << ", " << hidden
+                   << "] not divisible by group_size=" << group_size_
+                   << ", using float16.";
+            }
+            if (!ew.smolgen_dense1_w_q.has_value()) {
+              CERR << "Warning: smolgen_dense1_w [" << 64 * hidden << ", " << dense1_out
+                   << "] not divisible by group_size=" << group_size_
+                   << ", using float16.";
+            }
+            if (!ew.smolgen_dense2_w_q.has_value()) {
+              CERR << "Warning: smolgen_dense2_w [" << dense1_out << ", " << dense2_out
+                   << "] not divisible by group_size=" << group_size_
+                   << ", using float16.";
+            }
+            smolgen_quant_warned = true;
+          }
+        }
+        if (!ew.smolgen_compress_q.has_value()) {
+          ew.smolgen_compress = mx::astype(compress_w, compute_dtype_);
+        }
+        if (!ew.smolgen_dense1_w_q.has_value()) {
+          ew.smolgen_dense1_w = mx::astype(d1_w, compute_dtype_);
+        }
+        if (!ew.smolgen_dense2_w_q.has_value()) {
+          ew.smolgen_dense2_w = mx::astype(d2_w, compute_dtype_);
+        }
 
         ew.smolgen_dense1_b = MakeArray(enc.mha.smolgen.dense1_b, {dense1_out}, compute_dtype_);
         ew.smolgen_ln1_gammas = MakeArray(enc.mha.smolgen.ln1_gammas, {dense1_out}, compute_dtype_);
@@ -746,19 +789,41 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
           : FullyConnected(flow, ew.mha_v_w, ew.mha_v_b, "");
 
       // Compute smolgen attention weights if needed.
-      // Note: Smolgen weights are NOT quantized (kept as float) because they're
-      // relatively small and ComputeSmolgen doesn't support quantized weights yet.
       std::optional<mx::array> smolgen_attn;
-      if (ew.has_smolgen && smolgen_global_w_.has_value()) {
-        smolgen_attn = ComputeSmolgen(
-            flow, encoder_head_count_,
-            *ew.smolgen_compress,
-            *ew.smolgen_dense1_w, *ew.smolgen_dense1_b,
-            *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
-            *ew.smolgen_dense2_w, *ew.smolgen_dense2_b,
-            *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
-            *smolgen_global_w_,
-            activations_.smolgen_activation);
+      bool has_smolgen_weights = smolgen_global_w_.has_value() || smolgen_global_w_q_.has_value();
+      if (ew.has_smolgen && has_smolgen_weights) {
+        // Use quantized path if any smolgen weight is quantized.
+        bool use_quantized = ew.smolgen_compress_q.has_value() ||
+                             ew.smolgen_dense1_w_q.has_value() ||
+                             ew.smolgen_dense2_w_q.has_value() ||
+                             smolgen_global_w_q_.has_value();
+        if (use_quantized) {
+          smolgen_attn = ComputeSmolgenQuantized(
+              flow, encoder_head_count_,
+              ew.smolgen_compress_q,
+              ew.smolgen_compress.has_value() ? &*ew.smolgen_compress : nullptr,
+              ew.smolgen_dense1_w_q,
+              ew.smolgen_dense1_w.has_value() ? &*ew.smolgen_dense1_w : nullptr,
+              *ew.smolgen_dense1_b,
+              *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
+              ew.smolgen_dense2_w_q,
+              ew.smolgen_dense2_w.has_value() ? &*ew.smolgen_dense2_w : nullptr,
+              *ew.smolgen_dense2_b,
+              *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
+              smolgen_global_w_q_,
+              smolgen_global_w_.has_value() ? &*smolgen_global_w_ : nullptr,
+              activations_.smolgen_activation);
+        } else {
+          smolgen_attn = ComputeSmolgen(
+              flow, encoder_head_count_,
+              *ew.smolgen_compress,
+              *ew.smolgen_dense1_w, *ew.smolgen_dense1_b,
+              *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
+              *ew.smolgen_dense2_w, *ew.smolgen_dense2_b,
+              *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
+              *smolgen_global_w_,
+              activations_.smolgen_activation);
+        }
       }
 
       // Multi-head attention with optional smolgen.

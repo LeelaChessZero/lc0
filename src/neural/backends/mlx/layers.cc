@@ -443,6 +443,67 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
   return result;
 }
 
+// Compute smolgen attention weights with optional quantized weights.
+// Uses quantized FC when quantized weight is available, falls back to matmul otherwise.
+mx::array ComputeSmolgenQuantized(
+    const mx::array& input, int heads,
+    const std::optional<QuantizedWeight>& compress_w_q,
+    const mx::array* compress_w,
+    const std::optional<QuantizedWeight>& dense1_w_q,
+    const mx::array* dense1_w,
+    const mx::array& dense1_b,
+    const mx::array& ln1_gammas, const mx::array& ln1_betas,
+    const std::optional<QuantizedWeight>& dense2_w_q,
+    const mx::array* dense2_w,
+    const mx::array& dense2_b,
+    const mx::array& ln2_gammas, const mx::array& ln2_betas,
+    const std::optional<QuantizedWeight>& global_w_q,
+    const mx::array* global_w,
+    const std::string& smolgen_activation) {
+  int batch_size = static_cast<int>(input.shape()[0]);
+  int seq_len = static_cast<int>(input.shape()[1]);     // 64
+  int embed_size = static_cast<int>(input.shape()[2]);  // embedding_size
+
+  // Get hidden size from quantized or float weight.
+  int hidden = compress_w_q.has_value()
+      ? static_cast<int>(compress_w_q->scales.shape()[0])  // output_size from scales
+      : static_cast<int>(compress_w->shape()[1]);
+
+  // 1. Compress: [batch*64, embed] -> [batch*64, hidden]
+  mx::array flat_input = mx::reshape(input, {batch_size * seq_len, embed_size});
+  mx::array compressed = compress_w_q.has_value()
+      ? QuantizedFullyConnected(flat_input, *compress_w_q, mx::array{}, "")
+      : mx::matmul(flat_input, *compress_w);
+
+  // 2. Reshape to [batch, 64*hidden] for dense1
+  mx::array reshaped = mx::reshape(compressed, {batch_size, seq_len * hidden});
+
+  // 3. Dense1 + activation + LayerNorm
+  mx::array dense1 = dense1_w_q.has_value()
+      ? QuantizedFullyConnected(reshaped, *dense1_w_q, dense1_b, smolgen_activation)
+      : FullyConnected(reshaped, *dense1_w, dense1_b, smolgen_activation);
+  dense1 = LayerNorm(dense1, ln1_gammas, ln1_betas, kSmolgenEpsilon);
+
+  // 4. Dense2 + activation + LayerNorm
+  mx::array dense2 = dense2_w_q.has_value()
+      ? QuantizedFullyConnected(dense1, *dense2_w_q, dense2_b, smolgen_activation)
+      : FullyConnected(dense1, *dense2_w, dense2_b, smolgen_activation);
+  dense2 = LayerNorm(dense2, ln2_gammas, ln2_betas, kSmolgenEpsilon);
+
+  // 5. Global: reshape to [batch*heads, gen_sz_outputs/heads] and apply global weights
+  int gen_sz_outputs = static_cast<int>(dense2.shape()[1]);
+  int per_head_sz = gen_sz_outputs / heads;
+  mx::array per_head = mx::reshape(dense2, {batch_size * heads, per_head_sz});
+  mx::array global_out = global_w_q.has_value()
+      ? QuantizedFullyConnected(per_head, *global_w_q, mx::array{}, "")
+      : mx::matmul(per_head, *global_w);
+
+  // 6. Reshape to [batch, heads, 64, 64]
+  mx::array result = mx::reshape(global_out, {batch_size, heads, seq_len, seq_len});
+
+  return result;
+}
+
 // Multi-head attention.
 // For smolgen path, softmax is computed in float32 for numerical stability.
 mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,

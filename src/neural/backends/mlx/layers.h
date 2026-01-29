@@ -137,6 +137,25 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
                          const mx::array& global_w,
                          const std::string& smolgen_activation);
 
+// Compute smolgen attention weights with optional quantized weights.
+// Uses quantized FC when quantized weight is available, falls back to matmul otherwise.
+// For compress and global layers (no bias), pass empty mx::array{} as bias.
+mx::array ComputeSmolgenQuantized(
+    const mx::array& input, int heads,
+    const std::optional<QuantizedWeight>& compress_w_q,
+    const mx::array* compress_w,
+    const std::optional<QuantizedWeight>& dense1_w_q,
+    const mx::array* dense1_w,
+    const mx::array& dense1_b,
+    const mx::array& ln1_gammas, const mx::array& ln1_betas,
+    const std::optional<QuantizedWeight>& dense2_w_q,
+    const mx::array* dense2_w,
+    const mx::array& dense2_b,
+    const mx::array& ln2_gammas, const mx::array& ln2_betas,
+    const std::optional<QuantizedWeight>& global_w_q,
+    const mx::array* global_w,
+    const std::string& smolgen_activation);
+
 // Policy map layer - maps raw policy to 1858 outputs.
 // input_data: source tensor data, size must be >= batch_size * input_stride
 // output_data: destination buffer, size must be exactly batch_size * kNumOutputPolicy
