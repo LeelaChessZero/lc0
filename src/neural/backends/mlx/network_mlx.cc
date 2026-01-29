@@ -938,6 +938,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
           // Build WeightVariant for each weight - quantized takes precedence.
           auto make_variant = [](const OptQuantized& q,
                                  const OptArray& f) -> WeightVariant {
+            assert(q.has_value() || f.has_value());
             if (q.has_value()) {
               return *q;
             } else {
@@ -956,6 +957,17 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
               make_variant(smolgen_global_w_q_, smolgen_global_w_),
               activations_.smolgen_activation);
         } else {
+          // Verify all required smolgen weights have values.
+          assert(ew.smolgen_compress.has_value());
+          assert(ew.smolgen_dense1_w.has_value());
+          assert(ew.smolgen_dense1_b.has_value());
+          assert(ew.smolgen_ln1_gammas.has_value());
+          assert(ew.smolgen_ln1_betas.has_value());
+          assert(ew.smolgen_dense2_w.has_value());
+          assert(ew.smolgen_dense2_b.has_value());
+          assert(ew.smolgen_ln2_gammas.has_value());
+          assert(ew.smolgen_ln2_betas.has_value());
+          assert(smolgen_global_w_.has_value());
           smolgen_attn = ComputeSmolgen(
               flow, encoder_head_count_,
               *ew.smolgen_compress,
