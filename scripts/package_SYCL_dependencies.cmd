@@ -135,7 +135,7 @@ echo     } >> "%PS_SCRIPT%"
 echo } >> "%PS_SCRIPT%"
 
 rem --- 4. Run and Cleanup ---
-powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+powershell -NoProfile -File "%PS_SCRIPT%"
 if exist "%PS_SCRIPT%" del "%PS_SCRIPT%"
 
 echo.
