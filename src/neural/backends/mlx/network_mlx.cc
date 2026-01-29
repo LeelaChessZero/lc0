@@ -56,8 +56,9 @@ using OptArray = std::optional<mx::array>;
 // Helper to load FC weights from BLAS column-major format.
 // BLAS stores FC weights in column-major layout [output_size, input_size].
 // We load as [output_size, input_size] and transpose to get row-major [input_size, output_size].
-mx::array MakeFCWeights(const std::vector<float>& data, int input_size, int output_size) {
-  return mx::transpose(MakeArray(data, {output_size, input_size}));
+mx::array MakeFCWeights(const std::vector<float>& data, int input_size, int output_size,
+                        mx::Dtype dtype = mx::float32) {
+  return mx::transpose(MakeArray(data, {output_size, input_size}, dtype));
 }
 
 // MLXGraphBuilder holds the network weights and performs forward evaluation.
@@ -70,7 +71,7 @@ class MLXGraphBuilder {
              InputEmbedding embedding, bool attn_body, bool attn_policy,
              bool conv_policy, bool wdl, bool moves_left,
              Activations& activations, const std::string& policy_head,
-             const std::string& value_head);
+             const std::string& value_head, Precision precision);
 
   void ForwardEval(float* values, uint64_t* masks, int batch_size,
                    std::vector<float*> output_mems);
@@ -202,6 +203,10 @@ class MLXGraphBuilder {
   int num_filters_ = 0;
   int embedding_size_ = 0;
 
+  // Precision configuration.
+  Precision precision_ = Precision::FP32;
+  mx::Dtype compute_dtype_ = mx::float32;
+
   // Position encoding data.
   std::vector<float> pos_enc_data_;
 };
@@ -211,7 +216,8 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
                             bool attn_policy, bool conv_policy, bool wdl,
                             bool moves_left, Activations& activations,
                             const std::string& policy_head,
-                            const std::string& value_head) {
+                            const std::string& value_head,
+                            Precision precision) {
   attn_body_ = attn_body;
   attn_policy_ = attn_policy;
   conv_policy_ = conv_policy;
@@ -219,6 +225,8 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   moves_left_ = moves_left;
   embedding_ = embedding;
   activations_ = activations;
+  precision_ = precision;
+  compute_dtype_ = PrecisionToDtype(precision);
 
   // Get filter count from input convolution.
   if (!attn_body) {
@@ -226,28 +234,28 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     // Convert input convolution weights from OIHW to OHWI format.
     input_conv_weights_ =
         ConvertConvWeightsOIHWtoOHWI(weights.input.weights,
-                                     num_filters_, input_planes, 3, 3);
+                                     num_filters_, input_planes, 3, 3, compute_dtype_);
     input_conv_biases_ =
-        MakeArray(weights.input.biases, {num_filters_, 1, 1});
+        MakeArray(weights.input.biases, {num_filters_, 1, 1}, compute_dtype_);
 
     // Convert residual tower weights.
     residual_weights_.reserve(weights.residual.size());
     for (const auto& res : weights.residual) {
       residual_weights_.emplace_back(
-          ConvertConvWeightsOIHWtoOHWI(res.conv1.weights, num_filters_, num_filters_, 3, 3),
-          MakeArray(res.conv1.biases, {num_filters_, 1, 1}),
-          ConvertConvWeightsOIHWtoOHWI(res.conv2.weights, num_filters_, num_filters_, 3, 3),
-          MakeArray(res.conv2.biases, {num_filters_, 1, 1}));
+          ConvertConvWeightsOIHWtoOHWI(res.conv1.weights, num_filters_, num_filters_, 3, 3, compute_dtype_),
+          MakeArray(res.conv1.biases, {num_filters_, 1, 1}, compute_dtype_),
+          ConvertConvWeightsOIHWtoOHWI(res.conv2.weights, num_filters_, num_filters_, 3, 3, compute_dtype_),
+          MakeArray(res.conv2.biases, {num_filters_, 1, 1}, compute_dtype_));
       auto& rw = residual_weights_.back();
 
       rw.has_se = res.has_se;
       if (res.has_se) {
         int se_channels = static_cast<int>(res.se.b1.size());
         // SE FC weights - use BLAS column-major format loader.
-        rw.se_fc1_weights = MakeFCWeights(res.se.w1, num_filters_, se_channels);
-        rw.se_fc1_biases = MakeArray(res.se.b1, {se_channels});
-        rw.se_fc2_weights = MakeFCWeights(res.se.w2, se_channels, 2 * num_filters_);
-        rw.se_fc2_biases = MakeArray(res.se.b2, {2 * num_filters_});
+        rw.se_fc1_weights = MakeFCWeights(res.se.w1, num_filters_, se_channels, compute_dtype_);
+        rw.se_fc1_biases = MakeArray(res.se.b1, {se_channels}, compute_dtype_);
+        rw.se_fc2_weights = MakeFCWeights(res.se.w2, se_channels, 2 * num_filters_, compute_dtype_);
+        rw.se_fc2_biases = MakeArray(res.se.b2, {2 * num_filters_}, compute_dtype_);
       }
     }
   } else {
@@ -258,46 +266,46 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     // Embedding preprocessing (PE_DENSE only).
     if (!weights.ip_emb_preproc_w.empty()) {
       int preproc_out = static_cast<int>(weights.ip_emb_preproc_b.size());
-      ip_emb_preproc_w_ = MakeFCWeights(weights.ip_emb_preproc_w, 64 * 12, preproc_out);
-      ip_emb_preproc_b_ = MakeArray(weights.ip_emb_preproc_b, {preproc_out});
+      ip_emb_preproc_w_ = MakeFCWeights(weights.ip_emb_preproc_w, 64 * 12, preproc_out, compute_dtype_);
+      ip_emb_preproc_b_ = MakeArray(weights.ip_emb_preproc_b, {preproc_out}, compute_dtype_);
     }
 
     // Embedding layer.
     int ip_emb_in = static_cast<int>(weights.ip_emb_w.size()) / embedding_size_;
-    ip_emb_w_ = MakeFCWeights(weights.ip_emb_w, ip_emb_in, embedding_size_);
-    ip_emb_b_ = MakeArray(weights.ip_emb_b, {embedding_size_});
+    ip_emb_w_ = MakeFCWeights(weights.ip_emb_w, ip_emb_in, embedding_size_, compute_dtype_);
+    ip_emb_b_ = MakeArray(weights.ip_emb_b, {embedding_size_}, compute_dtype_);
 
     // Embedding layer norm.
     if (!weights.ip_emb_ln_gammas.empty()) {
       ip_emb_ln_gammas_ =
-          MakeArray(weights.ip_emb_ln_gammas, {embedding_size_});
-      ip_emb_ln_betas_ = MakeArray(weights.ip_emb_ln_betas, {embedding_size_});
+          MakeArray(weights.ip_emb_ln_gammas, {embedding_size_}, compute_dtype_);
+      ip_emb_ln_betas_ = MakeArray(weights.ip_emb_ln_betas, {embedding_size_}, compute_dtype_);
     }
 
     // Input gating.
     // BLAS stores as [embedding_size, 64] in row-major.
     if (!weights.ip_mult_gate.empty()) {
-      ip_mult_gate_ = MakeArray(weights.ip_mult_gate, {embedding_size_, 64});
-      ip_add_gate_ = MakeArray(weights.ip_add_gate, {embedding_size_, 64});
+      ip_mult_gate_ = MakeArray(weights.ip_mult_gate, {embedding_size_, 64}, compute_dtype_);
+      ip_add_gate_ = MakeArray(weights.ip_add_gate, {embedding_size_, 64}, compute_dtype_);
     }
 
     // Embedding FFN.
     if (!weights.ip_emb_ffn.dense1_w.empty()) {
       int ffn_hidden =
           static_cast<int>(weights.ip_emb_ffn.dense1_b.size());
-      ip_emb_ffn_dense1_w_ = MakeFCWeights(weights.ip_emb_ffn.dense1_w, embedding_size_, ffn_hidden);
-      ip_emb_ffn_dense1_b_ = MakeArray(weights.ip_emb_ffn.dense1_b, {ffn_hidden});
-      ip_emb_ffn_dense2_w_ = MakeFCWeights(weights.ip_emb_ffn.dense2_w, ffn_hidden, embedding_size_);
-      ip_emb_ffn_dense2_b_ = MakeArray(weights.ip_emb_ffn.dense2_b, {embedding_size_});
-      ip_emb_ffn_ln_gammas_ = MakeArray(weights.ip_emb_ffn_ln_gammas, {embedding_size_});
-      ip_emb_ffn_ln_betas_ = MakeArray(weights.ip_emb_ffn_ln_betas, {embedding_size_});
+      ip_emb_ffn_dense1_w_ = MakeFCWeights(weights.ip_emb_ffn.dense1_w, embedding_size_, ffn_hidden, compute_dtype_);
+      ip_emb_ffn_dense1_b_ = MakeArray(weights.ip_emb_ffn.dense1_b, {ffn_hidden}, compute_dtype_);
+      ip_emb_ffn_dense2_w_ = MakeFCWeights(weights.ip_emb_ffn.dense2_w, ffn_hidden, embedding_size_, compute_dtype_);
+      ip_emb_ffn_dense2_b_ = MakeArray(weights.ip_emb_ffn.dense2_b, {embedding_size_}, compute_dtype_);
+      ip_emb_ffn_ln_gammas_ = MakeArray(weights.ip_emb_ffn_ln_gammas, {embedding_size_}, compute_dtype_);
+      ip_emb_ffn_ln_betas_ = MakeArray(weights.ip_emb_ffn_ln_betas, {embedding_size_}, compute_dtype_);
     }
 
     // Global smolgen weights.
     has_smolgen_ = weights.has_smolgen;
     if (has_smolgen_) {
       int smolgen_out = static_cast<int>(weights.smolgen_w.size()) / 64 / 64;
-      smolgen_global_w_ = MakeFCWeights(weights.smolgen_w, smolgen_out, 64 * 64);
+      smolgen_global_w_ = MakeFCWeights(weights.smolgen_w, smolgen_out, 64 * 64, compute_dtype_);
     }
 
     // Encoder layers - use MakeFCWeights for all FC weight matrices.
@@ -308,39 +316,39 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
 
 
       encoder_weights_.emplace_back(
-          MakeFCWeights(enc.mha.q_w, embedding_size_, qkv_size),
-          MakeArray(enc.mha.q_b, {qkv_size}),
-          MakeFCWeights(enc.mha.k_w, embedding_size_, qkv_size),
-          MakeArray(enc.mha.k_b, {qkv_size}),
-          MakeFCWeights(enc.mha.v_w, embedding_size_, qkv_size),
-          MakeArray(enc.mha.v_b, {qkv_size}),
-          MakeFCWeights(enc.mha.dense_w, qkv_size, embedding_size_),
-          MakeArray(enc.mha.dense_b, {embedding_size_}),
-          MakeArray(enc.ln1_gammas, {embedding_size_}),
-          MakeArray(enc.ln1_betas, {embedding_size_}),
-          MakeFCWeights(enc.ffn.dense1_w, embedding_size_, ffn_hidden),
-          MakeArray(enc.ffn.dense1_b, {ffn_hidden}),
-          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, embedding_size_),
-          MakeArray(enc.ffn.dense2_b, {embedding_size_}),
-          MakeArray(enc.ln2_gammas, {embedding_size_}),
-          MakeArray(enc.ln2_betas, {embedding_size_}));
+          MakeFCWeights(enc.mha.q_w, embedding_size_, qkv_size, compute_dtype_),
+          MakeArray(enc.mha.q_b, {qkv_size}, compute_dtype_),
+          MakeFCWeights(enc.mha.k_w, embedding_size_, qkv_size, compute_dtype_),
+          MakeArray(enc.mha.k_b, {qkv_size}, compute_dtype_),
+          MakeFCWeights(enc.mha.v_w, embedding_size_, qkv_size, compute_dtype_),
+          MakeArray(enc.mha.v_b, {qkv_size}, compute_dtype_),
+          MakeFCWeights(enc.mha.dense_w, qkv_size, embedding_size_, compute_dtype_),
+          MakeArray(enc.mha.dense_b, {embedding_size_}, compute_dtype_),
+          MakeArray(enc.ln1_gammas, {embedding_size_}, compute_dtype_),
+          MakeArray(enc.ln1_betas, {embedding_size_}, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense1_w, embedding_size_, ffn_hidden, compute_dtype_),
+          MakeArray(enc.ffn.dense1_b, {ffn_hidden}, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, embedding_size_, compute_dtype_),
+          MakeArray(enc.ffn.dense2_b, {embedding_size_}, compute_dtype_),
+          MakeArray(enc.ln2_gammas, {embedding_size_}, compute_dtype_),
+          MakeArray(enc.ln2_betas, {embedding_size_}, compute_dtype_));
       auto& ew = encoder_weights_.back();
 
       ew.has_smolgen = enc.mha.has_smolgen;
       if (enc.mha.has_smolgen) {
         int hidden =
             static_cast<int>(enc.mha.smolgen.compress.size()) / embedding_size_;
-        ew.smolgen_compress = MakeFCWeights(enc.mha.smolgen.compress, embedding_size_, hidden);
+        ew.smolgen_compress = MakeFCWeights(enc.mha.smolgen.compress, embedding_size_, hidden, compute_dtype_);
         int dense1_out = static_cast<int>(enc.mha.smolgen.dense1_b.size());
-        ew.smolgen_dense1_w = MakeFCWeights(enc.mha.smolgen.dense1_w, 64 * hidden, dense1_out);
-        ew.smolgen_dense1_b = MakeArray(enc.mha.smolgen.dense1_b, {dense1_out});
-        ew.smolgen_ln1_gammas = MakeArray(enc.mha.smolgen.ln1_gammas, {dense1_out});
-        ew.smolgen_ln1_betas = MakeArray(enc.mha.smolgen.ln1_betas, {dense1_out});
+        ew.smolgen_dense1_w = MakeFCWeights(enc.mha.smolgen.dense1_w, 64 * hidden, dense1_out, compute_dtype_);
+        ew.smolgen_dense1_b = MakeArray(enc.mha.smolgen.dense1_b, {dense1_out}, compute_dtype_);
+        ew.smolgen_ln1_gammas = MakeArray(enc.mha.smolgen.ln1_gammas, {dense1_out}, compute_dtype_);
+        ew.smolgen_ln1_betas = MakeArray(enc.mha.smolgen.ln1_betas, {dense1_out}, compute_dtype_);
         int dense2_out = static_cast<int>(enc.mha.smolgen.dense2_b.size());
-        ew.smolgen_dense2_w = MakeFCWeights(enc.mha.smolgen.dense2_w, dense1_out, dense2_out);
-        ew.smolgen_dense2_b = MakeArray(enc.mha.smolgen.dense2_b, {dense2_out});
-        ew.smolgen_ln2_gammas = MakeArray(enc.mha.smolgen.ln2_gammas, {dense2_out});
-        ew.smolgen_ln2_betas = MakeArray(enc.mha.smolgen.ln2_betas, {dense2_out});
+        ew.smolgen_dense2_w = MakeFCWeights(enc.mha.smolgen.dense2_w, dense1_out, dense2_out, compute_dtype_);
+        ew.smolgen_dense2_b = MakeArray(enc.mha.smolgen.dense2_b, {dense2_out}, compute_dtype_);
+        ew.smolgen_ln2_gammas = MakeArray(enc.mha.smolgen.ln2_gammas, {dense2_out}, compute_dtype_);
+        ew.smolgen_ln2_betas = MakeArray(enc.mha.smolgen.ln2_betas, {dense2_out}, compute_dtype_);
       }
     }
   }
@@ -350,15 +358,15 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   auto& pol_head = weights.policy_heads.at(policy_head);
   if (attn_policy) {
     int pol_emb_size = static_cast<int>(pol_head.ip_pol_b.size());
-    policy_weights_.ip_pol_w = MakeFCWeights(pol_head.ip_pol_w, embedding_size_, pol_emb_size);
-    policy_weights_.ip_pol_b = MakeArray(pol_head.ip_pol_b, {pol_emb_size});
+    policy_weights_.ip_pol_w = MakeFCWeights(pol_head.ip_pol_w, embedding_size_, pol_emb_size, compute_dtype_);
+    policy_weights_.ip_pol_b = MakeArray(pol_head.ip_pol_b, {pol_emb_size}, compute_dtype_);
 
     int pol_dmodel = static_cast<int>(pol_head.ip2_pol_b.size());
-    policy_weights_.ip2_pol_w = MakeFCWeights(pol_head.ip2_pol_w, pol_emb_size, pol_dmodel);
-    policy_weights_.ip2_pol_b = MakeArray(pol_head.ip2_pol_b, {pol_dmodel});
-    policy_weights_.ip3_pol_w = MakeFCWeights(pol_head.ip3_pol_w, pol_emb_size, pol_dmodel);
-    policy_weights_.ip3_pol_b = MakeArray(pol_head.ip3_pol_b, {pol_dmodel});
-    policy_weights_.ip4_pol_w = MakeFCWeights(pol_head.ip4_pol_w, pol_dmodel, 4);
+    policy_weights_.ip2_pol_w = MakeFCWeights(pol_head.ip2_pol_w, pol_emb_size, pol_dmodel, compute_dtype_);
+    policy_weights_.ip2_pol_b = MakeArray(pol_head.ip2_pol_b, {pol_dmodel}, compute_dtype_);
+    policy_weights_.ip3_pol_w = MakeFCWeights(pol_head.ip3_pol_w, pol_emb_size, pol_dmodel, compute_dtype_);
+    policy_weights_.ip3_pol_b = MakeArray(pol_head.ip3_pol_b, {pol_dmodel}, compute_dtype_);
+    policy_weights_.ip4_pol_w = MakeFCWeights(pol_head.ip4_pol_w, pol_dmodel, 4, compute_dtype_);
     policy_weights_.pol_encoder_head_count = pol_head.pol_encoder_head_count;
 
     // Policy encoder layers.
@@ -368,45 +376,45 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
       int ffn_hidden = static_cast<int>(enc.ffn.dense1_b.size());
 
       policy_weights_.pol_encoder.emplace_back(
-          MakeFCWeights(enc.mha.q_w, pol_emb_size, qkv_size),
-          MakeArray(enc.mha.q_b, {qkv_size}),
-          MakeFCWeights(enc.mha.k_w, pol_emb_size, qkv_size),
-          MakeArray(enc.mha.k_b, {qkv_size}),
-          MakeFCWeights(enc.mha.v_w, pol_emb_size, qkv_size),
-          MakeArray(enc.mha.v_b, {qkv_size}),
-          MakeFCWeights(enc.mha.dense_w, qkv_size, pol_emb_size),
-          MakeArray(enc.mha.dense_b, {pol_emb_size}),
-          MakeArray(enc.ln1_gammas, {pol_emb_size}),
-          MakeArray(enc.ln1_betas, {pol_emb_size}),
-          MakeFCWeights(enc.ffn.dense1_w, pol_emb_size, ffn_hidden),
-          MakeArray(enc.ffn.dense1_b, {ffn_hidden}),
-          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, pol_emb_size),
-          MakeArray(enc.ffn.dense2_b, {pol_emb_size}),
-          MakeArray(enc.ln2_gammas, {pol_emb_size}),
-          MakeArray(enc.ln2_betas, {pol_emb_size}));
+          MakeFCWeights(enc.mha.q_w, pol_emb_size, qkv_size, compute_dtype_),
+          MakeArray(enc.mha.q_b, {qkv_size}, compute_dtype_),
+          MakeFCWeights(enc.mha.k_w, pol_emb_size, qkv_size, compute_dtype_),
+          MakeArray(enc.mha.k_b, {qkv_size}, compute_dtype_),
+          MakeFCWeights(enc.mha.v_w, pol_emb_size, qkv_size, compute_dtype_),
+          MakeArray(enc.mha.v_b, {qkv_size}, compute_dtype_),
+          MakeFCWeights(enc.mha.dense_w, qkv_size, pol_emb_size, compute_dtype_),
+          MakeArray(enc.mha.dense_b, {pol_emb_size}, compute_dtype_),
+          MakeArray(enc.ln1_gammas, {pol_emb_size}, compute_dtype_),
+          MakeArray(enc.ln1_betas, {pol_emb_size}, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense1_w, pol_emb_size, ffn_hidden, compute_dtype_),
+          MakeArray(enc.ffn.dense1_b, {ffn_hidden}, compute_dtype_),
+          MakeFCWeights(enc.ffn.dense2_w, ffn_hidden, pol_emb_size, compute_dtype_),
+          MakeArray(enc.ffn.dense2_b, {pol_emb_size}, compute_dtype_),
+          MakeArray(enc.ln2_gammas, {pol_emb_size}, compute_dtype_),
+          MakeArray(enc.ln2_betas, {pol_emb_size}, compute_dtype_));
       policy_weights_.pol_encoder.back().has_smolgen = enc.mha.has_smolgen;
     }
   } else if (conv_policy) {
     int pol1_channels = static_cast<int>(pol_head.policy1.biases.size());
     policy_weights_.policy1_conv_weights =
-        ConvertConvWeightsOIHWtoOHWI(pol_head.policy1.weights, pol1_channels, num_filters_, 3, 3);
+        ConvertConvWeightsOIHWtoOHWI(pol_head.policy1.weights, pol1_channels, num_filters_, 3, 3, compute_dtype_);
     policy_weights_.policy1_conv_biases =
-        MakeArray(pol_head.policy1.biases, {pol1_channels, 1, 1});
+        MakeArray(pol_head.policy1.biases, {pol1_channels, 1, 1}, compute_dtype_);
     int pol_channels = static_cast<int>(pol_head.policy.biases.size());
     policy_weights_.policy_conv_weights =
-        ConvertConvWeightsOIHWtoOHWI(pol_head.policy.weights, pol_channels, pol1_channels, 3, 3);
+        ConvertConvWeightsOIHWtoOHWI(pol_head.policy.weights, pol_channels, pol1_channels, 3, 3, compute_dtype_);
     policy_weights_.policy_conv_biases =
-        MakeArray(pol_head.policy.biases, {pol_channels, 1, 1});
+        MakeArray(pol_head.policy.biases, {pol_channels, 1, 1}, compute_dtype_);
   } else {
     // Classical policy.
     int pol_channels = static_cast<int>(pol_head.policy.biases.size());
     policy_weights_.policy_conv_weights =
-        ConvertConvWeightsOIHWtoOHWI(pol_head.policy.weights, pol_channels, num_filters_, 1, 1);
+        ConvertConvWeightsOIHWtoOHWI(pol_head.policy.weights, pol_channels, num_filters_, 1, 1, compute_dtype_);
     policy_weights_.policy_conv_biases =
-        MakeArray(pol_head.policy.biases, {pol_channels, 1, 1});
+        MakeArray(pol_head.policy.biases, {pol_channels, 1, 1}, compute_dtype_);
     int pol_outputs = static_cast<int>(pol_head.ip_pol_b.size());
-    policy_weights_.ip_pol_w = MakeFCWeights(pol_head.ip_pol_w, pol_channels * 64, pol_outputs);
-    policy_weights_.ip_pol_b = MakeArray(pol_head.ip_pol_b, {pol_outputs});
+    policy_weights_.ip_pol_w = MakeFCWeights(pol_head.ip_pol_w, pol_channels * 64, pol_outputs, compute_dtype_);
+    policy_weights_.ip_pol_b = MakeArray(pol_head.ip_pol_b, {pol_outputs}, compute_dtype_);
   }
 
   // Value head weights.
@@ -414,43 +422,43 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   auto& val_head = weights.value_heads.at(value_head);
   if (attn_body) {
     int val_emb_size = static_cast<int>(val_head.ip_val_b.size());
-    value_weights_.ip_val_w = MakeFCWeights(val_head.ip_val_w, embedding_size_, val_emb_size);
-    value_weights_.ip_val_b = MakeArray(val_head.ip_val_b, {val_emb_size});
+    value_weights_.ip_val_w = MakeFCWeights(val_head.ip_val_w, embedding_size_, val_emb_size, compute_dtype_);
+    value_weights_.ip_val_b = MakeArray(val_head.ip_val_b, {val_emb_size}, compute_dtype_);
   } else {
     int val_channels = static_cast<int>(val_head.value.biases.size());
     value_weights_.value_conv_weights =
-        ConvertConvWeightsOIHWtoOHWI(val_head.value.weights, val_channels, num_filters_, 1, 1);
+        ConvertConvWeightsOIHWtoOHWI(val_head.value.weights, val_channels, num_filters_, 1, 1, compute_dtype_);
     value_weights_.value_conv_biases =
-        MakeArray(val_head.value.biases, {val_channels, 1, 1});
+        MakeArray(val_head.value.biases, {val_channels, 1, 1}, compute_dtype_);
   }
   int val_hidden = static_cast<int>(val_head.ip1_val_b.size());
   int ip1_val_in = static_cast<int>(val_head.ip1_val_w.size()) / val_hidden;
-  value_weights_.ip1_val_w = MakeFCWeights(val_head.ip1_val_w, ip1_val_in, val_hidden);
-  value_weights_.ip1_val_b = MakeArray(val_head.ip1_val_b, {val_hidden});
+  value_weights_.ip1_val_w = MakeFCWeights(val_head.ip1_val_w, ip1_val_in, val_hidden, compute_dtype_);
+  value_weights_.ip1_val_b = MakeArray(val_head.ip1_val_b, {val_hidden}, compute_dtype_);
   int val_outputs = static_cast<int>(val_head.ip2_val_b.size());
-  value_weights_.ip2_val_w = MakeFCWeights(val_head.ip2_val_w, val_hidden, val_outputs);
-  value_weights_.ip2_val_b = MakeArray(val_head.ip2_val_b, {val_outputs});
+  value_weights_.ip2_val_w = MakeFCWeights(val_head.ip2_val_w, val_hidden, val_outputs, compute_dtype_);
+  value_weights_.ip2_val_b = MakeArray(val_head.ip2_val_b, {val_outputs}, compute_dtype_);
 
   // Moves left head weights.
   // BLAS stores FC weights in column-major layout.
   if (moves_left) {
     if (attn_body) {
       int mov_emb_size = static_cast<int>(weights.ip_mov_b.size());
-      ip_mov_w_ = MakeFCWeights(weights.ip_mov_w, embedding_size_, mov_emb_size);
-      ip_mov_b_ = MakeArray(weights.ip_mov_b, {mov_emb_size});
+      ip_mov_w_ = MakeFCWeights(weights.ip_mov_w, embedding_size_, mov_emb_size, compute_dtype_);
+      ip_mov_b_ = MakeArray(weights.ip_mov_b, {mov_emb_size}, compute_dtype_);
     } else {
       int mov_channels = static_cast<int>(weights.moves_left.biases.size());
       moves_left_conv_weights_ =
-          ConvertConvWeightsOIHWtoOHWI(weights.moves_left.weights, mov_channels, num_filters_, 1, 1);
+          ConvertConvWeightsOIHWtoOHWI(weights.moves_left.weights, mov_channels, num_filters_, 1, 1, compute_dtype_);
       moves_left_conv_biases_ =
-          MakeArray(weights.moves_left.biases, {mov_channels, 1, 1});
+          MakeArray(weights.moves_left.biases, {mov_channels, 1, 1}, compute_dtype_);
     }
     int mov_hidden = static_cast<int>(weights.ip1_mov_b.size());
     int ip1_mov_in = static_cast<int>(weights.ip1_mov_w.size()) / mov_hidden;
-    ip1_mov_w_ = MakeFCWeights(weights.ip1_mov_w, ip1_mov_in, mov_hidden);
-    ip1_mov_b_ = MakeArray(weights.ip1_mov_b, {mov_hidden});
-    ip2_mov_w_ = MakeFCWeights(weights.ip2_mov_w, mov_hidden, 1);
-    ip2_mov_b_ = MakeArray(weights.ip2_mov_b, {1});
+    ip1_mov_w_ = MakeFCWeights(weights.ip1_mov_w, ip1_mov_in, mov_hidden, compute_dtype_);
+    ip1_mov_b_ = MakeArray(weights.ip1_mov_b, {mov_hidden}, compute_dtype_);
+    ip2_mov_w_ = MakeFCWeights(weights.ip2_mov_w, mov_hidden, 1, compute_dtype_);
+    ip2_mov_b_ = MakeArray(weights.ip2_mov_b, {1}, compute_dtype_);
   }
 }
 
@@ -466,6 +474,11 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
 
   // Expand input to [batch, 112, 8, 8].
   mx::array flow = ExpandInput(input_masks, input_vals, batch_size);
+
+  // Convert to compute dtype if not float32.
+  if (compute_dtype_ != mx::float32) {
+    flow = mx::astype(flow, compute_dtype_);
+  }
 
   if (!attn_body_) {
     // Classical/SE network: input convolution.
@@ -703,6 +716,15 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     moves_left_opt = FullyConnected(mleft, *ip2_mov_w_, *ip2_mov_b_, "relu");
   }
 
+  // Cast outputs back to float32 for memcpy if needed.
+  if (compute_dtype_ != mx::float32) {
+    policy = mx::astype(policy, mx::float32);
+    value = mx::astype(value, mx::float32);
+    if (moves_left_opt.has_value()) {
+      moves_left_opt = mx::astype(*moves_left_opt, mx::float32);
+    }
+  }
+
   // Trigger MLX lazy evaluation.
   if (moves_left_) {
     mx::eval({policy, value, *moves_left_opt});
@@ -869,9 +891,21 @@ MLXNetwork::MLXNetwork(const WeightsFile& file, const OptionsDict& options)
 
   auto embedding = static_cast<InputEmbedding>(
       file.format().network_format().input_embedding());
+
+  // Parse precision option: fp32 (default), fp16, or bf16.
+  std::string precision_str = options.GetOrDefault<std::string>("precision", "fp32");
+  Precision precision = Precision::FP32;
+  if (precision_str == "fp16") {
+    precision = Precision::FP16;
+    CERR << "Using fp16 precision";
+  } else if (precision_str == "bf16") {
+    precision = Precision::BF16;
+    CERR << "Using bf16 precision";
+  }
+
   builder_->Build(kInputPlanes, weights, embedding, attn_body, attn_policy_,
                   conv_policy_, wdl_, moves_left_, activations, policy_head,
-                  value_head);
+                  value_head, precision);
 }
 
 MLXNetwork::~MLXNetwork() = default;

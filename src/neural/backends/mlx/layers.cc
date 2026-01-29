@@ -42,16 +42,20 @@ namespace mx = mlx::core;
 
 // Helper to create an MLX array from a float vector.
 mx::array MakeArray(const std::vector<float>& data,
-                    const std::vector<int>& shape) {
+                    const std::vector<int>& shape, mx::Dtype dtype) {
   mx::Shape mlx_shape(shape.begin(), shape.end());
-  return mx::array(data.data(), mlx_shape, mx::float32);
+  mx::array result = mx::array(data.data(), mlx_shape, mx::float32);
+  if (dtype != mx::float32) {
+    result = mx::astype(result, dtype);
+  }
+  return result;
 }
 
 // Convert convolution weights from OIHW to OHWI format (MLX conv2d expects OHWI).
 // This creates a contiguous array with the proper memory layout.
 mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
                                         int outChannels, int inChannels,
-                                        int kH, int kW) {
+                                        int kH, int kW, mx::Dtype dtype) {
   // Validate inputs to prevent overflow and undefined behavior.
   assert(outChannels > 0 && inChannels > 0 && kH > 0 && kW > 0);
   assert(weights.size() ==
@@ -71,7 +75,11 @@ mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
     }
   }
   mx::Shape shape = {outChannels, kH, kW, inChannels};
-  return mx::array(converted.data(), shape, mx::float32);
+  mx::array result = mx::array(converted.data(), shape, mx::float32);
+  if (dtype != mx::float32) {
+    result = mx::astype(result, dtype);
+  }
+  return result;
 }
 
 // Expand input masks and values to [batch, 112, 8, 8] tensor.
@@ -117,19 +125,25 @@ mx::array ExpandInput(const mx::array& masks, const mx::array& values,
 // Mish activation: x * tanh(softplus(x))
 // Uses numerically stable formulation matching BLAS backend.
 // mish(x) = x * n / (n + 2), where n = e^2 + 2e, e = exp(x)
+// Computation is done in float32 for numerical stability.
 mx::array Mish(const mx::array& x) {
-  mx::array e = mx::exp(x);
+  mx::Dtype orig_dtype = x.dtype();
+  mx::array xf = (orig_dtype != mx::float32) ? mx::astype(x, mx::float32) : x;
+
+  mx::array e = mx::exp(xf);
   mx::array n = mx::add(mx::square(e), mx::multiply(mx::array(2.0f), e));
-  mx::array d = mx::divide(x, mx::add(n, mx::array(2.0f)));
+  mx::array d = mx::divide(xf, mx::add(n, mx::array(2.0f)));
 
   // For val <= -0.125: return n * d
   // For val > -0.125: return val - 2 * d
   // Both give the same result: x * n / (n + 2)
   // But the second branch is more stable for small negative values.
-  mx::array mask = mx::less_equal(x, mx::array(-0.125f));
+  mx::array mask = mx::less_equal(xf, mx::array(-0.125f));
   mx::array result_low = mx::multiply(n, d);  // n * d
-  mx::array result_high = mx::subtract(x, mx::multiply(mx::array(2.0f), d));  // x - 2*d
-  return mx::where(mask, result_low, result_high);
+  mx::array result_high = mx::subtract(xf, mx::multiply(mx::array(2.0f), d));  // x - 2*d
+  mx::array result = mx::where(mask, result_low, result_high);
+
+  return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
 }
 
 // Swish activation: x * sigmoid(beta * x)
@@ -139,18 +153,23 @@ mx::array Swish(const mx::array& x, float beta) {
 }
 
 // SELU activation
+// Computation is done in float32 for numerical stability (exp).
 mx::array Selu(const mx::array& x) {
   constexpr float alpha = 1.67326324f;
   constexpr float scale = 1.05070098f;
 
+  mx::Dtype orig_dtype = x.dtype();
+  mx::array xf = (orig_dtype != mx::float32) ? mx::astype(x, mx::float32) : x;
+
   // SELU: scale * (max(0, x) + min(0, alpha * (exp(x) - 1)))
-  mx::array positive = mx::maximum(x, mx::array(0.0f));
-  mx::array negative = mx::minimum(x, mx::array(0.0f));
+  mx::array positive = mx::maximum(xf, mx::array(0.0f));
+  mx::array negative = mx::minimum(xf, mx::array(0.0f));
   mx::array exp_term = mx::multiply(
       mx::array(alpha),
       mx::subtract(mx::exp(negative), mx::array(1.0f)));
 
-  return mx::multiply(mx::array(scale), mx::add(positive, exp_term));
+  mx::array result = mx::multiply(mx::array(scale), mx::add(positive, exp_term));
+  return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
 }
 
 // Apply activation function by name.
@@ -304,20 +323,30 @@ mx::array FullyConnected(const mx::array& input, const mx::array& weights,
 }
 
 // Layer normalization.
+// Mean/variance computation is done in float32 for numerical stability.
 mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
                     const mx::array& betas, float epsilon) {
+  mx::Dtype orig_dtype = input.dtype();
+
+  // Upcast to float32 for mean/variance computation.
+  mx::array inputf = (orig_dtype != mx::float32) ? mx::astype(input, mx::float32) : input;
+
   // Normalize along the last axis.
   int axis = static_cast<int>(input.ndim()) - 1;
 
-  mx::array mean = mx::mean(input, std::vector<int>{axis}, true);
-  mx::array variance = mx::var(input, std::vector<int>{axis}, true);
+  mx::array mean = mx::mean(inputf, std::vector<int>{axis}, true);
+  mx::array variance = mx::var(inputf, std::vector<int>{axis}, true);
 
   mx::array normalized = mx::divide(
-      mx::subtract(input, mean),
+      mx::subtract(inputf, mean),
       mx::sqrt(mx::add(variance, mx::array(epsilon))));
 
-  // Apply gamma and beta.
-  return mx::add(mx::multiply(normalized, gammas), betas);
+  // Apply gamma and beta (in float32).
+  mx::array gammasf = (gammas.dtype() != mx::float32) ? mx::astype(gammas, mx::float32) : gammas;
+  mx::array betasf = (betas.dtype() != mx::float32) ? mx::astype(betas, mx::float32) : betas;
+  mx::array result = mx::add(mx::multiply(normalized, gammasf), betasf);
+
+  return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
 }
 
 // Layer normalization with scaled secondary tensor (skip connection).
@@ -333,20 +362,30 @@ mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
 }
 
 // RMS normalization.
+// Squared mean computation is done in float32 for numerical stability.
 mx::array RmsNorm(const mx::array& input, const mx::array& gammas,
                   float epsilon) {
+  mx::Dtype orig_dtype = input.dtype();
+
+  // Upcast to float32 for squared mean computation.
+  mx::array inputf = (orig_dtype != mx::float32) ? mx::astype(input, mx::float32) : input;
+
   int axis = static_cast<int>(input.ndim()) - 1;
 
   // RMS = sqrt(mean(x^2))
-  mx::array squared = mx::multiply(input, input);
+  mx::array squared = mx::multiply(inputf, inputf);
   mx::array mean_sq = mx::mean(squared, std::vector<int>{axis}, true);
   mx::array rms = mx::sqrt(mx::add(mean_sq, mx::array(epsilon)));
 
-  // Normalize and apply gamma.
-  return mx::multiply(mx::divide(input, rms), gammas);
+  // Normalize and apply gamma (in float32).
+  mx::array gammasf = (gammas.dtype() != mx::float32) ? mx::astype(gammas, mx::float32) : gammas;
+  mx::array result = mx::multiply(mx::divide(inputf, rms), gammasf);
+
+  return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
 }
 
 // RMS normalization with scaled secondary tensor (skip connection).
+// Skip combination preserves input dtype; RmsNorm handles upcasting.
 mx::array RmsNormWithSkip(const mx::array& input, const mx::array& secondary,
                           const mx::array& gammas, float alpha, float epsilon) {
   mx::array combined = (alpha != 1.0f)
@@ -405,6 +444,7 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
 }
 
 // Multi-head attention.
+// For smolgen path, softmax is computed in float32 for numerical stability.
 mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
                              const mx::array& values, int heads,
                              const mx::array* smolgen_attn_weights) {
@@ -414,6 +454,7 @@ mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
   int dmodel = static_cast<int>(queries.shape()[2]);
   int depth = dmodel / heads;
   float scale = 1.0f / std::sqrt(static_cast<float>(depth));
+  mx::Dtype orig_dtype = queries.dtype();
 
   // Reshape to [batch, seq, heads, depth] and transpose to [batch, heads, seq, depth].
   mx::array q = mx::transpose(
@@ -426,11 +467,20 @@ mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
   mx::array output = [&]() {
     if (smolgen_attn_weights != nullptr && smolgen_attn_weights->size() > 0) {
       // Manual attention for smolgen (additive bias before softmax).
-      mx::array attn = mx::matmul(q, mx::transpose(k, {0, 1, 3, 2}));
+      // Upcast to float32 for softmax stability.
+      mx::array qf = (orig_dtype != mx::float32) ? mx::astype(q, mx::float32) : q;
+      mx::array kf = (orig_dtype != mx::float32) ? mx::astype(k, mx::float32) : k;
+      mx::array vf = (orig_dtype != mx::float32) ? mx::astype(v, mx::float32) : v;
+      mx::array smolgenf = (smolgen_attn_weights->dtype() != mx::float32)
+          ? mx::astype(*smolgen_attn_weights, mx::float32) : *smolgen_attn_weights;
+
+      mx::array attn = mx::matmul(qf, mx::transpose(kf, {0, 1, 3, 2}));
       attn = mx::multiply(attn, mx::array(scale));
-      attn = mx::add(attn, *smolgen_attn_weights);
+      attn = mx::add(attn, smolgenf);
       attn = mx::softmax(attn, -1);
-      return mx::matmul(attn, v);
+      mx::array result = mx::matmul(attn, vf);
+
+      return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
     } else {
       // Use optimized SDPA primitive.
       return mx::fast::scaled_dot_product_attention(q, k, v, scale);

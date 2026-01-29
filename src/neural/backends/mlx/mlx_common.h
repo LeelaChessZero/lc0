@@ -26,10 +26,29 @@
 */
 #pragma once
 
+#include <mlx/mlx.h>
+
 #include <vector>
 
 namespace lczero {
 namespace mlx_backend {
+
+namespace mx = mlx::core;
+
+// Precision configuration for compute and storage.
+enum class Precision { FP32, FP16, BF16 };
+
+// Convert Precision enum to MLX dtype.
+inline mx::Dtype PrecisionToDtype(Precision p) {
+  switch (p) {
+    case Precision::FP16:
+      return mx::float16;
+    case Precision::BF16:
+      return mx::bfloat16;
+    default:
+      return mx::float32;
+  }
+}
 
 static constexpr int kNumOutputPolicy = 1858;
 static constexpr int kInputPlanes = 112;

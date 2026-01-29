@@ -41,14 +41,18 @@ namespace mlx_backend {
 namespace mx = mlx::core;
 
 // Helper to create an MLX array from a float vector.
+// If dtype is not float32, the array is converted to the specified dtype.
 mx::array MakeArray(const std::vector<float>& data,
-                    const std::vector<int>& shape);
+                    const std::vector<int>& shape,
+                    mx::Dtype dtype = mx::float32);
 
 // Convert convolution weights from OIHW to OHWI format.
 // Creates a contiguous array with proper memory layout for MLX conv2d.
+// If dtype is not float32, the array is converted to the specified dtype.
 mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
                                         int outChannels, int inChannels,
-                                        int kH, int kW);
+                                        int kH, int kW,
+                                        mx::Dtype dtype = mx::float32);
 
 // Expand input masks and values to [batch, 112, 8, 8] tensor.
 mx::array ExpandInput(const mx::array& masks, const mx::array& values,
