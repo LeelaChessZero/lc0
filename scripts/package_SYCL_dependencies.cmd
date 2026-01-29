@@ -76,10 +76,6 @@ echo ==========================================
 echo  Post-Build: Auto-Packaging Dependencies
 echo ==========================================
 
-rem --- 1. Clean old DLLs to ensure a fresh, minimal package ---
-rem We are currently inside the 'build' folder.
-del /q *.dll 2>nul
-
 rem --- 2. Define temp script path ---
 set "PS_SCRIPT=%CD%\_lc0_packager.ps1"
 if exist "%PS_SCRIPT%" del "%PS_SCRIPT%"
