@@ -123,6 +123,10 @@ static constexpr float kDefaultEpsilon = 1e-6f;
 // PE_DENSE networks use 1e-3 epsilon.
 static constexpr float kPeDenseEpsilon = 1e-3f;
 
+// Default quantization parameters.
+static constexpr int kDefaultQuantizationGroupSize = 64;
+static constexpr int kDefaultQuantizationBits = 8;
+
 // Activation configuration for the network.
 struct Activations {
   std::string default_activation = "relu";

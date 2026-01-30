@@ -172,9 +172,10 @@ mx::array GatingLayer(const mx::array& input, const mx::array& weights,
 // weights: Float weights in row-major [input_size, output_size] format.
 // group_size: Number of elements per quantization group (default 64).
 // bits: Quantization bits (default 8 for int8).
-std::optional<QuantizedWeight> QuantizeWeights(const mx::array& weights,
-                                               int group_size = 64,
-                                               int bits = 8);
+std::optional<QuantizedWeight> QuantizeWeights(
+    const mx::array& weights,
+    int group_size = kDefaultQuantizationGroupSize,
+    int bits = kDefaultQuantizationBits);
 
 // Quantized fully connected layer using MLX's quantized_matmul().
 // Uses int8 quantized weights with per-group scales and biases.

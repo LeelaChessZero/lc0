@@ -62,6 +62,33 @@ mx::array MakeFCWeights(const std::vector<float>& data, int input_size, int outp
   return mx::transpose(MakeArray(data, {output_size, input_size}, dtype));
 }
 
+// Helper to dispatch to quantized or float FC based on weight availability.
+// Uses quantized weights when available, otherwise falls back to float weights.
+// Version for optional float weight (e.g., embedding weights that may be quantized).
+mx::array DispatchFC(const mx::array& input,
+                     const OptQuantized& q_weight,
+                     const OptArray& f_weight,
+                     const mx::array& biases,
+                     const std::string& activation) {
+  if (q_weight.has_value()) {
+    return QuantizedFullyConnected(input, *q_weight, biases, activation);
+  }
+  assert(f_weight.has_value());
+  return FullyConnected(input, *f_weight, biases, activation);
+}
+
+// Version for always-present float weight (e.g., encoder weights).
+mx::array DispatchFC(const mx::array& input,
+                     const OptQuantized& q_weight,
+                     const mx::array& f_weight,
+                     const mx::array& biases,
+                     const std::string& activation) {
+  if (q_weight.has_value()) {
+    return QuantizedFullyConnected(input, *q_weight, biases, activation);
+  }
+  return FullyConnected(input, f_weight, biases, activation);
+}
+
 // MLXGraphBuilder holds the network weights and performs forward evaluation.
 class MLXGraphBuilder {
  public:
@@ -264,53 +291,61 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
 
   // Helper to quantize weights with fallback to compute_dtype_.
   // Returns {quantized_opt, float_opt} where exactly one has value.
-  auto try_quantize = [&](mx::array w, const std::string& name, int in_dim,
+  auto try_quantize = [quantize, group_size = group_size_,
+                       compute_dtype = compute_dtype_](
+                          mx::array w, const std::string& name, int in_dim,
                           int out_dim) -> std::pair<OptQuantized, OptArray> {
     if (!quantize) {
       return {std::nullopt, std::move(w)};
     }
-    auto q = QuantizeWeights(w, group_size_, 8);
+    auto q = QuantizeWeights(w, group_size, kDefaultQuantizationBits);
     if (q.has_value()) {
       return {std::move(q), std::nullopt};
     }
     CERR << "Warning: " << name << " [" << in_dim << ", " << out_dim
-         << "] not divisible by group_size=" << group_size_
+         << "] not divisible by group_size=" << group_size
          << ", using float16.";
-    return {std::nullopt, mx::astype(w, compute_dtype_)};
+    return {std::nullopt, mx::astype(w, compute_dtype)};
   };
 
   // Silent variant for encoder loops - doesn't warn (caller handles warning).
-  auto try_quantize_silent = [&](mx::array w) -> std::pair<OptQuantized, OptArray> {
+  auto try_quantize_silent = [quantize, group_size = group_size_,
+                              compute_dtype = compute_dtype_](
+                                 mx::array w) -> std::pair<OptQuantized, OptArray> {
     if (!quantize) {
       return {std::nullopt, std::move(w)};
     }
-    auto q = QuantizeWeights(w, group_size_, 8);
+    auto q = QuantizeWeights(w, group_size, kDefaultQuantizationBits);
     if (q.has_value()) {
       return {std::move(q), std::nullopt};
     }
-    return {std::nullopt, mx::astype(w, compute_dtype_)};
+    return {std::nullopt, mx::astype(w, compute_dtype)};
   };
 
   // Helper to apply silent quantization directly to member variables.
-  auto apply_quantize_silent = [&](mx::array& w, OptQuantized& q_out) {
+  auto apply_quantize_silent = [&try_quantize_silent](mx::array& w,
+                                                      OptQuantized& q_out) {
     auto [q, f] = try_quantize_silent(std::move(w));
     q_out = std::move(q);
     if (f.has_value()) w = std::move(*f);
   };
 
   // Variant for OptArray output (used by smolgen weights).
-  auto apply_quantize_silent_opt = [&](mx::array w, OptQuantized& q_out, OptArray& f_out) {
+  auto apply_quantize_silent_opt = [&try_quantize_silent](
+                                       mx::array w, OptQuantized& q_out,
+                                       OptArray& f_out) {
     auto [q, f] = try_quantize_silent(std::move(w));
     q_out = std::move(q);
     f_out = std::move(f);
   };
 
   // Helper to warn about non-quantizable weights.
-  auto warn_if_not_quantized = [&](const OptQuantized& q, const std::string& name,
+  auto warn_if_not_quantized = [group_size = group_size_](
+                                   const OptQuantized& q, const std::string& name,
                                    int in_dim, int out_dim) {
     if (!q.has_value()) {
       CERR << "Warning: " << name << " [" << in_dim << ", " << out_dim
-           << "] not divisible by group_size=" << group_size_
+           << "] not divisible by group_size=" << group_size
            << ", using float16.";
     }
   };
@@ -735,9 +770,8 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
       // Flatten to [batch, 64*12].
       input_12 = mx::reshape(input_12, {batch_size, 64 * 12});
       // FC preproc to [batch, preproc_out] where preproc_out = 64 * enc_channels.
-      mx::array pos_enc = ip_emb_preproc_w_q_.has_value()
-          ? QuantizedFullyConnected(input_12, *ip_emb_preproc_w_q_, *ip_emb_preproc_b_, "")
-          : FullyConnected(input_12, *ip_emb_preproc_w_, *ip_emb_preproc_b_, "");
+      mx::array pos_enc = DispatchFC(input_12, ip_emb_preproc_w_q_,
+                                     ip_emb_preproc_w_, *ip_emb_preproc_b_, "");
       // Reshape to [batch, 64, enc_channels].
       int enc_channels = static_cast<int>(pos_enc.size()) / (batch_size * 64);
       pos_enc = mx::reshape(pos_enc, {batch_size, 64, enc_channels});
@@ -757,13 +791,11 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     // For INPUT_EMBEDDING_NONE, just use the 112 channels directly.
 
     // Main embedding.
-    bool use_qfc = ip_emb_w_q_.has_value();
-    if (!use_qfc && !ip_emb_w_.has_value()) {
+    if (!ip_emb_w_q_.has_value() && !ip_emb_w_.has_value()) {
       throw Exception("Neither ip_emb_w_ nor ip_emb_w_q_ has value!");
     }
-    flow = use_qfc
-        ? QuantizedFullyConnected(flow, *ip_emb_w_q_, *ip_emb_b_, activations_.default_activation)
-        : FullyConnected(flow, *ip_emb_w_, *ip_emb_b_, activations_.default_activation);
+    flow = DispatchFC(flow, ip_emb_w_q_, ip_emb_w_, *ip_emb_b_,
+                      activations_.default_activation);
 
     // Embedding layer norm (for PE_DENSE).
     if (ip_emb_ln_gammas_.has_value()) {
@@ -785,12 +817,10 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     // Embedding FFN (for PE_DENSE).
     bool has_emb_ffn = ip_emb_ffn_dense1_w_.has_value() || ip_emb_ffn_dense1_w_q_.has_value();
     if (has_emb_ffn) {
-      mx::array ffn = ip_emb_ffn_dense1_w_q_.has_value()
-          ? QuantizedFullyConnected(flow, *ip_emb_ffn_dense1_w_q_, *ip_emb_ffn_dense1_b_, activations_.ffn_activation)
-          : FullyConnected(flow, *ip_emb_ffn_dense1_w_, *ip_emb_ffn_dense1_b_, activations_.ffn_activation);
-      ffn = ip_emb_ffn_dense2_w_q_.has_value()
-          ? QuantizedFullyConnected(ffn, *ip_emb_ffn_dense2_w_q_, *ip_emb_ffn_dense2_b_, "")
-          : FullyConnected(ffn, *ip_emb_ffn_dense2_w_, *ip_emb_ffn_dense2_b_, "");
+      mx::array ffn = DispatchFC(flow, ip_emb_ffn_dense1_w_q_, ip_emb_ffn_dense1_w_,
+                                 *ip_emb_ffn_dense1_b_, activations_.ffn_activation);
+      ffn = DispatchFC(ffn, ip_emb_ffn_dense2_w_q_, ip_emb_ffn_dense2_w_,
+                       *ip_emb_ffn_dense2_b_, "");
       flow = LayerNormWithSkip(flow, ffn, *ip_emb_ffn_ln_gammas_,
                                *ip_emb_ffn_ln_betas_, alpha, kPeDenseEpsilon);
     }
@@ -800,15 +830,9 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
       const auto& ew = encoder_weights_[i];
 
       // Q, K, V projections (use quantized if available).
-      mx::array q = ew.mha_q_w_q.has_value()
-          ? QuantizedFullyConnected(flow, *ew.mha_q_w_q, ew.mha_q_b, "")
-          : FullyConnected(flow, ew.mha_q_w, ew.mha_q_b, "");
-      mx::array k = ew.mha_k_w_q.has_value()
-          ? QuantizedFullyConnected(flow, *ew.mha_k_w_q, ew.mha_k_b, "")
-          : FullyConnected(flow, ew.mha_k_w, ew.mha_k_b, "");
-      mx::array v = ew.mha_v_w_q.has_value()
-          ? QuantizedFullyConnected(flow, *ew.mha_v_w_q, ew.mha_v_b, "")
-          : FullyConnected(flow, ew.mha_v_w, ew.mha_v_b, "");
+      mx::array q = DispatchFC(flow, ew.mha_q_w_q, ew.mha_q_w, ew.mha_q_b, "");
+      mx::array k = DispatchFC(flow, ew.mha_k_w_q, ew.mha_k_w, ew.mha_k_b, "");
+      mx::array v = DispatchFC(flow, ew.mha_v_w_q, ew.mha_v_w, ew.mha_v_b, "");
 
       // Compute smolgen attention weights if needed.
       std::optional<mx::array> smolgen_attn;
@@ -871,20 +895,16 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
           : MultiHeadAttention(q, k, v, encoder_head_count_, nullptr);
 
       // MHA dense layer.
-      mha = ew.mha_dense_w_q.has_value()
-          ? QuantizedFullyConnected(mha, *ew.mha_dense_w_q, ew.mha_dense_b, "")
-          : FullyConnected(mha, ew.mha_dense_w, ew.mha_dense_b, "");
+      mha = DispatchFC(mha, ew.mha_dense_w_q, ew.mha_dense_w, ew.mha_dense_b, "");
 
       // Skip connection + layer norm.
       flow = LayerNormWithSkip(flow, mha, ew.ln1_gammas, ew.ln1_betas, alpha, default_eps);
 
       // FFN.
-      mx::array ffn = ew.ffn_dense1_w_q.has_value()
-          ? QuantizedFullyConnected(flow, *ew.ffn_dense1_w_q, ew.ffn_dense1_b, activations_.ffn_activation)
-          : FullyConnected(flow, ew.ffn_dense1_w, ew.ffn_dense1_b, activations_.ffn_activation);
-      ffn = ew.ffn_dense2_w_q.has_value()
-          ? QuantizedFullyConnected(ffn, *ew.ffn_dense2_w_q, ew.ffn_dense2_b, "")
-          : FullyConnected(ffn, ew.ffn_dense2_w, ew.ffn_dense2_b, "");
+      mx::array ffn = DispatchFC(flow, ew.ffn_dense1_w_q, ew.ffn_dense1_w,
+                                 ew.ffn_dense1_b, activations_.ffn_activation);
+      ffn = DispatchFC(ffn, ew.ffn_dense2_w_q, ew.ffn_dense2_w,
+                       ew.ffn_dense2_b, "");
 
       // Skip connection + layer norm.
       flow = LayerNormWithSkip(flow, ffn, ew.ln2_gammas, ew.ln2_betas, alpha, default_eps);
@@ -899,50 +919,39 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     std::string pol_act = attn_body_ ? activations_.default_activation : "selu";
 
     // Square embedding.
-    pol = policy_weights_.ip_pol_w_q.has_value()
-        ? QuantizedFullyConnected(pol, *policy_weights_.ip_pol_w_q, *policy_weights_.ip_pol_b, pol_act)
-        : FullyConnected(pol, *policy_weights_.ip_pol_w, *policy_weights_.ip_pol_b, pol_act);
+    pol = DispatchFC(pol, policy_weights_.ip_pol_w_q, policy_weights_.ip_pol_w,
+                     *policy_weights_.ip_pol_b, pol_act);
 
     // Policy encoder layers.
     for (size_t i = 0; i < policy_weights_.pol_encoder.size(); i++) {
       const auto& ew = policy_weights_.pol_encoder[i];
 
-      mx::array q = ew.mha_q_w_q.has_value()
-          ? QuantizedFullyConnected(pol, *ew.mha_q_w_q, ew.mha_q_b, "")
-          : FullyConnected(pol, ew.mha_q_w, ew.mha_q_b, "");
-      mx::array k = ew.mha_k_w_q.has_value()
-          ? QuantizedFullyConnected(pol, *ew.mha_k_w_q, ew.mha_k_b, "")
-          : FullyConnected(pol, ew.mha_k_w, ew.mha_k_b, "");
-      mx::array v = ew.mha_v_w_q.has_value()
-          ? QuantizedFullyConnected(pol, *ew.mha_v_w_q, ew.mha_v_b, "")
-          : FullyConnected(pol, ew.mha_v_w, ew.mha_v_b, "");
+      mx::array q = DispatchFC(pol, ew.mha_q_w_q, ew.mha_q_w, ew.mha_q_b, "");
+      mx::array k = DispatchFC(pol, ew.mha_k_w_q, ew.mha_k_w, ew.mha_k_b, "");
+      mx::array v = DispatchFC(pol, ew.mha_v_w_q, ew.mha_v_w, ew.mha_v_b, "");
 
       mx::array mha = MultiHeadAttention(
           q, k, v, policy_weights_.pol_encoder_head_count, nullptr);
-      mha = ew.mha_dense_w_q.has_value()
-          ? QuantizedFullyConnected(mha, *ew.mha_dense_w_q, ew.mha_dense_b, "")
-          : FullyConnected(mha, ew.mha_dense_w, ew.mha_dense_b, "");
+      mha = DispatchFC(mha, ew.mha_dense_w_q, ew.mha_dense_w, ew.mha_dense_b, "");
 
       pol = LayerNormWithSkip(pol, mha, ew.ln1_gammas, ew.ln1_betas, 1.0f);
 
       std::string ffn_act = attn_body_ ? activations_.ffn_activation : "selu";
-      mx::array ffn = ew.ffn_dense1_w_q.has_value()
-          ? QuantizedFullyConnected(pol, *ew.ffn_dense1_w_q, ew.ffn_dense1_b, ffn_act)
-          : FullyConnected(pol, ew.ffn_dense1_w, ew.ffn_dense1_b, ffn_act);
-      ffn = ew.ffn_dense2_w_q.has_value()
-          ? QuantizedFullyConnected(ffn, *ew.ffn_dense2_w_q, ew.ffn_dense2_b, "")
-          : FullyConnected(ffn, ew.ffn_dense2_w, ew.ffn_dense2_b, "");
+      mx::array ffn = DispatchFC(pol, ew.ffn_dense1_w_q, ew.ffn_dense1_w,
+                                 ew.ffn_dense1_b, ffn_act);
+      ffn = DispatchFC(ffn, ew.ffn_dense2_w_q, ew.ffn_dense2_w,
+                       ew.ffn_dense2_b, "");
 
       pol = LayerNormWithSkip(pol, ffn, ew.ln2_gammas, ew.ln2_betas, 1.0f);
     }
 
     // Self-attention Q and K.
-    mx::array queries = policy_weights_.ip2_pol_w_q.has_value()
-        ? QuantizedFullyConnected(pol, *policy_weights_.ip2_pol_w_q, *policy_weights_.ip2_pol_b, "")
-        : FullyConnected(pol, *policy_weights_.ip2_pol_w, *policy_weights_.ip2_pol_b, "");
-    mx::array keys = policy_weights_.ip3_pol_w_q.has_value()
-        ? QuantizedFullyConnected(pol, *policy_weights_.ip3_pol_w_q, *policy_weights_.ip3_pol_b, "")
-        : FullyConnected(pol, *policy_weights_.ip3_pol_w, *policy_weights_.ip3_pol_b, "");
+    mx::array queries = DispatchFC(pol, policy_weights_.ip2_pol_w_q,
+                                   policy_weights_.ip2_pol_w,
+                                   *policy_weights_.ip2_pol_b, "");
+    mx::array keys = DispatchFC(pol, policy_weights_.ip3_pol_w_q,
+                                policy_weights_.ip3_pol_w,
+                                *policy_weights_.ip3_pol_b, "");
 
     // Scaled Q*K matmul.
     int pol_dmodel = static_cast<int>(policy_weights_.ip2_pol_b->size());
@@ -981,9 +990,9 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   std::optional<mx::array> value_opt;
   if (attn_body_) {
     // Attention body value head - use embedding from encoder output.
-    mx::array val = value_weights_.ip_val_w_q.has_value()
-        ? QuantizedFullyConnected(flow, *value_weights_.ip_val_w_q, *value_weights_.ip_val_b, activations_.default_activation)
-        : FullyConnected(flow, *value_weights_.ip_val_w, *value_weights_.ip_val_b, activations_.default_activation);
+    mx::array val = DispatchFC(flow, value_weights_.ip_val_w_q,
+                               value_weights_.ip_val_w, *value_weights_.ip_val_b,
+                               activations_.default_activation);
     value_opt = mx::reshape(val, {batch_size, -1});
   } else {
     mx::array val = ConvBlock(flow, *value_weights_.value_conv_weights,
@@ -993,32 +1002,29 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
   }
   mx::array value = *value_opt;
 
-  value = value_weights_.ip1_val_w_q.has_value()
-      ? QuantizedFullyConnected(value, *value_weights_.ip1_val_w_q, *value_weights_.ip1_val_b, activations_.default_activation)
-      : FullyConnected(value, *value_weights_.ip1_val_w, *value_weights_.ip1_val_b, activations_.default_activation);
-  value = value_weights_.ip2_val_w_q.has_value()
-      ? QuantizedFullyConnected(value, *value_weights_.ip2_val_w_q, *value_weights_.ip2_val_b, wdl_ ? "softmax" : "tanh")
-      : FullyConnected(value, *value_weights_.ip2_val_w, *value_weights_.ip2_val_b, wdl_ ? "softmax" : "tanh");
+  value = DispatchFC(value, value_weights_.ip1_val_w_q, value_weights_.ip1_val_w,
+                     *value_weights_.ip1_val_b, activations_.default_activation);
+  value = DispatchFC(value, value_weights_.ip2_val_w_q, value_weights_.ip2_val_w,
+                     *value_weights_.ip2_val_b, wdl_ ? "softmax" : "tanh");
 
   // Moves left head.
   std::optional<mx::array> moves_left_opt;
   if (moves_left_) {
     mx::array mleft = [&]() {
       if (attn_body_) {
-        return ip_mov_w_q_.has_value()
-            ? QuantizedFullyConnected(flow, *ip_mov_w_q_, *ip_mov_b_, activations_.default_activation)
-            : FullyConnected(flow, *ip_mov_w_, *ip_mov_b_, activations_.default_activation);
+        return DispatchFC(flow, ip_mov_w_q_, ip_mov_w_, *ip_mov_b_,
+                          activations_.default_activation);
       } else {
-        return ConvBlock(flow, *moves_left_conv_weights_, *moves_left_conv_biases_, 1, activations_.default_activation);
+        return ConvBlock(flow, *moves_left_conv_weights_,
+                         *moves_left_conv_biases_, 1,
+                         activations_.default_activation);
       }
     }();
     mleft = mx::reshape(mleft, {batch_size, -1});
-    mleft = ip1_mov_w_q_.has_value()
-        ? QuantizedFullyConnected(mleft, *ip1_mov_w_q_, *ip1_mov_b_, activations_.default_activation)
-        : FullyConnected(mleft, *ip1_mov_w_, *ip1_mov_b_, activations_.default_activation);
-    moves_left_opt = ip2_mov_w_q_.has_value()
-        ? QuantizedFullyConnected(mleft, *ip2_mov_w_q_, *ip2_mov_b_, "relu")
-        : FullyConnected(mleft, *ip2_mov_w_, *ip2_mov_b_, "relu");
+    mleft = DispatchFC(mleft, ip1_mov_w_q_, ip1_mov_w_, *ip1_mov_b_,
+                       activations_.default_activation);
+    moves_left_opt = DispatchFC(mleft, ip2_mov_w_q_, ip2_mov_w_, *ip2_mov_b_,
+                                "relu");
   }
 
   // Cast outputs back to float32 for memcpy if needed.
