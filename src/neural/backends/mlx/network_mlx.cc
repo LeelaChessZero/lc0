@@ -350,6 +350,16 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     }
   };
 
+  // Helper to warn once about non-quantizable weights.
+  // Executes warn_fn only on first call (when warned is false and quantize is
+  // true).
+  auto warn_once = [quantize](bool& warned, auto warn_fn) {
+    if (quantize && !warned) {
+      warn_fn();
+      warned = true;
+    }
+  };
+
   // Get filter count from input convolution.
   if (!attn_body) {
     num_filters_ = static_cast<int>(weights.input.biases.size());
@@ -493,15 +503,14 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
       apply_quantize_silent(ew.ffn_dense2_w, ew.ffn_dense2_w_q);
 
       // Warn once if any encoder weight can't be quantized.
-      if (quantize && !encoder_quant_warned) {
+      warn_once(encoder_quant_warned, [&] {
         warn_if_not_quantized(ew.mha_q_w_q, "encoder mha_q_w", embedding_size_, qkv_size);
         warn_if_not_quantized(ew.mha_k_w_q, "encoder mha_k_w", embedding_size_, qkv_size);
         warn_if_not_quantized(ew.mha_v_w_q, "encoder mha_v_w", embedding_size_, qkv_size);
         warn_if_not_quantized(ew.mha_dense_w_q, "encoder mha_dense_w", qkv_size, embedding_size_);
         warn_if_not_quantized(ew.ffn_dense1_w_q, "encoder ffn_dense1_w", embedding_size_, ffn_hidden);
         warn_if_not_quantized(ew.ffn_dense2_w_q, "encoder ffn_dense2_w", ffn_hidden, embedding_size_);
-        encoder_quant_warned = true;
-      }
+      });
 
       ew.has_smolgen = enc.mha.has_smolgen;
       if (enc.mha.has_smolgen) {
@@ -521,12 +530,11 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
             ew.smolgen_dense2_w_q, ew.smolgen_dense2_w);
 
         // Warn once if any smolgen weight can't be quantized.
-        if (quantize && !smolgen_quant_warned) {
+        warn_once(smolgen_quant_warned, [&] {
           warn_if_not_quantized(ew.smolgen_compress_q, "smolgen_compress", embedding_size_, hidden);
           warn_if_not_quantized(ew.smolgen_dense1_w_q, "smolgen_dense1_w", 64 * hidden, dense1_out);
           warn_if_not_quantized(ew.smolgen_dense2_w_q, "smolgen_dense2_w", dense1_out, dense2_out);
-          smolgen_quant_warned = true;
-        }
+        });
 
         ew.smolgen_dense1_b = MakeArray(enc.mha.smolgen.dense1_b, {dense1_out}, compute_dtype_);
         ew.smolgen_ln1_gammas = MakeArray(enc.mha.smolgen.ln1_gammas, {dense1_out}, compute_dtype_);
@@ -611,15 +619,14 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
       apply_quantize_silent(pew.ffn_dense2_w, pew.ffn_dense2_w_q);
 
       // Warn once if any policy encoder weight can't be quantized.
-      if (quantize && !pol_encoder_quant_warned) {
+      warn_once(pol_encoder_quant_warned, [&] {
         warn_if_not_quantized(pew.mha_q_w_q, "pol_encoder mha_q_w", pol_emb_size, qkv_size);
         warn_if_not_quantized(pew.mha_k_w_q, "pol_encoder mha_k_w", pol_emb_size, qkv_size);
         warn_if_not_quantized(pew.mha_v_w_q, "pol_encoder mha_v_w", pol_emb_size, qkv_size);
         warn_if_not_quantized(pew.mha_dense_w_q, "pol_encoder mha_dense_w", qkv_size, pol_emb_size);
         warn_if_not_quantized(pew.ffn_dense1_w_q, "pol_encoder ffn_dense1_w", pol_emb_size, ffn_hidden);
         warn_if_not_quantized(pew.ffn_dense2_w_q, "pol_encoder ffn_dense2_w", ffn_hidden, pol_emb_size);
-        pol_encoder_quant_warned = true;
-      }
+      });
     }
   } else if (conv_policy) {
     int pol1_channels = static_cast<int>(pol_head.policy1.biases.size());
