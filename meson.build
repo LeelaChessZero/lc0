@@ -402,6 +402,137 @@ if get_option('build_backends')
 
   endif
 
+  ## ~~~~~
+  ## ROCm
+  ## ~~~~~
+  rocm_libdirs = get_option('hip_libdirs')
+  rocblas_lib = cc.find_library('rocblas', dirs: rocm_libdirs, required: false)
+  hipblas_lib = cc.find_library('hipblas', dirs: rocm_libdirs, required: false)
+  hipblaslt_lib = cc.find_library('hipblaslt', dirs: rocm_libdirs, required: false)
+  miopen_lib = cc.find_library('MIOpen', dirs: rocm_libdirs, required: false)
+  amdhip_lib = cc.find_library('amdhip64', dirs: rocm_libdirs, required: false)
+  hipcc = find_program('hipcc', '/opt/rocm/bin/hipcc', required: false)
+
+  if get_option('rocm') and rocblas_lib.found() and amdhip_lib.found() and miopen_lib.found() and hipcc.found()
+    deps += [rocblas_lib, hipblas_lib, amdhip_lib, miopen_lib]
+
+    # Add hipBLASLt with Split-K for better GPU utilization on small batches
+    if hipblaslt_lib.found()
+      deps += hipblaslt_lib
+      add_project_arguments('-DUSE_HIPBLASLT', language : 'cpp')
+      message('hipBLASLt found - GEMM+bias fusion with Split-K enabled')
+    else
+      warning('hipBLASLt not found - GEMM+bias fusion disabled')
+    endif
+
+    rocm_files = ['src/neural/backends/rocm/rocm_common.cc',
+                  'src/neural/backends/rocm/layers.cc',
+                  'src/neural/backends/rocm/network_rocm.cc']
+
+    add_project_arguments('-DUSE_MIOPEN', language : 'cpp')
+
+    foreach d : get_option('hip_include')
+      if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
+        includes += include_directories(d, is_system: true)
+      endif
+    endforeach
+    includes += include_directories('src/neural/backends/rocm/')
+
+    add_project_arguments('-DUSE_HIP', '-D__HIP_PLATFORM_AMD__', language : 'cpp')
+
+    # ROCm kernel compilation arguments
+    rocm_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
+                      '-I', meson.current_source_dir() + '/src',
+                      '--std=c++20', '-fPIC',
+                      '--rocm-path=/opt/rocm',
+                      '--rocm-device-lib-path=/opt/rocm/lib/llvm/amdgcn/bitcode']
+
+    # Architecture configuration system
+    arch_config_script = meson.current_source_dir() / 'scripts/rocm_backend_amd_gfx_configs.py'
+    amd_gfx_option = get_option('amd_gfx')
+
+    # Determine GPU architecture and configuration
+    if amd_gfx_option != ''
+      # User specified architecture - auto-configure
+      amd_gfx_target = amd_gfx_option
+
+      # Get architecture info and flags
+      arch_name_result = run_command('python3', arch_config_script, 'name', amd_gfx_option, check: false)
+      arch_flags_result = run_command('python3', arch_config_script, 'flags', amd_gfx_option, check: false)
+
+      if arch_flags_result.returncode() == 0
+        # Valid architecture - get pre-tuned flags
+        arch_name = arch_name_result.stdout().strip()
+        arch_flags = arch_flags_result.stdout().strip()
+        message('Using architecture: ' + arch_name + ' (' + amd_gfx_option + ')')
+        message('  ✓ Performance tuned configuration')
+
+        # Add flash attention flags to both HIP kernels and C++ compilation
+        foreach flag : arch_flags.split()
+          rocm_arguments += [flag]
+        endforeach
+        # Also add to C++ compiler for USE_FLASH_ATTENTION guards
+        add_project_arguments(arch_flags.split(), language : 'cpp')
+      else
+        error('Unknown architecture: ' + amd_gfx_option + '\nRun: python3 scripts/rocm_backend_amd_gfx_configs.py list')
+      endif
+
+    else
+      # No architecture specified - use default with warning
+      amd_gfx_target = 'gfx1151'
+      arch_flags = run_command('python3', arch_config_script, 'flags', 'gfx1151', check: true).stdout().strip()
+
+      warning('No GPU architecture specified, defaulting to gfx1151 (Radeon 8060S)')
+      warning('For your GPU, use: ./build.sh release -Drocm=true -Damd_gfx=<your_gfx>')
+      warning('Find your architecture: rocminfo | grep gfx')
+      message('Using optimized flash attention for gfx1151')
+
+      # Add flash attention flags to both HIP kernels and C++ compilation
+      foreach flag : arch_flags.split()
+        rocm_arguments += [flag]
+      endforeach
+      # Also add to C++ compiler for USE_FLASH_ATTENTION guards
+      add_project_arguments(arch_flags.split(), language : 'cpp')
+    endif
+
+    rocm_arguments += ['--offload-arch=' + amd_gfx_target]
+
+    foreach x : get_option('hip_include')
+      rocm_arguments += ['-I', x]
+    endforeach
+
+    if host_machine.system() == 'windows'
+      outputname = '@BASENAME@.obj'
+    else
+      outputname = '@BASENAME@.o'
+    endif
+
+    files += rocm_files
+
+    files += custom_target('rocm fp32 kernels',
+      input : 'src/neural/backends/rocm/common_kernels.hip',
+      output : outputname,
+      depend_files: 'src/neural/backends/rocm/winograd_helper.inc',
+      command : [hipcc, rocm_arguments]
+    )
+
+    files += custom_target('rocm fp16 kernels',
+      input : 'src/neural/backends/rocm/fp16_kernels.hip',
+      output : outputname,
+      depend_files: 'src/neural/backends/rocm/winograd_helper.inc',
+      command : [hipcc, rocm_arguments]
+    )
+
+    files += custom_target('rocm flash attention wrapper',
+      input : 'src/neural/backends/rocm/flash_attention_wrapper.hip',
+      output : outputname,
+      depend_files: ['src/neural/backends/rocm/flash_attention.hip',
+                     'src/neural/backends/rocm/mma.hip'],
+      command : [hipcc, rocm_arguments]
+    )
+
+    has_backends = true
+  endif
 
   ## ~~~~~
   ## OpenCL
