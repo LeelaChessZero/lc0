@@ -740,7 +740,7 @@ if get_option('build_backends')
         python3 = find_program('python3', required: false)
         if python3.found()
           mlx_site_packages = run_command(python3, '-c',
-            'import mlx; import os; print(os.path.dirname(mlx.__file__))',
+            'import mlx.core; import os; print(os.path.dirname(mlx.core.__file__))',
             check: false)
           if mlx_site_packages.returncode() == 0
             mlx_pip_path = mlx_site_packages.stdout().strip()
