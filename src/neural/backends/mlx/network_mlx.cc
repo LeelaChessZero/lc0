@@ -265,6 +265,33 @@ class MLXGraphBuilder {
 
   // Position encoding data.
   std::vector<float> pos_enc_data_;
+
+  // Pre-computed values from Build() for ForwardEval() optimization.
+  // Position encoding array for PE_MAP embedding (static, create once).
+  OptArray pos_enc_base_;  // Shape: [64, 64] in compute_dtype_
+
+  // Alpha scalar for encoder skip connections: (2 * num_encoders)^(-0.25).
+  float encoder_alpha_ = 1.0f;
+
+  // Epsilon value for layer normalization (depends on embedding type).
+  float default_epsilon_ = 1e-6f;
+
+  // Policy head dimension and attention scale (for attention policy).
+  int pol_dmodel_ = 0;
+  float attn_policy_scale_ = 1.0f;
+
+  // Pre-computed smolgen weight variants for each encoder layer.
+  // Avoids runtime variant construction in ForwardEval.
+  struct SmolgenVariants {
+    WeightVariant compress;
+    WeightVariant dense1_w;
+    WeightVariant dense2_w;
+
+    SmolgenVariants(WeightVariant c, WeightVariant d1, WeightVariant d2)
+        : compress(std::move(c)), dense1_w(std::move(d1)), dense2_w(std::move(d2)) {}
+  };
+  std::vector<std::optional<SmolgenVariants>> encoder_smolgen_variants_;
+  std::optional<WeightVariant> smolgen_global_variant_;
 };
 
 void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
@@ -726,6 +753,64 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     ip1_mov_b_ = MakeArray(weights.ip1_mov_b, {mov_hidden}, compute_dtype_);
     ip2_mov_b_ = MakeArray(weights.ip2_mov_b, {1}, compute_dtype_);
   }
+
+  // === Pre-compute values for ForwardEval optimization ===
+
+  // 1. Position encoding array for PE_MAP (static data, create once).
+  if (embedding_ == INPUT_EMBEDDING_PE_MAP) {
+    mx::array pos_enc = mx::array(
+        reinterpret_cast<const float*>(kPosEncoding),
+        mx::Shape{64, kNumPosEncodingChannels}, mx::float32);
+    if (compute_dtype_ != mx::float32) {
+      pos_enc = mx::astype(pos_enc, compute_dtype_);
+    }
+    pos_enc_base_ = std::move(pos_enc);
+  }
+
+  // 2. Encoder alpha scalar for skip connections.
+  if (!encoder_weights_.empty()) {
+    encoder_alpha_ = static_cast<float>(
+        std::pow(2.0 * encoder_weights_.size(), -0.25));
+  }
+
+  // 3. Default epsilon based on embedding type.
+  default_epsilon_ = (embedding_ == INPUT_EMBEDDING_PE_DENSE)
+                         ? kPeDenseEpsilon : kDefaultEpsilon;
+
+  // 4. Policy head dimensions and scale (for attention policy).
+  if (attn_policy_ && policy_weights_.ip2_pol_b.has_value()) {
+    pol_dmodel_ = static_cast<int>(policy_weights_.ip2_pol_b->size());
+    attn_policy_scale_ = 1.0f / std::sqrt(static_cast<float>(pol_dmodel_));
+  }
+
+  // 5. Pre-compute smolgen weight variants for encoder layers.
+  bool has_smolgen_weights = smolgen_global_w_.has_value() || smolgen_global_w_q_.has_value();
+  if (has_smolgen_weights) {
+    auto make_variant = [](const OptQuantized& q,
+                           const OptArray& f) -> WeightVariant {
+      if (q.has_value()) return *q;
+      assert(f.has_value());
+      return std::cref(*f);
+    };
+    smolgen_global_variant_ = make_variant(smolgen_global_w_q_, smolgen_global_w_);
+
+    encoder_smolgen_variants_.resize(encoder_weights_.size());
+    for (size_t i = 0; i < encoder_weights_.size(); ++i) {
+      const auto& ew = encoder_weights_[i];
+      if (ew.has_smolgen) {
+        bool use_quantized = ew.smolgen_compress_q.has_value() ||
+                             ew.smolgen_dense1_w_q.has_value() ||
+                             ew.smolgen_dense2_w_q.has_value() ||
+                             smolgen_global_w_q_.has_value();
+        if (use_quantized) {
+          encoder_smolgen_variants_[i] = SmolgenVariants(
+              make_variant(ew.smolgen_compress_q, ew.smolgen_compress),
+              make_variant(ew.smolgen_dense1_w_q, ew.smolgen_dense1_w),
+              make_variant(ew.smolgen_dense2_w_q, ew.smolgen_dense2_w));
+        }
+      }
+    }
+  }
 }
 
 void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size,
@@ -786,12 +871,9 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
       flow = mx::concatenate({flow, pos_enc}, 2);
     } else if (embedding_ == INPUT_EMBEDDING_PE_MAP) {
       // PE_MAP: Concat static position encoding (64 channels per square).
-      // kPosEncoding is [64][64] = [square][channel].
-      mx::array pos_enc = mx::array(reinterpret_cast<const float*>(kPosEncoding),
-                                    mx::Shape{64, kNumPosEncodingChannels},
-                                    mx::float32);
-      // Broadcast to [batch, 64, 64].
-      pos_enc = mx::broadcast_to(pos_enc, {batch_size, 64, kNumPosEncodingChannels});
+      // Use pre-computed pos_enc_base_ from Build().
+      mx::array pos_enc = mx::broadcast_to(*pos_enc_base_,
+                                           {batch_size, 64, kNumPosEncodingChannels});
       // Concat with 112 input channels: [batch, 64, 112 + 64].
       flow = mx::concatenate({flow, pos_enc}, 2);
     }
@@ -815,11 +897,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
       flow = GatingLayer(flow, *ip_add_gate_, "add");
     }
 
-    // Compute alpha for encoder skip connections (BLAS style).
-    // alpha = (2 * num_encoders)^(-0.25)
-    float alpha = static_cast<float>(std::pow(2.0 * encoder_weights_.size(), -0.25));
-    // Use 1e-3 epsilon for PE_DENSE, 1e-6 otherwise.
-    float default_eps = (embedding_ == INPUT_EMBEDDING_PE_DENSE) ? kPeDenseEpsilon : kDefaultEpsilon;
+    // Use pre-computed encoder_alpha_ and default_epsilon_ from Build().
 
     // Embedding FFN (for PE_DENSE).
     bool has_emb_ffn = ip_emb_ffn_dense1_w_.has_value() || ip_emb_ffn_dense1_w_q_.has_value();
@@ -829,7 +907,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
       ffn = DispatchFC(ffn, ip_emb_ffn_dense2_w_q_, ip_emb_ffn_dense2_w_,
                        *ip_emb_ffn_dense2_b_, "");
       flow = LayerNormWithSkip(flow, ffn, *ip_emb_ffn_ln_gammas_,
-                               *ip_emb_ffn_ln_betas_, alpha, kPeDenseEpsilon);
+                               *ip_emb_ffn_ln_betas_, encoder_alpha_, kPeDenseEpsilon);
     }
 
     // Encoder layers.
@@ -842,58 +920,29 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
       mx::array v = DispatchFC(flow, ew.mha_v_w_q, ew.mha_v_w, ew.mha_v_b, "");
 
       // Compute smolgen attention weights if needed.
+      // Use pre-computed variants from Build() when available.
       std::optional<mx::array> smolgen_attn;
-      bool has_smolgen_weights = smolgen_global_w_.has_value() || smolgen_global_w_q_.has_value();
-      if (ew.has_smolgen && has_smolgen_weights) {
-        // Use quantized path if any smolgen weight is quantized.
-        bool use_quantized = ew.smolgen_compress_q.has_value() ||
-                             ew.smolgen_dense1_w_q.has_value() ||
-                             ew.smolgen_dense2_w_q.has_value() ||
-                             smolgen_global_w_q_.has_value();
-        if (use_quantized) {
-          // Build WeightVariant for each weight - quantized takes precedence.
-          auto make_variant = [](const OptQuantized& q,
-                                 const OptArray& f) -> WeightVariant {
-            assert(q.has_value() || f.has_value());
-            if (q.has_value()) {
-              return *q;
-            } else {
-              return std::cref(*f);
-            }
-          };
-          smolgen_attn = ComputeSmolgenQuantized(
-              flow, encoder_head_count_,
-              make_variant(ew.smolgen_compress_q, ew.smolgen_compress),
-              make_variant(ew.smolgen_dense1_w_q, ew.smolgen_dense1_w),
-              *ew.smolgen_dense1_b,
-              *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
-              make_variant(ew.smolgen_dense2_w_q, ew.smolgen_dense2_w),
-              *ew.smolgen_dense2_b,
-              *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
-              make_variant(smolgen_global_w_q_, smolgen_global_w_),
-              activations_.smolgen_activation);
-        } else {
-          // Verify all required smolgen weights have values.
-          assert(ew.smolgen_compress.has_value());
-          assert(ew.smolgen_dense1_w.has_value());
-          assert(ew.smolgen_dense1_b.has_value());
-          assert(ew.smolgen_ln1_gammas.has_value());
-          assert(ew.smolgen_ln1_betas.has_value());
-          assert(ew.smolgen_dense2_w.has_value());
-          assert(ew.smolgen_dense2_b.has_value());
-          assert(ew.smolgen_ln2_gammas.has_value());
-          assert(ew.smolgen_ln2_betas.has_value());
-          assert(smolgen_global_w_.has_value());
-          smolgen_attn = ComputeSmolgen(
-              flow, encoder_head_count_,
-              *ew.smolgen_compress,
-              *ew.smolgen_dense1_w, *ew.smolgen_dense1_b,
-              *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
-              *ew.smolgen_dense2_w, *ew.smolgen_dense2_b,
-              *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
-              *smolgen_global_w_,
-              activations_.smolgen_activation);
-        }
+      if (i < encoder_smolgen_variants_.size() && encoder_smolgen_variants_[i].has_value()) {
+        // Use pre-computed quantized variants.
+        const auto& sv = *encoder_smolgen_variants_[i];
+        smolgen_attn = ComputeSmolgenQuantized(
+            flow, encoder_head_count_,
+            sv.compress, sv.dense1_w, *ew.smolgen_dense1_b,
+            *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
+            sv.dense2_w, *ew.smolgen_dense2_b,
+            *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
+            *smolgen_global_variant_, activations_.smolgen_activation);
+      } else if (ew.has_smolgen && smolgen_global_w_.has_value()) {
+        // Non-quantized path (keep existing ComputeSmolgen call).
+        smolgen_attn = ComputeSmolgen(
+            flow, encoder_head_count_,
+            *ew.smolgen_compress,
+            *ew.smolgen_dense1_w, *ew.smolgen_dense1_b,
+            *ew.smolgen_ln1_gammas, *ew.smolgen_ln1_betas,
+            *ew.smolgen_dense2_w, *ew.smolgen_dense2_b,
+            *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
+            *smolgen_global_w_,
+            activations_.smolgen_activation);
       }
 
       // Multi-head attention with optional smolgen.
@@ -905,7 +954,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
       mha = DispatchFC(mha, ew.mha_dense_w_q, ew.mha_dense_w, ew.mha_dense_b, "");
 
       // Skip connection + layer norm.
-      flow = LayerNormWithSkip(flow, mha, ew.ln1_gammas, ew.ln1_betas, alpha, default_eps);
+      flow = LayerNormWithSkip(flow, mha, ew.ln1_gammas, ew.ln1_betas, encoder_alpha_, default_epsilon_);
 
       // FFN.
       mx::array ffn = DispatchFC(flow, ew.ffn_dense1_w_q, ew.ffn_dense1_w,
@@ -914,7 +963,7 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
                        ew.ffn_dense2_b, "");
 
       // Skip connection + layer norm.
-      flow = LayerNormWithSkip(flow, ffn, ew.ln2_gammas, ew.ln2_betas, alpha, default_eps);
+      flow = LayerNormWithSkip(flow, ffn, ew.ln2_gammas, ew.ln2_betas, encoder_alpha_, default_epsilon_);
     }
   }
 
@@ -960,14 +1009,12 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
                                 policy_weights_.ip3_pol_w,
                                 *policy_weights_.ip3_pol_b, "");
 
-    // Scaled Q*K matmul.
-    int pol_dmodel = static_cast<int>(policy_weights_.ip2_pol_b->size());
-    pol = ScaledQKMatmul(queries, keys,
-                         1.0f / std::sqrt(static_cast<float>(pol_dmodel)));
+    // Scaled Q*K matmul (use pre-computed attn_policy_scale_ from Build()).
+    pol = ScaledQKMatmul(queries, keys, attn_policy_scale_);
 
     // Promotion logits (ip4_pol_w is NOT quantized - used by AttentionPolicyPromoMatmulConcat).
     pol = AttentionPolicyPromoMatmulConcat(pol, keys, *policy_weights_.ip4_pol_w,
-                                           56, pol_dmodel);
+                                           56, pol_dmodel_);
 
     // Reshape and apply policy map on CPU.
     policy_opt = mx::reshape(pol, {batch_size, -1});
