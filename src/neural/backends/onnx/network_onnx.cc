@@ -766,7 +766,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
 
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
                          OnnxProvider provider, bool cpu_wdl)
-    : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
+    : onnx_env_(ORT_LOGGING_LEVEL_VERBOSE, "lc0"),
       capabilities_{file.format().network_format().input(),
                     file.format().network_format().output(),
                     file.format().network_format().moves_left()},
