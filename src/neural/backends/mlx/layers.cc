@@ -314,37 +314,10 @@ mx::array FullyConnected(const mx::array& input, const mx::array& weights,
   return ApplyActivation(output, activation);
 }
 
-// Layer normalization (core implementation with pre-computed epsilon array).
-// Mean/variance computation is done in float32 for numerical stability.
-mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
-                    const mx::array& betas, const mx::array& epsilon) {
-  mx::Dtype orig_dtype = input.dtype();
-
-  // Upcast to float32 for mean/variance computation.
-  mx::array inputf = (orig_dtype != mx::float32) ? mx::astype(input, mx::float32) : input;
-
-  // Normalize along the last axis.
-  int axis = static_cast<int>(input.ndim()) - 1;
-
-  mx::array mean = mx::mean(inputf, std::vector<int>{axis}, true);
-  mx::array variance = mx::var(inputf, std::vector<int>{axis}, true);
-
-  mx::array normalized = mx::divide(
-      mx::subtract(inputf, mean),
-      mx::sqrt(mx::add(variance, epsilon)));
-
-  // Apply gamma and beta (in float32).
-  mx::array gammasf = (gammas.dtype() != mx::float32) ? mx::astype(gammas, mx::float32) : gammas;
-  mx::array betasf = (betas.dtype() != mx::float32) ? mx::astype(betas, mx::float32) : betas;
-  mx::array result = mx::add(mx::multiply(normalized, gammasf), betasf);
-
-  return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
-}
-
-// Layer normalization (float epsilon convenience overload).
+// Layer normalization using fused mx::fast::layer_norm kernel.
 mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
                     const mx::array& betas, float epsilon) {
-  return LayerNorm(input, gammas, betas, mx::array(epsilon));
+  return mx::fast::layer_norm(input, gammas, betas, epsilon);
 }
 
 // Layer normalization with scaled secondary tensor (skip connection).
@@ -367,46 +340,10 @@ mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
   return LayerNorm(combined, gammas, betas, epsilon);
 }
 
-// LayerNormWithSkip with pre-computed epsilon array and float alpha.
-mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
-                            const mx::array& gammas, const mx::array& betas,
-                            float alpha, const mx::array& epsilon) {
-  mx::array combined = (alpha != 1.0f)
-      ? mx::add(input, mx::multiply(secondary, mx::array(alpha)))
-      : mx::add(input, secondary);
-
-  return LayerNorm(combined, gammas, betas, epsilon);
-}
-
-// LayerNormWithSkip with pre-computed epsilon array and mx::array alpha.
-mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
-                            const mx::array& gammas, const mx::array& betas,
-                            const mx::array& alpha, const mx::array& epsilon) {
-  mx::array combined = mx::add(input, mx::multiply(secondary, alpha));
-  return LayerNorm(combined, gammas, betas, epsilon);
-}
-
-// RMS normalization.
-// Squared mean computation is done in float32 for numerical stability.
+// RMS normalization using fused mx::fast::rms_norm kernel.
 mx::array RmsNorm(const mx::array& input, const mx::array& gammas,
                   float epsilon) {
-  mx::Dtype orig_dtype = input.dtype();
-
-  // Upcast to float32 for squared mean computation.
-  mx::array inputf = (orig_dtype != mx::float32) ? mx::astype(input, mx::float32) : input;
-
-  int axis = static_cast<int>(input.ndim()) - 1;
-
-  // RMS = sqrt(mean(x^2))
-  mx::array squared = mx::multiply(inputf, inputf);
-  mx::array mean_sq = mx::mean(squared, std::vector<int>{axis}, true);
-  mx::array rms = mx::sqrt(mx::add(mean_sq, mx::array(epsilon)));
-
-  // Normalize and apply gamma (in float32).
-  mx::array gammasf = (gammas.dtype() != mx::float32) ? mx::astype(gammas, mx::float32) : gammas;
-  mx::array result = mx::multiply(mx::divide(inputf, rms), gammasf);
-
-  return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
+  return mx::fast::rms_norm(input, gammas, epsilon);
 }
 
 // RMS normalization with scaled secondary tensor (skip connection).
@@ -432,7 +369,7 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
                          const mx::array& ln2_gammas, const mx::array& ln2_betas,
                          const mx::array& global_w,
                          const std::string& smolgen_activation,
-                         const mx::array& epsilon) {
+                         float epsilon) {
   int batch_size = static_cast<int>(input.shape()[0]);
   int seq_len = static_cast<int>(input.shape()[1]);     // 64
   int embed_size = static_cast<int>(input.shape()[2]);  // embedding_size
@@ -482,7 +419,7 @@ mx::array ComputeSmolgenQuantized(
     const mx::array& ln2_gammas, const mx::array& ln2_betas,
     const WeightVariant& global_w,
     const std::string& smolgen_activation,
-    const mx::array& epsilon) {
+    float epsilon) {
   int batch_size = static_cast<int>(input.shape()[0]);
   int seq_len = static_cast<int>(input.shape()[1]);     // 64
   int embed_size = static_cast<int>(input.shape()[2]);  // embedding_size

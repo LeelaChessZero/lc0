@@ -312,11 +312,10 @@ class MLXGraphBuilder {
   // Pre-computed encoder alpha as mx::array (avoids creating from float each call).
   OptArray encoder_alpha_array_;
 
-  // Pre-computed epsilon arrays (avoids creating mx::array(scalar) per batch).
-  OptArray default_epsilon_array_;     // mx::array(default_epsilon_)
-  OptArray pe_dense_epsilon_array_;    // mx::array(kPeDenseEpsilon)
-  OptArray smolgen_epsilon_array_;     // mx::array(kSmolgenEpsilon)
-  OptArray policy_epsilon_array_;      // mx::array(kDefaultEpsilon) for policy encoder
+  // Epsilon values for different network sections.
+  float pe_dense_epsilon_ = kPeDenseEpsilon;
+  float smolgen_epsilon_ = kSmolgenEpsilon;
+  float policy_epsilon_ = kDefaultEpsilon;
 
   // Pre-computed zero uint64 for ExpandInput comparison.
   OptArray zero_uint64_;  // mx::zeros({1}, mx::uint64)
@@ -876,11 +875,7 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   // 13. Pre-compute encoder alpha as mx::array.
   encoder_alpha_array_ = mx::array(encoder_alpha_);
 
-  // 14. Pre-compute epsilon arrays.
-  default_epsilon_array_ = mx::array(default_epsilon_);
-  pe_dense_epsilon_array_ = mx::array(kPeDenseEpsilon);
-  smolgen_epsilon_array_ = mx::array(kSmolgenEpsilon);
-  policy_epsilon_array_ = mx::array(kDefaultEpsilon);
+  // 14. Epsilon values are now plain floats (used directly by mx::fast::layer_norm).
 
   // 15. Pre-compute zero uint64 for ExpandInput.
   zero_uint64_ = mx::zeros({1}, mx::uint64);
@@ -1022,7 +1017,7 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
 
     // Embedding layer norm (for PE_DENSE).
     if (has_emb_ln_) {
-      flow = LayerNorm(flow, *ip_emb_ln_gammas_, *ip_emb_ln_betas_, *pe_dense_epsilon_array_);
+      flow = LayerNorm(flow, *ip_emb_ln_gammas_, *ip_emb_ln_betas_, pe_dense_epsilon_);
     }
 
     // Input gating (weights pre-transposed in Build()).
@@ -1038,7 +1033,7 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
       ffn = DispatchFC(ffn, ip_emb_ffn_dense2_w_q_, ip_emb_ffn_dense2_w_,
                        *ip_emb_ffn_dense2_b_, "");
       flow = LayerNormWithSkip(flow, ffn, *ip_emb_ffn_ln_gammas_,
-                               *ip_emb_ffn_ln_betas_, *encoder_alpha_array_, *pe_dense_epsilon_array_);
+                               *ip_emb_ffn_ln_betas_, *encoder_alpha_array_, pe_dense_epsilon_);
     }
 
     // Encoder layers.
@@ -1059,7 +1054,7 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
             sv.dense2_w, *ew.smolgen_dense2_b,
             *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
             *smolgen_global_variant_, activations_.smolgen_activation,
-            *smolgen_epsilon_array_);
+            smolgen_epsilon_);
       } else if (ew.has_smolgen && smolgen_global_w_.has_value()) {
         smolgen_attn = ComputeSmolgen(
             flow, encoder_head_count_,
@@ -1070,7 +1065,7 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
             *ew.smolgen_ln2_gammas, *ew.smolgen_ln2_betas,
             *smolgen_global_w_,
             activations_.smolgen_activation,
-            *smolgen_epsilon_array_);
+            smolgen_epsilon_);
       }
 
       mx::array mha = smolgen_attn.has_value()
@@ -1079,14 +1074,14 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
 
       mha = DispatchFC(mha, ew.mha_dense_w_q, ew.mha_dense_w, ew.mha_dense_b, "");
 
-      flow = LayerNormWithSkip(flow, mha, ew.ln1_gammas, ew.ln1_betas, *encoder_alpha_array_, *default_epsilon_array_);
+      flow = LayerNormWithSkip(flow, mha, ew.ln1_gammas, ew.ln1_betas, *encoder_alpha_array_, default_epsilon_);
 
       mx::array ffn = DispatchFC(flow, ew.ffn_dense1_w_q, ew.ffn_dense1_w,
                                  ew.ffn_dense1_b, activations_.ffn_activation);
       ffn = DispatchFC(ffn, ew.ffn_dense2_w_q, ew.ffn_dense2_w,
                        ew.ffn_dense2_b, "");
 
-      flow = LayerNormWithSkip(flow, ffn, ew.ln2_gammas, ew.ln2_betas, *encoder_alpha_array_, *default_epsilon_array_);
+      flow = LayerNormWithSkip(flow, ffn, ew.ln2_gammas, ew.ln2_betas, *encoder_alpha_array_, default_epsilon_);
     }
   }
 
@@ -1108,14 +1103,14 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
             q, k, v, policy_weights_.pol_encoder_head_count, policy_mha_scale_);
         mha = DispatchFC(mha, ew.mha_dense_w_q, ew.mha_dense_w, ew.mha_dense_b, "");
 
-        pol = LayerNormWithSkip(pol, mha, ew.ln1_gammas, ew.ln1_betas, 1.0f, *policy_epsilon_array_);
+        pol = LayerNormWithSkip(pol, mha, ew.ln1_gammas, ew.ln1_betas, 1.0f, policy_epsilon_);
 
         mx::array ffn = DispatchFC(pol, ew.ffn_dense1_w_q, ew.ffn_dense1_w,
                                    ew.ffn_dense1_b, pol_ffn_act_);
         ffn = DispatchFC(ffn, ew.ffn_dense2_w_q, ew.ffn_dense2_w,
                          ew.ffn_dense2_b, "");
 
-        pol = LayerNormWithSkip(pol, ffn, ew.ln2_gammas, ew.ln2_betas, 1.0f, *policy_epsilon_array_);
+        pol = LayerNormWithSkip(pol, ffn, ew.ln2_gammas, ew.ln2_betas, 1.0f, policy_epsilon_);
       }
 
       mx::array queries = DispatchFC(pol, policy_weights_.ip2_pol_w_q,

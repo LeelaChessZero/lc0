@@ -104,13 +104,9 @@ mx::array FullyConnected(const mx::array& input, const mx::array& weights,
                          const mx::array& biases,
                          const std::string& activation);
 
-// Layer normalization.
+// Layer normalization using fused mx::fast::layer_norm kernel.
 mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
                     const mx::array& betas, float epsilon = 1e-6f);
-
-// Layer normalization with pre-computed epsilon array.
-mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
-                    const mx::array& betas, const mx::array& epsilon);
 
 // Layer normalization with scaled secondary tensor (skip connection).
 mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
@@ -122,16 +118,6 @@ mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
 mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
                             const mx::array& gammas, const mx::array& betas,
                             const mx::array& alpha, float epsilon = 1e-6f);
-
-// LayerNormWithSkip with pre-computed epsilon array and float alpha.
-mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
-                            const mx::array& gammas, const mx::array& betas,
-                            float alpha, const mx::array& epsilon);
-
-// LayerNormWithSkip with pre-computed epsilon array and mx::array alpha.
-mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
-                            const mx::array& gammas, const mx::array& betas,
-                            const mx::array& alpha, const mx::array& epsilon);
 
 // RMS normalization.
 mx::array RmsNorm(const mx::array& input, const mx::array& gammas,
@@ -160,7 +146,7 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
                          const mx::array& ln2_gammas, const mx::array& ln2_betas,
                          const mx::array& global_w,
                          const std::string& smolgen_activation,
-                         const mx::array& epsilon);
+                         float epsilon = 1e-3f);
 
 // Compute smolgen attention weights with type-safe weight variants.
 // Uses quantized FC when quantized weight is provided, matmul for float weights.
@@ -176,7 +162,7 @@ mx::array ComputeSmolgenQuantized(
     const mx::array& ln2_gammas, const mx::array& ln2_betas,
     const WeightVariant& global_w,
     const std::string& smolgen_activation,
-    const mx::array& epsilon);
+    float epsilon = 1e-3f);
 
 // Policy map layer - maps raw policy to 1858 outputs.
 // input_data: source tensor data, size must be >= batch_size * input_stride
