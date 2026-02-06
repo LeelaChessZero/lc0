@@ -83,17 +83,11 @@ mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
 }
 
 // Expand input masks and values to [batch, 112, 8, 8] tensor.
+// bit_tensor: pre-computed [1, 1, 64] uint64 array with {1<<0, ..., 1<<63}.
+// zero_uint64: pre-computed mx::zeros({1}, mx::uint64) for comparison.
 mx::array ExpandInput(const mx::array& masks, const mx::array& values,
-                      int batch_size) {
-  // Create bit indices for expanding the bitboard.
-  // Each bit position i corresponds to mask value (1ULL << i).
-  std::vector<uint64_t> bit_indices(64);
-  for (int i = 0; i < 64; i++) {
-    bit_indices[i] = 1ULL << i;
-  }
-
-  mx::array bit_tensor = mx::array(bit_indices.data(), mx::Shape{1, 1, 64}, mx::uint64);
-
+                      int batch_size, const mx::array& bit_tensor,
+                      const mx::array& zero_uint64) {
   // Reshape masks to [batch, 112, 1] for broadcasting.
   mx::array mask_expanded = mx::reshape(masks, {batch_size, kInputPlanes, 1});
 
@@ -104,7 +98,7 @@ mx::array ExpandInput(const mx::array& masks, const mx::array& values,
   mx::array bits = mx::bitwise_and(mask_expanded, bit_tensor);
 
   // Compare with zero to get boolean mask.
-  mx::array bit_mask = mx::not_equal(bits, mx::zeros(mx::Shape{1}, mx::uint64));
+  mx::array bit_mask = mx::not_equal(bits, zero_uint64);
 
   // Cast to float.
   bit_mask = mx::astype(bit_mask, mx::float32);
@@ -214,9 +208,8 @@ mx::array ConvBlock(const mx::array& input, const mx::array& weights,
   int pad = kernel_size / 2;
   mx::array conv_out = mx::conv2d(input_nhwc, weights, {1, 1}, {pad, pad});
 
-  // Add bias (biases shape is [C, 1, 1], need to reshape for NHWC).
-  mx::array biases_flat = mx::reshape(biases, {-1});
-  conv_out = mx::add(conv_out, biases_flat);
+  // Add bias (biases shape is [C], broadcasts with NHWC last dim).
+  conv_out = mx::add(conv_out, biases);
 
   // Transpose output back to NCHW.
   mx::array output = mx::transpose(conv_out, {0, 3, 1, 2});
@@ -237,8 +230,7 @@ mx::array SEUnit(const mx::array& input, const mx::array& conv_bias,
   // Global average pooling over H and W, then add conv_bias.
   // pool = mean(input) + conv_bias
   mx::array pooled = mx::mean(input, {2, 3});  // Shape: [batch, channels]
-  mx::array conv_bias_flat = mx::reshape(conv_bias, {-1});  // [channels]
-  pooled = mx::add(pooled, conv_bias_flat);
+  pooled = mx::add(pooled, conv_bias);  // conv_bias shape is [channels]
 
   // FC1 with activation.
   // Weights are [input_size, output_size] = [channels, se_channels].
@@ -259,7 +251,7 @@ mx::array SEUnit(const mx::array& input, const mx::array& conv_bias,
   gamma = mx::sigmoid(gamma);
 
   // beta = fc2[channels:] + gamma * conv_bias (BLAS-style)
-  beta = mx::add(beta, mx::multiply(gamma, conv_bias_flat));
+  beta = mx::add(beta, mx::multiply(gamma, conv_bias));
 
   // Reshape for broadcasting: [batch, channels] -> [batch, channels, 1, 1].
   gamma = mx::reshape(gamma, {batch_size, channels, 1, 1});
@@ -322,10 +314,10 @@ mx::array FullyConnected(const mx::array& input, const mx::array& weights,
   return ApplyActivation(output, activation);
 }
 
-// Layer normalization.
+// Layer normalization (core implementation with pre-computed epsilon array).
 // Mean/variance computation is done in float32 for numerical stability.
 mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
-                    const mx::array& betas, float epsilon) {
+                    const mx::array& betas, const mx::array& epsilon) {
   mx::Dtype orig_dtype = input.dtype();
 
   // Upcast to float32 for mean/variance computation.
@@ -339,7 +331,7 @@ mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
 
   mx::array normalized = mx::divide(
       mx::subtract(inputf, mean),
-      mx::sqrt(mx::add(variance, mx::array(epsilon))));
+      mx::sqrt(mx::add(variance, epsilon)));
 
   // Apply gamma and beta (in float32).
   mx::array gammasf = (gammas.dtype() != mx::float32) ? mx::astype(gammas, mx::float32) : gammas;
@@ -347,6 +339,12 @@ mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
   mx::array result = mx::add(mx::multiply(normalized, gammasf), betasf);
 
   return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
+}
+
+// Layer normalization (float epsilon convenience overload).
+mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
+                    const mx::array& betas, float epsilon) {
+  return LayerNorm(input, gammas, betas, mx::array(epsilon));
 }
 
 // Layer normalization with scaled secondary tensor (skip connection).
@@ -358,6 +356,33 @@ mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
       ? mx::add(input, mx::multiply(secondary, mx::array(alpha)))
       : mx::add(input, secondary);
 
+  return LayerNorm(combined, gammas, betas, epsilon);
+}
+
+// Overload accepting alpha as a pre-computed mx::array.
+mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
+                            const mx::array& gammas, const mx::array& betas,
+                            const mx::array& alpha, float epsilon) {
+  mx::array combined = mx::add(input, mx::multiply(secondary, alpha));
+  return LayerNorm(combined, gammas, betas, epsilon);
+}
+
+// LayerNormWithSkip with pre-computed epsilon array and float alpha.
+mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
+                            const mx::array& gammas, const mx::array& betas,
+                            float alpha, const mx::array& epsilon) {
+  mx::array combined = (alpha != 1.0f)
+      ? mx::add(input, mx::multiply(secondary, mx::array(alpha)))
+      : mx::add(input, secondary);
+
+  return LayerNorm(combined, gammas, betas, epsilon);
+}
+
+// LayerNormWithSkip with pre-computed epsilon array and mx::array alpha.
+mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
+                            const mx::array& gammas, const mx::array& betas,
+                            const mx::array& alpha, const mx::array& epsilon) {
+  mx::array combined = mx::add(input, mx::multiply(secondary, alpha));
   return LayerNorm(combined, gammas, betas, epsilon);
 }
 
@@ -406,7 +431,8 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
                          const mx::array& dense2_w, const mx::array& dense2_b,
                          const mx::array& ln2_gammas, const mx::array& ln2_betas,
                          const mx::array& global_w,
-                         const std::string& smolgen_activation) {
+                         const std::string& smolgen_activation,
+                         const mx::array& epsilon) {
   int batch_size = static_cast<int>(input.shape()[0]);
   int seq_len = static_cast<int>(input.shape()[1]);     // 64
   int embed_size = static_cast<int>(input.shape()[2]);  // embedding_size
@@ -423,13 +449,13 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
   mx::array dense1 = mx::matmul(reshaped, dense1_w);
   dense1 = mx::add(dense1, dense1_b);
   dense1 = ApplyActivation(dense1, smolgen_activation);
-  dense1 = LayerNorm(dense1, ln1_gammas, ln1_betas, kSmolgenEpsilon);
+  dense1 = LayerNorm(dense1, ln1_gammas, ln1_betas, epsilon);
 
   // 4. Dense2 + activation + LayerNorm
   mx::array dense2 = mx::matmul(dense1, dense2_w);
   dense2 = mx::add(dense2, dense2_b);
   dense2 = ApplyActivation(dense2, smolgen_activation);
-  dense2 = LayerNorm(dense2, ln2_gammas, ln2_betas, kSmolgenEpsilon);
+  dense2 = LayerNorm(dense2, ln2_gammas, ln2_betas, epsilon);
 
   // 5. Global: reshape to [batch*heads, gen_sz_outputs/heads] and apply global weights
   int gen_sz_outputs = static_cast<int>(dense2.shape()[1]);
@@ -455,7 +481,8 @@ mx::array ComputeSmolgenQuantized(
     const mx::array& dense2_b,
     const mx::array& ln2_gammas, const mx::array& ln2_betas,
     const WeightVariant& global_w,
-    const std::string& smolgen_activation) {
+    const std::string& smolgen_activation,
+    const mx::array& epsilon) {
   int batch_size = static_cast<int>(input.shape()[0]);
   int seq_len = static_cast<int>(input.shape()[1]);     // 64
   int embed_size = static_cast<int>(input.shape()[2]);  // embedding_size
@@ -502,12 +529,12 @@ mx::array ComputeSmolgenQuantized(
   // 3. Dense1 + activation + LayerNorm
   mx::array dense1 =
       compute_fc(reshaped, dense1_w, dense1_b, smolgen_activation);
-  dense1 = LayerNorm(dense1, ln1_gammas, ln1_betas, kSmolgenEpsilon);
+  dense1 = LayerNorm(dense1, ln1_gammas, ln1_betas, epsilon);
 
   // 4. Dense2 + activation + LayerNorm
   mx::array dense2 =
       compute_fc(dense1, dense2_w, dense2_b, smolgen_activation);
-  dense2 = LayerNorm(dense2, ln2_gammas, ln2_betas, kSmolgenEpsilon);
+  dense2 = LayerNorm(dense2, ln2_gammas, ln2_betas, epsilon);
 
   // 5. Global: reshape to [batch*heads, gen_sz_outputs/heads] and apply global weights
   int gen_sz_outputs = static_cast<int>(dense2.shape()[1]);
@@ -524,15 +551,15 @@ mx::array ComputeSmolgenQuantized(
 
 // Multi-head attention.
 // For smolgen path, softmax is computed in float32 for numerical stability.
+// scale: pre-computed 1.0f / sqrt(depth) where depth = dmodel / heads.
 mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
-                             const mx::array& values, int heads,
+                             const mx::array& values, int heads, float scale,
                              const mx::array* smolgen_attn_weights) {
   // Input shape: [batch, 64, dmodel]
   int batch_size = static_cast<int>(queries.shape()[0]);
   int seq_len = static_cast<int>(queries.shape()[1]);
   int dmodel = static_cast<int>(queries.shape()[2]);
   int depth = dmodel / heads;
-  float scale = 1.0f / std::sqrt(static_cast<float>(depth));
   mx::Dtype orig_dtype = queries.dtype();
 
   // Reshape to [batch, seq, heads, depth] and transpose to [batch, heads, seq, depth].
@@ -571,9 +598,9 @@ mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
                      {batch_size, seq_len, dmodel});
 }
 
-// Scaled Q*K matmul for attention policy.
+// Scaled Q*K matmul for attention policy (core implementation with array scale).
 mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
-                         float scale) {
+                         const mx::array& scale) {
   // Reshape to [batch, 64, channels].
   int batch_size = static_cast<int>(queries.shape()[0]);
   mx::array q = mx::reshape(queries, {batch_size, 64, -1});
@@ -586,7 +613,13 @@ mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
   mx::array qk = mx::matmul(q, k_t);
 
   // Scale.
-  return mx::multiply(qk, mx::array(scale));
+  return mx::multiply(qk, scale);
+}
+
+// Scaled Q*K matmul (float scale convenience overload).
+mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
+                         float scale) {
+  return ScaledQKMatmul(queries, keys, mx::array(scale));
 }
 
 // Attention policy promotion matmul and concat.

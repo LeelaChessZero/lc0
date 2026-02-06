@@ -55,8 +55,11 @@ mx::array ConvertConvWeightsOIHWtoOHWI(const std::vector<float>& weights,
                                         mx::Dtype dtype = mx::float32);
 
 // Expand input masks and values to [batch, 112, 8, 8] tensor.
+// bit_tensor: pre-computed [1, 1, 64] uint64 array with {1<<0, ..., 1<<63}.
+// zero_uint64: pre-computed mx::zeros({1}, mx::uint64) for comparison.
 mx::array ExpandInput(const mx::array& masks, const mx::array& values,
-                      int batch_size);
+                      int batch_size, const mx::array& bit_tensor,
+                      const mx::array& zero_uint64);
 
 // Apply activation function by name.
 mx::array ApplyActivation(const mx::array& input,
@@ -105,10 +108,30 @@ mx::array FullyConnected(const mx::array& input, const mx::array& weights,
 mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
                     const mx::array& betas, float epsilon = 1e-6f);
 
+// Layer normalization with pre-computed epsilon array.
+mx::array LayerNorm(const mx::array& input, const mx::array& gammas,
+                    const mx::array& betas, const mx::array& epsilon);
+
 // Layer normalization with scaled secondary tensor (skip connection).
 mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
                             const mx::array& gammas, const mx::array& betas,
                             float alpha, float epsilon = 1e-6f);
+
+// Layer normalization with scaled secondary tensor (skip connection).
+// Overload accepting alpha as a pre-computed mx::array (avoids creating from float each call).
+mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
+                            const mx::array& gammas, const mx::array& betas,
+                            const mx::array& alpha, float epsilon = 1e-6f);
+
+// LayerNormWithSkip with pre-computed epsilon array and float alpha.
+mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
+                            const mx::array& gammas, const mx::array& betas,
+                            float alpha, const mx::array& epsilon);
+
+// LayerNormWithSkip with pre-computed epsilon array and mx::array alpha.
+mx::array LayerNormWithSkip(const mx::array& input, const mx::array& secondary,
+                            const mx::array& gammas, const mx::array& betas,
+                            const mx::array& alpha, const mx::array& epsilon);
 
 // RMS normalization.
 mx::array RmsNorm(const mx::array& input, const mx::array& gammas,
@@ -121,8 +144,9 @@ mx::array RmsNormWithSkip(const mx::array& input, const mx::array& secondary,
 
 // Multi-head attention.
 // smolgen_attn_weights: pre-computed [batch, heads, 64, 64] attention weights to add to Q@K^T.
+// scale: pre-computed 1.0f / sqrt(depth) where depth = dmodel / heads.
 mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
-                             const mx::array& values, int heads,
+                             const mx::array& values, int heads, float scale,
                              const mx::array* smolgen_attn_weights = nullptr);
 
 // Compute smolgen attention weights.
@@ -135,7 +159,8 @@ mx::array ComputeSmolgen(const mx::array& input, int heads,
                          const mx::array& dense2_w, const mx::array& dense2_b,
                          const mx::array& ln2_gammas, const mx::array& ln2_betas,
                          const mx::array& global_w,
-                         const std::string& smolgen_activation);
+                         const std::string& smolgen_activation,
+                         const mx::array& epsilon);
 
 // Compute smolgen attention weights with type-safe weight variants.
 // Uses quantized FC when quantized weight is provided, matmul for float weights.
@@ -150,7 +175,8 @@ mx::array ComputeSmolgenQuantized(
     const mx::array& dense2_b,
     const mx::array& ln2_gammas, const mx::array& ln2_betas,
     const WeightVariant& global_w,
-    const std::string& smolgen_activation);
+    const std::string& smolgen_activation,
+    const mx::array& epsilon);
 
 // Policy map layer - maps raw policy to 1858 outputs.
 // input_data: source tensor data, size must be >= batch_size * input_stride
@@ -191,6 +217,10 @@ mx::array QuantizedFullyConnected(const mx::array& input,
 // Scaled Q*K matmul for attention policy.
 mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
                          float scale);
+
+// Scaled Q*K matmul with pre-computed scale array.
+mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
+                         const mx::array& scale);
 
 // Attention policy promotion matmul and concat.
 mx::array AttentionPolicyPromoMatmulConcat(const mx::array& parent,
