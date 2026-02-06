@@ -487,7 +487,6 @@ mx::array ComputeSmolgenQuantized(
 }
 
 // Multi-head attention.
-// For smolgen path, softmax is computed in float32 for numerical stability.
 // scale: pre-computed 1.0f / sqrt(depth) where depth = dmodel / heads.
 mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
                              const mx::array& values, int heads, float scale,
@@ -497,8 +496,6 @@ mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
   int seq_len = static_cast<int>(queries.shape()[1]);
   int dmodel = static_cast<int>(queries.shape()[2]);
   int depth = dmodel / heads;
-  mx::Dtype orig_dtype = queries.dtype();
-
   // Reshape to [batch, seq, heads, depth] and transpose to [batch, heads, seq, depth].
   mx::array q = mx::transpose(
       mx::reshape(queries, {batch_size, seq_len, heads, depth}), {0, 2, 1, 3});
@@ -507,28 +504,14 @@ mx::array MultiHeadAttention(const mx::array& queries, const mx::array& keys,
   mx::array v = mx::transpose(
       mx::reshape(values, {batch_size, seq_len, heads, depth}), {0, 2, 1, 3});
 
-  mx::array output = [&]() {
-    if (smolgen_attn_weights != nullptr && smolgen_attn_weights->size() > 0) {
-      // Manual attention for smolgen (additive bias before softmax).
-      // Upcast to float32 for softmax stability.
-      mx::array qf = (orig_dtype != mx::float32) ? mx::astype(q, mx::float32) : q;
-      mx::array kf = (orig_dtype != mx::float32) ? mx::astype(k, mx::float32) : k;
-      mx::array vf = (orig_dtype != mx::float32) ? mx::astype(v, mx::float32) : v;
-      mx::array smolgenf = (smolgen_attn_weights->dtype() != mx::float32)
-          ? mx::astype(*smolgen_attn_weights, mx::float32) : *smolgen_attn_weights;
-
-      mx::array attn = mx::matmul(qf, mx::transpose(kf, {0, 1, 3, 2}));
-      attn = mx::multiply(attn, mx::array(scale));
-      attn = mx::add(attn, smolgenf);
-      attn = mx::softmax(attn, -1);
-      mx::array result = mx::matmul(attn, vf);
-
-      return (orig_dtype != mx::float32) ? mx::astype(result, orig_dtype) : result;
-    } else {
-      // Use optimized SDPA primitive.
-      return mx::fast::scaled_dot_product_attention(q, k, v, scale);
-    }
-  }();
+  // Use fused SDPA. When smolgen weights are present, pass them as additive
+  // mask (shape [batch, heads, 64, 64] broadcasts to SDPA's requirement).
+  std::optional<mx::array> mask =
+      (smolgen_attn_weights != nullptr && smolgen_attn_weights->size() > 0)
+          ? std::optional<mx::array>(*smolgen_attn_weights)
+          : std::nullopt;
+  mx::array output =
+      mx::fast::scaled_dot_product_attention(q, k, v, scale, "", mask);
 
   // Transpose back and reshape to [batch, seq, dmodel].
   return mx::reshape(mx::transpose(output, {0, 2, 1, 3}),
