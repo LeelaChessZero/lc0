@@ -803,7 +803,7 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
 
   // === Pre-compute values for ForwardEval optimization ===
 
-  // 1. Position encoding array for PE_MAP (static data, create once).
+  // Position encoding array for PE_MAP (static data, create once).
   if (embedding_ == INPUT_EMBEDDING_PE_MAP) {
     mx::array pos_enc = mx::array(
         reinterpret_cast<const float*>(kPosEncoding),
@@ -814,23 +814,23 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     pos_enc_base_ = std::move(pos_enc);
   }
 
-  // 2. Encoder alpha scalar for skip connections.
+  // Encoder alpha scalar for skip connections.
   if (!encoder_weights_.empty()) {
     encoder_alpha_ = static_cast<float>(
         std::pow(2.0 * encoder_weights_.size(), -0.25));
   }
 
-  // 3. Default epsilon based on embedding type.
+  // Default epsilon based on embedding type.
   default_epsilon_ = (embedding_ == INPUT_EMBEDDING_PE_DENSE)
                          ? kPeDenseEpsilon : kDefaultEpsilon;
 
-  // 4. Policy head dimensions and scale (for attention policy).
+  // Policy head dimensions and scale (for attention policy).
   if (attn_policy_ && policy_weights_.ip2_pol_b.has_value()) {
     pol_dmodel_ = static_cast<int>(policy_weights_.ip2_pol_b->size());
     attn_policy_scale_ = 1.0f / std::sqrt(static_cast<float>(pol_dmodel_));
   }
 
-  // 6. Pre-compute bit tensor for ExpandInput.
+  // Pre-compute bit tensor for ExpandInput.
   {
     std::vector<uint64_t> bit_indices(64);
     for (int i = 0; i < 64; i++) {
@@ -839,19 +839,19 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     bit_tensor_ = mx::array(bit_indices.data(), mx::Shape{1, 1, 64}, mx::uint64);
   }
 
-  // 7. Pre-transpose gating weights for element-wise operations.
+  // Pre-transpose gating weights for element-wise operations.
   if (ip_mult_gate_.has_value()) {
     ip_mult_gate_ = mx::transpose(*ip_mult_gate_);
     ip_add_gate_ = mx::transpose(*ip_add_gate_);
   }
 
-  // 8. Pre-compute encoder MHA scale.
+  // Pre-compute encoder MHA scale.
   if (encoder_head_count_ > 0 && embedding_size_ > 0) {
     int depth = embedding_size_ / encoder_head_count_;
     encoder_mha_scale_ = 1.0f / std::sqrt(static_cast<float>(depth));
   }
 
-  // 9. Pre-compute policy encoder MHA scale.
+  // Pre-compute policy encoder MHA scale.
   if (attn_policy_ && policy_weights_.pol_encoder_head_count > 0 &&
       policy_weights_.ip_pol_b.has_value()) {
     int pol_emb_size = static_cast<int>(policy_weights_.ip_pol_b->size());
@@ -859,31 +859,31 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     policy_mha_scale_ = 1.0f / std::sqrt(static_cast<float>(pol_depth));
   }
 
-  // 10. Pre-compute network structure booleans.
+  // Pre-compute network structure booleans.
   has_preproc_ = ip_emb_preproc_w_.has_value() || ip_emb_preproc_w_q_.has_value();
   has_emb_ln_ = ip_emb_ln_gammas_.has_value();
   has_gates_ = ip_mult_gate_.has_value();
   has_emb_ffn_ = ip_emb_ffn_dense1_w_.has_value() || ip_emb_ffn_dense1_w_q_.has_value();
 
-  // 11. Pre-compute policy activation strings.
+  // Pre-compute policy activation strings.
   pol_act_ = attn_body_ ? activations_.default_activation : "selu";
   pol_ffn_act_ = attn_body_ ? activations_.ffn_activation : "selu";
 
-  // 12. Pre-compute dummy scalar for non-SE residual blocks.
+  // Pre-compute dummy scalar for non-SE residual blocks.
   dummy_scalar_ = mx::array(0.0f);
 
-  // 13. Pre-compute encoder alpha as mx::array.
+  // Pre-compute encoder alpha as mx::array.
   encoder_alpha_array_ = mx::array(encoder_alpha_);
 
-  // 14. Epsilon values are now plain floats (used directly by mx::fast::layer_norm).
+  // Epsilon values are now plain floats (used directly by mx::fast::layer_norm).
 
-  // 15. Pre-compute zero uint64 for ExpandInput.
+  // Pre-compute zero uint64 for ExpandInput.
   zero_uint64_ = mx::zeros({1}, mx::uint64);
 
-  // 16. Pre-compute attention policy scale as mx::array.
+  // Pre-compute attention policy scale as mx::array.
   attn_policy_scale_array_ = mx::array(attn_policy_scale_);
 
-  // 17. Pre-compute policy gather indices for GPU-based policy mapping.
+  // Pre-compute policy gather indices for GPU-based policy mapping.
   // Inverts the scatter map (input_idx → output_idx) into a gather map
   // (output_idx → input_idx) so we can use mx::take inside the compiled graph.
   if (attn_policy_) {
@@ -913,7 +913,7 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
         gather.data(), {static_cast<int>(kNumOutputPolicy)}, mx::int32);
   }
 
-  // 5. Pre-compute smolgen weight variants for encoder layers.
+  // Pre-compute smolgen weight variants for encoder layers.
   bool has_smolgen_weights = smolgen_global_w_.has_value() || smolgen_global_w_q_.has_value();
   if (has_smolgen_weights) {
     auto make_variant = [](const OptQuantized& q,
@@ -942,7 +942,7 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     }
   }
 
-  // 18. Compile the forward pass for graph caching and kernel fusion.
+  // Compile the forward pass for graph caching and kernel fusion.
   compiled_forward_ = mx::compile(
       std::function<std::vector<mx::array>(const std::vector<mx::array>&)>(
           [this](const std::vector<mx::array>& inputs) {
@@ -1141,7 +1141,7 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
     }
   }();
 
-  // Apply GPU-based policy mapping via gather (replaces CPU ApplyPolicyMap).
+  // Apply GPU-based policy mapping via gather.
   if (policy_gather_indices_) {
     // Broadcast 1D indices [1858] to 2D [batch, 1858] for take_along_axis.
     mx::array indices_2d = mx::broadcast_to(

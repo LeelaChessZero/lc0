@@ -164,20 +164,6 @@ mx::array ComputeSmolgenQuantized(
     const std::string& smolgen_activation,
     float epsilon = 1e-3f);
 
-// Policy map layer - maps raw policy to 1858 outputs.
-// input_data: source tensor data, size must be >= batch_size * input_stride
-// output_data: destination buffer, size must be exactly batch_size * kNumOutputPolicy
-// policy_map: span containing the mapping indices (size determines how many elements to read)
-// input_stride: number of elements between batches in input (e.g., 80*64 for conv policy)
-// Note: batch_size is derived from output_data.size() / kNumOutputPolicy
-void ApplyPolicyMap(std::span<const float> input_data,
-                    std::span<float> output_data,
-                    std::span<const short> policy_map, size_t input_stride);
-
-// Gating layer (multiply or add with learned weights).
-mx::array GatingLayer(const mx::array& input, const mx::array& weights,
-                      const std::string& operation);
-
 // Quantize FC weights using MLX's quantize() function.
 // Returns a QuantizedWeight struct containing packed weights, scales, and biases.
 // Returns nullopt if weight dimensions are not compatible with group_size.

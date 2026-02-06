@@ -599,55 +599,6 @@ mx::array AttentionPolicyPromoMatmulConcat(const mx::array& parent,
   return mx::concatenate({parent_reshaped, promo_out}, 1);
 }
 
-// Policy map layer - maps raw policy to 1858 outputs.
-// This is done on CPU as MLX may have issues with gather operations.
-void ApplyPolicyMap(std::span<const float> input_data,
-                    std::span<float> output_data,
-                    std::span<const short> policy_map, size_t input_stride) {
-  assert(!input_data.empty());
-  assert(!output_data.empty());
-  assert(policy_map.size() <= input_stride);
-
-  // Derive batch_size from output buffer size.
-  const size_t batch_size = output_data.size() / kNumOutputPolicy;
-  assert(output_data.size() == batch_size * kNumOutputPolicy);
-  assert(input_data.size() >= batch_size * input_stride);
-
-  // For each batch element, remap policy values.
-  for (size_t b = 0; b < batch_size; b++) {
-    auto batch_output = output_data.subspan(b * kNumOutputPolicy, kNumOutputPolicy);
-    auto batch_input = input_data.subspan(b * input_stride, policy_map.size());
-
-    // Zero-initialize output.
-    std::fill(batch_output.begin(), batch_output.end(), 0.0f);
-
-    // Apply mapping: for each input index, write to corresponding output index.
-    for (size_t i = 0; i < policy_map.size(); i++) {
-      short j = policy_map[i];
-      if (j >= 0 && static_cast<size_t>(j) < kNumOutputPolicy) {
-        batch_output[j] = batch_input[i];
-      }
-    }
-  }
-}
-
-// Gating layer (multiply or add with learned weights).
-// Weights are stored as [embedding_size, 64] (BLAS convention).
-// Input is [batch, 64, embedding_size].
-// For element-wise ops, transpose weights to [64, embedding_size].
-mx::array GatingLayer(const mx::array& input, const mx::array& weights,
-                      const std::string& operation) {
-  // Transpose from [embedding_size, 64] to [64, embedding_size] for broadcasting.
-  mx::array weights_t = mx::transpose(weights);
-
-  if (operation == "mult") {
-    return mx::multiply(input, weights_t);
-  } else if (operation == "add") {
-    return mx::add(input, weights_t);
-  }
-  return input;
-}
-
 // Quantize FC weights using MLX's quantize() function.
 // MLX quantize() expects weights in [output_size, input_size] format and
 // returns [packed, scales, biases].
