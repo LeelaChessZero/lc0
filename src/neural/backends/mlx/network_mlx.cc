@@ -324,6 +324,10 @@ class MLXGraphBuilder {
   // Pre-computed attention policy scale as mx::array.
   OptArray attn_policy_scale_array_;
 
+  // Pre-computed policy gather indices for GPU-based policy mapping.
+  // Maps from output index (1858) to input index, enabling mx::take gather.
+  OptArray policy_gather_indices_;
+
   // Pre-computed smolgen weight variants for each encoder layer.
   // Avoids runtime variant construction in ForwardEval.
   struct SmolgenVariants {
@@ -884,6 +888,36 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   // 16. Pre-compute attention policy scale as mx::array.
   attn_policy_scale_array_ = mx::array(attn_policy_scale_);
 
+  // 17. Pre-compute policy gather indices for GPU-based policy mapping.
+  // Inverts the scatter map (input_idx → output_idx) into a gather map
+  // (output_idx → input_idx) so we can use mx::take inside the compiled graph.
+  if (attn_policy_) {
+    constexpr size_t kAttnPolicySize = 64 * 64 + 8 * 24;  // 4288
+    // Default index = kAttnPolicySize (padding slot, will be zero).
+    std::vector<int32_t> gather(kNumOutputPolicy,
+                                static_cast<int32_t>(kAttnPolicySize));
+    for (size_t i = 0; i < kAttnPolicySize; i++) {
+      short j = kAttnPolicyMap[i];
+      if (j >= 0 && static_cast<size_t>(j) < kNumOutputPolicy) {
+        gather[j] = static_cast<int32_t>(i);
+      }
+    }
+    policy_gather_indices_ = mx::array(
+        gather.data(), {static_cast<int>(kNumOutputPolicy)}, mx::int32);
+  } else if (conv_policy_) {
+    constexpr size_t kConvPolicySize = 73 * 8 * 8;  // 4672
+    std::vector<int32_t> gather(kNumOutputPolicy,
+                                static_cast<int32_t>(kConvPolicySize));
+    for (size_t i = 0; i < kConvPolicySize; i++) {
+      short j = kConvPolicyMap[i];
+      if (j >= 0 && static_cast<size_t>(j) < kNumOutputPolicy) {
+        gather[j] = static_cast<int32_t>(i);
+      }
+    }
+    policy_gather_indices_ = mx::array(
+        gather.data(), {static_cast<int>(kNumOutputPolicy)}, mx::int32);
+  }
+
   // 5. Pre-compute smolgen weight variants for encoder layers.
   bool has_smolgen_weights = smolgen_global_w_.has_value() || smolgen_global_w_q_.has_value();
   if (has_smolgen_weights) {
@@ -913,7 +947,7 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
     }
   }
 
-  // 17. Compile the forward pass for graph caching and kernel fusion.
+  // 18. Compile the forward pass for graph caching and kernel fusion.
   compiled_forward_ = mx::compile(
       std::function<std::vector<mx::array>(const std::vector<mx::array>&)>(
           [this](const std::vector<mx::array>& inputs) {
@@ -1112,6 +1146,15 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
     }
   }();
 
+  // Apply GPU-based policy mapping via gather (replaces CPU ApplyPolicyMap).
+  if (policy_gather_indices_) {
+    // Broadcast 1D indices [1858] to 2D [batch, 1858] for take_along_axis.
+    mx::array indices_2d = mx::broadcast_to(
+        mx::reshape(*policy_gather_indices_, {1, kNumOutputPolicy}),
+        {batch_size, kNumOutputPolicy});
+    policy = mx::take_along_axis(policy, indices_2d, 1);
+  }
+
   // Value head.
   mx::array value = [&]() -> mx::array {
     if (attn_body_) {
@@ -1197,23 +1240,9 @@ void MLXGraphBuilder::ForwardEval(float* values, uint64_t* masks, int batch_size
     assert(output_mems.size() >= 3 && output_mems[2] != nullptr);
   }
 
-  // Copy results to output buffers.
-  if (attn_policy_) {
-    constexpr size_t kAttnPolicySize = 64 * 64 + 8 * 24;
-    ApplyPolicyMap(
-        std::span<const float>(policy.data<float>(), batch_size * kAttnPolicySize),
-        std::span<float>(output_mems[0], batch_size * kNumOutputPolicy),
-        kAttnPolicyMap, kAttnPolicySize);
-  } else if (conv_policy_) {
-    size_t tensor_stride = policy.size() / batch_size;
-    ApplyPolicyMap(
-        std::span<const float>(policy.data<float>(), policy.size()),
-        std::span<float>(output_mems[0], batch_size * kNumOutputPolicy),
-        kConvPolicyMap, tensor_stride);
-  } else {
-    std::memcpy(output_mems[0], policy.data<float>(),
-                batch_size * kNumOutputPolicy * sizeof(float));
-  }
+  // Policy output — ForwardPass already mapped to [batch, 1858].
+  std::memcpy(output_mems[0], policy.data<float>(),
+              batch_size * kNumOutputPolicy * sizeof(float));
 
   // Value output.
   std::memcpy(output_mems[1], value.data<float>(),
