@@ -1121,7 +1121,7 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
 
       pol = ScaledQKMatmul(queries, keys, *attn_policy_scale_array_);
       pol = AttentionPolicyPromoMatmulConcat(pol, keys, *policy_weights_.ip4_pol_w,
-                                             56, pol_dmodel_);
+                                             pol_dmodel_);
       return mx::reshape(pol, {batch_size, -1});
     } else if (conv_policy_) {
       mx::array pol = ConvBlock(flow, *policy_weights_.policy1_conv_weights,

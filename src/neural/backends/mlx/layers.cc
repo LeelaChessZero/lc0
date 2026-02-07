@@ -549,14 +549,17 @@ mx::array ScaledQKMatmul(const mx::array& queries, const mx::array& keys,
 mx::array AttentionPolicyPromoMatmulConcat(const mx::array& parent,
                                            const mx::array& keys,
                                            const mx::array& weights,
-                                           int slice_from, int channel_size) {
+                                           int channel_size) {
+  constexpr int kRank8Start = 56;  // Index of first rank-8 square (a8).
+  constexpr int kRank7Start = 48;  // Index of first rank-7 square (a7).
+
   int batch_size = static_cast<int>(parent.shape()[0]);
 
   // Reshape keys to [batch, 64, channel_size].
   mx::array k = mx::reshape(keys, {batch_size, 64, channel_size});
 
-  // Slice last 8 keys (from position 56 to 64).
-  mx::array k_slice = mx::slice(k, {0, slice_from, 0}, {batch_size, 64, channel_size});
+  // Slice last 8 keys (rank-8 squares).
+  mx::array k_slice = mx::slice(k, {0, kRank8Start, 0}, {batch_size, 64, channel_size});
   // k_slice: [batch, 8, channel_size]
 
   // For batched matmul: k_slice @ weights = [batch, 8, channel_size] @ [channel_size, 4]
@@ -582,11 +585,11 @@ mx::array AttentionPolicyPromoMatmulConcat(const mx::array& parent,
   // Reshape to [batch, 3, 64].
   promo_out = mx::reshape(promo_out, {batch_size, 3, 64});
 
-  // Get the relevant slice from parent (rows 48:56, cols 56:64).
+  // Get the relevant slice from parent (rows kRank7Start:kRank8Start, cols kRank8Start:64).
   // parent is [batch, 64, 64] = [batch, from_square, to_square].
-  // We want from_square 48:56 (rank 7), to_square 56:64 (rank 8).
+  // We want from_square on rank 7, to_square on rank 8.
   mx::array parent_reshaped = mx::reshape(parent, {batch_size, 64, 64});
-  mx::array parent_slice = mx::slice(parent_reshaped, {0, 48, 56}, {batch_size, 56, 64});
+  mx::array parent_slice = mx::slice(parent_reshaped, {0, kRank7Start, kRank8Start}, {batch_size, kRank8Start, 64});
   // parent_slice: [batch, 8, 8]
   parent_slice = mx::reshape(parent_slice, {batch_size, 1, 64});
   parent_slice = mx::broadcast_to(parent_slice, {batch_size, 3, 64});
