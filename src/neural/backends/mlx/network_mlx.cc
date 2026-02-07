@@ -913,6 +913,10 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   }
 
   // Pre-compute smolgen weight variants for encoder layers.
+  // Safe to store std::cref: encoder_weights_ is reserve()'d and fully
+  // populated above; smolgen_global_w_ is set once.  Neither is moved or
+  // resized after this point, so the referenced mx::array objects remain
+  // at stable addresses for the lifetime of MLXGraphBuilder.
   bool has_smolgen_weights = smolgen_global_w_.has_value() || smolgen_global_w_q_.has_value();
   if (has_smolgen_weights) {
     auto make_variant = [](const OptQuantized& q,
@@ -942,6 +946,11 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   }
 
   // Compile the forward pass for graph caching and kernel fusion.
+  // Note: ForwardPass returns 2 arrays (policy, value) or 3 arrays
+  // (policy, value, moves_left) depending on moves_left_, which is a
+  // build-time constant set once in Build() and never modified.  This
+  // guarantees the compiled graph always produces the same number of
+  // outputs.
   compiled_forward_ = mx::compile(
       std::function<std::vector<mx::array>(const std::vector<mx::array>&)>(
           [this](const std::vector<mx::array>& inputs) {
@@ -1195,9 +1204,11 @@ std::vector<mx::array> MLXGraphBuilder::ForwardPass(
     if (compute_dtype_ != mx::float32) {
       mleft = mx::astype(mleft, mx::float32);
     }
+    // Return size is fixed for this compiled graph (moves_left_ is constant).
     return {policy, value, mleft};
   }
 
+  // Return size is fixed for this compiled graph (moves_left_ is constant).
   return {policy, value};
 }
 
