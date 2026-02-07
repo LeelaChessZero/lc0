@@ -888,9 +888,8 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
   // (output_idx → input_idx) so we can use mx::take inside the compiled graph.
   if (attn_policy_) {
     constexpr size_t kAttnPolicySize = 64 * 64 + 8 * 24;  // 4288
-    // Default index = kAttnPolicySize (padding slot, will be zero).
-    std::vector<int32_t> gather(kNumOutputPolicy,
-                                static_cast<int32_t>(kAttnPolicySize));
+    // Default index 0 for unmapped slots (illegal moves, never read by search).
+    std::vector<int32_t> gather(kNumOutputPolicy, 0);
     for (size_t i = 0; i < kAttnPolicySize; i++) {
       short j = kAttnPolicyMap[i];
       if (j >= 0 && static_cast<size_t>(j) < kNumOutputPolicy) {
@@ -901,8 +900,8 @@ void MLXGraphBuilder::Build(int input_planes, MultiHeadWeights& weights,
         gather.data(), {static_cast<int>(kNumOutputPolicy)}, mx::int32);
   } else if (conv_policy_) {
     constexpr size_t kConvPolicySize = 73 * 8 * 8;  // 4672
-    std::vector<int32_t> gather(kNumOutputPolicy,
-                                static_cast<int32_t>(kConvPolicySize));
+    // Default index 0 for unmapped slots (illegal moves, never read by search).
+    std::vector<int32_t> gather(kNumOutputPolicy, 0);
     for (size_t i = 0; i < kConvPolicySize; i++) {
       short j = kConvPolicyMap[i];
       if (j >= 0 && static_cast<size_t>(j) < kNumOutputPolicy) {
