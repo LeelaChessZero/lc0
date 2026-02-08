@@ -64,6 +64,9 @@ const OptionId kMinDTZBoostId{
     "dtz_policy_boost", "",
     "Additional offset to apply to policy target before temperature for moves "
     "that are best dtz option."};
+const OptionId kWinningPolicyShareId{
+    "winning_policy_share", "",
+    "Share of policy a known best winning move should have."};
 const OptionId kNewInputFormatId{
     "new-input-format", "",
     "Input format to convert training data to during rescoring."};
@@ -705,7 +708,8 @@ void ApplySyzygyRescoring(FileData& data, SyzygyTablebase* tablebase) {
 }
 
 void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase,
-                            float distTemp, float distOffset, float dtzBoost) {
+                            float distTemp, float distOffset, float dtzBoost,
+                            float winningMovePolicyShare) {
   if (distTemp == 1.0f && distOffset == 0.0f && dtzBoost == 0.0f) {
     return;  // No adjustments needed
   }
@@ -736,13 +740,32 @@ void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase,
       } else {
         tablebase->root_probe(history.Last(), false, true, &maybe_boost);
       }
+      int transform = TransformForPosition(data.input_format, history);
       // If there is only one move, dtm fixup is not helpful.
       // This code assumes all gaviota 3-4-5 tbs are present, as checked
       // at startup.
       if (gaviotaEnabled && maybe_boost.size() > 1 &&
           (board.ours() | board.theirs()).count() <= 5) {
-        std::vector<unsigned int> dtms;
-        dtms.resize(maybe_boost.size());
+        struct MateScore {
+          unsigned score;
+          float distribution;
+          Move move;
+
+          MateScore(unsigned s, float d, Move m)
+              : score(s), distribution(d), move(m) {}
+
+          bool operator<(const MateScore& other) const {
+            if (score != other.score) {
+              return score < other.score;
+            }
+            if (distribution != other.distribution) {
+              return distribution > other.distribution;
+            }
+            return move.raw_data() < other.move.raw_data();
+          }
+        };
+        std::vector<MateScore> dtms;
+        dtms.reserve(maybe_boost.size());
         unsigned int mininum_dtm = 1000;
         // Only safe moves being considered, boost the smallest dtm
         // amongst them.
@@ -751,22 +774,40 @@ void ApplyPolicyAdjustments(FileData& data, SyzygyTablebase* tablebase,
           unsigned int info;
           unsigned int dtm;
           gaviota_tb_probe_hard(next_pos, info, dtm);
-          dtms.push_back(dtm);
+          dtms.emplace_back(
+              dtm, chunk.probabilities[MoveToNNIndex(move, transform)], move);
           if (dtm < mininum_dtm) mininum_dtm = dtm;
         }
-        if (mininum_dtm < 1000) {
-          to_boost.clear();
-          int dtm_idx = 0;
-          for (auto& move : maybe_boost) {
-            if (dtms[dtm_idx] == mininum_dtm) {
-              to_boost.push_back(move);
-            }
-            dtm_idx++;
+        // Generate optimized policy based on TBs.
+        std::sort(dtms.begin(), dtms.end());
+        float sum = 0.0f;
+        float target = winningMovePolicyShare;
+        for (auto& dtm : dtms) {
+          dtm.distribution = target;
+          sum += target;
+          target = (1.0f - sum) * winningMovePolicyShare;
+        }
+        dtms[0].distribution += 1.0f - sum;
+        for (unsigned i = 0; i < std::size(chunk.probabilities); i++) {
+          auto& prob = chunk.probabilities[i];
+          if (prob < 0 || std::isnan(prob)) continue;
+          auto iter = std::find_if(
+              dtms.begin(), dtms.end(), [i, transform](const MateScore& ms) {
+                return i == MoveToNNIndex(ms.move, transform);
+              });
+          if (iter == dtms.end()) {
+            prob = 0.0f;
+            continue;
           }
+          prob = iter->distribution;
           policy_dtm_bump++;
         }
+        if (move_index < data.moves.size()) {
+          history.Append(data.moves[move_index]);
+          move_index++;
+        }
+        continue;
       }
-      int transform = TransformForPosition(data.input_format, history);
       for (auto& move : to_boost) {
         boost_probs[MoveToNNIndex(move, transform)] = true;
       }
@@ -1134,7 +1175,7 @@ void WriteOutputs(const FileData& data, const std::string& file,
 FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
                              SyzygyTablebase* tablebase, float distTemp,
                              float distOffset, float dtzBoost,
-                             int newInputFormat) {
+                             float winningMovePolicyShare, int newInputFormat) {
   // Process and validate file data
   FileData data = ProcessAndValidateFileData(std::move(fileContents));
 
@@ -1145,7 +1186,8 @@ FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
   ApplySyzygyRescoring(data, tablebase);
 
   // Apply policy adjustments (temperature, offset, boost)
-  ApplyPolicyAdjustments(data, tablebase, distTemp, distOffset, dtzBoost);
+  ApplyPolicyAdjustments(data, tablebase, distTemp, distOffset, dtzBoost,
+                         winningMovePolicyShare);
 
   // Estimate and correct plies left
   EstimateAndCorrectPliesLeft(data);
@@ -1167,15 +1209,16 @@ FileData ProcessFileInternal(std::vector<V6TrainingData> fileContents,
 
 void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
                  std::string outputDir, float distTemp, float distOffset,
-                 float dtzBoost, int newInputFormat,
-                 std::string nnue_plain_file, ProcessFileFlags flags) {
+                 float dtzBoost, float winningMovePolicyShare,
+                 int newInputFormat, std::string nnue_plain_file,
+                 ProcessFileFlags flags) {
   try {
     // Read file data
     std::vector<V6TrainingData> fileContents = ReadFile(file);
 
-    FileData data =
-        ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
-                            distOffset, dtzBoost, newInputFormat);
+    FileData data = ProcessFileInternal(std::move(fileContents), tablebase,
+                                        distTemp, distOffset, dtzBoost,
+                                        winningMovePolicyShare, newInputFormat);
 
     // Write NNUE output
     WriteNnueOutput(data, nnue_plain_file, flags);
@@ -1198,8 +1241,9 @@ void ProcessFile(const std::string& file, SyzygyTablebase* tablebase,
 void ProcessFiles(const std::vector<std::string>& files,
                   SyzygyTablebase* tablebase, std::string outputDir,
                   float distTemp, float distOffset, float dtzBoost,
-                  int newInputFormat, int offset, int mod,
-                  std::string nnue_plain_file, ProcessFileFlags flags) {
+                  float winningMovePolicyShare, int newInputFormat, int offset,
+                  int mod, std::string nnue_plain_file,
+                  ProcessFileFlags flags) {
   std::cerr << "Thread: " << offset << " starting" << std::endl;
   for (size_t i = offset; i < files.size(); i += mod) {
     if (files[i].rfind(".gz") != files[i].size() - 3) {
@@ -1207,7 +1251,7 @@ void ProcessFiles(const std::vector<std::string>& files,
       continue;
     }
     ProcessFile(files[i], tablebase, outputDir, distTemp, distOffset, dtzBoost,
-                newInputFormat, nnue_plain_file, flags);
+                winningMovePolicyShare, newInputFormat, nnue_plain_file, flags);
   }
 }
 
@@ -1293,6 +1337,7 @@ void RunRescorer() {
   // for now.
   options.Add<FloatOption>(kDistributionOffsetId, -0.999, 0) = 0;
   options.Add<FloatOption>(kMinDTZBoostId, 0, 1) = 0;
+  options.Add<FloatOption>(kWinningPolicyShareId, 0, 1) = 0.5;
   options.Add<IntOption>(kNewInputFormatId, -1, 256) = -1;
   options.Add<BoolOption>(kDeblunder) = false;
   options.Add<FloatOption>(kDeblunderQBlunderThreshold, 0.0f, 2.0f) = 2.0f;
@@ -1362,8 +1407,10 @@ void RunRescorer() {
             options.GetOptionsDict().Get<std::string>(kOutputDirId),
             options.GetOptionsDict().Get<float>(kTempId),
             options.GetOptionsDict().Get<float>(kDistributionOffsetId),
-            dtz_boost, options.GetOptionsDict().Get<int>(kNewInputFormatId),
-            offset_val, threads,
+            dtz_boost,
+            options.GetOptionsDict().Get<float>(kWinningPolicyShareId),
+            options.GetOptionsDict().Get<int>(kNewInputFormatId), offset_val,
+            threads,
             options.GetOptionsDict().Get<std::string>(kNnuePlainFileId), flags);
       });
     }
@@ -1377,6 +1424,7 @@ void RunRescorer() {
         options.GetOptionsDict().Get<std::string>(kOutputDirId),
         options.GetOptionsDict().Get<float>(kTempId),
         options.GetOptionsDict().Get<float>(kDistributionOffsetId), dtz_boost,
+        options.GetOptionsDict().Get<float>(kWinningPolicyShareId),
         options.GetOptionsDict().Get<int>(kNewInputFormatId), 0, 1,
         options.GetOptionsDict().Get<std::string>(kNnuePlainFileId), flags);
   }
@@ -1419,10 +1467,11 @@ void RunRescorer() {
 
 std::vector<V6TrainingData> RescoreTrainingData(
     std::vector<V6TrainingData> fileContents, SyzygyTablebase* tablebase,
-    float distTemp, float distOffset, float dtzBoost, int newInputFormat) {
-  FileData data =
-      ProcessFileInternal(std::move(fileContents), tablebase, distTemp,
-                          distOffset, dtzBoost, newInputFormat);
+    float distTemp, float distOffset, float dtzBoost,
+    float winningMovePolicyShare, int newInputFormat) {
+  FileData data = ProcessFileInternal(std::move(fileContents), tablebase,
+                                      distTemp, distOffset, dtzBoost,
+                                      winningMovePolicyShare, newInputFormat);
   return data.fileContents;
 }
 
