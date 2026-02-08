@@ -1467,8 +1467,8 @@ void RunRescorer() {
 
 std::vector<V6TrainingData> RescoreTrainingData(
     std::vector<V6TrainingData> fileContents, SyzygyTablebase* tablebase,
-    float distTemp, float distOffset, float dtzBoost,
-    float winningMovePolicyShare, int newInputFormat) {
+    float distTemp, float distOffset, float dtzBoost, int newInputFormat,
+    float winningMovePolicyShare) {
   FileData data = ProcessFileInternal(std::move(fileContents), tablebase,
                                       distTemp, distOffset, dtzBoost,
                                       winningMovePolicyShare, newInputFormat);
