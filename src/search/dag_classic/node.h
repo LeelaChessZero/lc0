@@ -335,9 +335,9 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(double v, double d, float m, uint32_t multivisit);
+  float FinalizeScoreUpdate(double v, double d, float m, uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(double v, double d, float m, uint32_t multivisit);
+  void AdjustForTerminal(double v, double d, float m, float divisor, uint32_t multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -574,9 +574,9 @@ class LowNode {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(double v, double d, float m, uint32_t multivisit);
+  float FinalizeScoreUpdate(double v, double d, float m, uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(double v, double d, float m, uint32_t multivisit);
+  void AdjustForTerminal(double v, double d, float m, float divisor, uint32_t multivisit);
 
   // Deletes all children.
   void ReleaseChildren();

@@ -2281,8 +2281,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Update the low node at the start of the backup path first, but only visit
   // it the first time that backup sees it.
   if (nl && nl->GetN() == 0) {
-    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
-                            node_to_process.multivisit);
+    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(), 1);
   }
 
   if (nr >= 2) {
@@ -2304,9 +2303,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   for (auto it = path.crbegin(); it != path.crend();
        /* ++it in the body */) {
-    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    auto divisor = n->FinalizeScoreUpdate(v, d, m, 1);
     if (n_to_fix > 0 && !n->IsTerminal()) {
-      n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+      n->AdjustForTerminal(v_delta, d_delta, m_delta, divisor, n_to_fix);
     }
 
     // Stop delta update on repetition "terminal" and propagate a draw above
@@ -2336,9 +2335,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = pl->GetM();
       n_to_fix = 0;
     }
-    pl->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    divisor = pl->FinalizeScoreUpdate(v, d, m, 1);
     if (n_to_fix > 0) {
-      pl->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+      pl->AdjustForTerminal(v_delta, d_delta, m_delta, divisor, n_to_fix);
     }
 
     bool old_update_parent_bounds = update_parent_bounds;
@@ -2376,12 +2375,11 @@ void SearchWorker::DoBackupUpdateSingleNode(
     nr = pr;
     nm = pm;
   }
-  search_->total_playouts_ += node_to_process.multivisit;
+  search_->total_playouts_ += 1;
   if (node_to_process.nn_queried && !node_to_process.is_cache_hit) {
     search_->network_evaluations_++;
   }
-  search_->cum_depth_ +=
-      node_to_process.path.size() * node_to_process.multivisit;
+  search_->cum_depth_ += node_to_process.path.size();
   search_->max_depth_ =
       std::max(search_->max_depth_, (uint16_t)node_to_process.path.size());
 }
