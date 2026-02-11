@@ -207,8 +207,8 @@ class Edge {
 };
 
 struct Eval {
-  float wl;
-  float d;
+  double wl;
+  double d;
   float ml;
 };
 
@@ -301,11 +301,11 @@ class Node {
   // Returns n + n_in_flight.
   int GetNStarted() const { return n_ + GetNInFlight(); }
 
-  float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
+  double GetQ(double draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetWL() const { return wl_; }
-  float GetD() const { return d_; }
+  double GetWL() const { return wl_; }
+  double GetD() const { return d_; }
   float GetM() const { return m_; }
 
   // Returns whether the node is known to be draw/lose/win.
@@ -335,9 +335,9 @@ class Node {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit);
+  void FinalizeScoreUpdate(double v, double d, float m, uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
+  void AdjustForTerminal(double v, double d, float m, uint32_t multivisit);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -546,8 +546,8 @@ class LowNode {
 
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
-  float GetWL() const { return wl_; }
-  float GetD() const { return d_; }
+  double GetWL() const { return wl_; }
+  double GetD() const { return d_; }
   float GetM() const { return m_; }
 
   // Returns whether the node is known to be draw/loss/win.
@@ -574,9 +574,9 @@ class LowNode {
   // * Q (weighted average of all V in a subtree)
   // * N (+=multivisit)
   // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit);
+  void FinalizeScoreUpdate(double v, double d, float m, uint32_t multivisit);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
+  void AdjustForTerminal(double v, double d, float m, uint32_t multivisit);
 
   // Deletes all children.
   void ReleaseChildren();
@@ -691,13 +691,13 @@ class EdgeAndNode {
   Node* node() const { return node_; }
 
   // Proxy functions for easier access to node/edge.
-  float GetQ(float default_q, float draw_score) const {
+  double GetQ(double default_q, double draw_score) const {
     return (node_ && node_->GetN() > 0) ? node_->GetQ(draw_score) : default_q;
   }
-  float GetWL(float default_wl) const {
+  double GetWL(double default_wl) const {
     return (node_ && node_->GetN() > 0) ? node_->GetWL() : default_wl;
   }
-  float GetD(float default_d) const {
+  double GetD(double default_d) const {
     return (node_ && node_->GetN() > 0) ? node_->GetD() : default_d;
   }
   float GetM(float default_m) const {
