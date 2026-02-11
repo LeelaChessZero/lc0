@@ -4,4 +4,4 @@ revision = v2.11.0
 
 patch_directory = cutlass
 
-
+diff_files = cutlass/1784.diff
