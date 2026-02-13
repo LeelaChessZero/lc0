@@ -143,7 +143,7 @@ class Search {
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
   // Depth of a root node is 0 (even number).
-  float GetDrawScore(bool is_odd_depth) const;
+  double GetDrawScore(bool is_odd_depth) const;
 
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
@@ -448,14 +448,14 @@ class SearchWorker {
   // Return true if adjustment happened.
   bool MaybeAdjustForTerminalOrTransposition(Node* n,
                                              const std::shared_ptr<LowNode>& nl,
-                                             float& v, float& d, float& m,
-                                             uint32_t& n_to_fix, float& v_delta,
-                                             float& d_delta, float& m_delta,
+                                             double& v, double& d, float& m,
+                                             uint32_t& n_to_fix, double& v_delta,
+                                             double& d_delta, float& m_delta,
                                              bool& update_parent_bounds) const;
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
-  bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, float* v_delta,
-                      float* d_delta, float* m_delta) const;
+  bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, double* v_delta,
+                      double* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(const BackupPath& path, int collision_limit,
                              PositionHistory& history,
