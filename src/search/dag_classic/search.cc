@@ -1642,9 +1642,6 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, bool is_root_node,
   auto low_node = node->GetLowNode().get();
   assert(low_node);
 
-  // Only known transpositions can differ.
-  if (!low_node->IsTransposition()) return false;
-
   // LowNode is terminal when Node is not.
   if (low_node->IsTerminal()) return true;
 
