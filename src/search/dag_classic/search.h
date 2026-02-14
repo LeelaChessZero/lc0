@@ -208,6 +208,7 @@ class Search {
 
   std::unique_ptr<UciResponder> uci_responder_;
   ContemptMode contempt_mode_;
+  std::vector<float> root_utility_offsets_;
   friend class SearchWorker;
 };
 

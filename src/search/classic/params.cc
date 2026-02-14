@@ -223,6 +223,16 @@ const OptionId BaseSearchParams::kTwoFoldDrawsId{
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
     "these positions are reverted when the first occurrence is played and not "
     "in the search tree anymore."};
+const OptionId BaseSearchParams::kTempUtilityDeviationId{
+    "temp-utility-deviation", "TempUtilityDeviation",
+    "Add a random offset to the winning probability. It uses a normal "
+    "distribution with mean 0 and the specified standard deviation. The "
+    "maximum evaluation difference is capped at 5 times the standard "
+    "deviation."};
+const OptionId BaseSearchParams::kTempEndgameUtilityDeviationId{
+    "temp-endgame-utility-deviation", "TempEndgameUtilityDeviation",
+    "Temperature utility offset standard deviation used during endgame "
+    "(starting from cutoff move). There is no decay."};
 const OptionId BaseSearchParams::kTemperatureId{
     {.long_flag = "temperature",
      .uci_option = "Temperature",
@@ -552,6 +562,9 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
+  options->Add<FloatOption>(kTempUtilityDeviationId, 0.0f, 100.0f) = 0.0f;
+  options->Add<FloatOption>(kTempEndgameUtilityDeviationId, 0.0f, 100.0f) =
+      0.0f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
   options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;
