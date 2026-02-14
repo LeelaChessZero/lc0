@@ -275,6 +275,7 @@ Search::Search(const NodeTree& tree, Backend* backend,
                                    played_history_, params_);
 
   if (root_deviation) {
+    root_deviation /= 50.0f;
     const float max_offset = root_deviation * 2.5f;
     const float min_offset = -max_offset;
     std::normal_distribution<float> dist(0.0f, root_deviation);
