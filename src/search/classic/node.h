@@ -228,6 +228,7 @@ class Node {
   // Returns range for iterating over edges.
   ConstIterator Edges() const;
   Iterator Edges();
+  unsigned GetChildIndex(Edge* edge) const { return edge - edges_.get(); }
 
   // Returns range for iterating over child nodes with N > 0.
   VisitedNode_Iterator<true> VisitedNodes() const;
