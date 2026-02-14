@@ -269,15 +269,15 @@ Search::Search(const NodeTree& tree, Backend* backend,
     }
   }
 
-  float root_variance = params_.GetTemperatureUtilityVariance();
-  float root_endgame_variance = params_.GetTemperatureEndgameUtilityVariance();
-  root_variance = TemperatureDecay(root_variance, root_endgame_variance,
+  float root_deviation = params_.GetTemperatureUtilityDeviation();
+  float root_endgame_deviation = params_.GetTemperatureEndgameUtilityDeviation();
+  root_deviation = TemperatureDecay(root_deviation, root_endgame_deviation,
                                    played_history_, params_);
 
-  if (root_variance) {
-    const float max_offset = root_variance * 2.5f;
+  if (root_deviation) {
+    const float max_offset = root_deviation * 2.5f;
     const float min_offset = -max_offset;
-    std::normal_distribution<float> dist(0.0f, root_variance);
+    std::normal_distribution<float> dist(0.0f, root_deviation);
     const int legal_moves =
         root_node_->GetN() > 0
             ? root_node_->GetNumEdges()
