@@ -52,9 +52,11 @@ namespace dag_classic {
 // The tuple elements are (node, repetitons, moves left).
 typedef std::vector<std::tuple<Node*, int, int>> BackupPath;
 
+class SearchCachedState;
+
 class Search {
  public:
-  Search(const NodeTree& tree, Backend* backend,
+  Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
@@ -145,6 +147,7 @@ class Search {
   // Depth of a root node is 0 (even number).
   float GetDrawScore(bool is_odd_depth) const;
 
+  SearchCachedState& state_;
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -510,6 +513,16 @@ class SearchWorker {
   std::vector<TaskWorkspace> task_workspaces_;
   TaskWorkspace main_workspace_;
   bool exiting_ = false;
+};
+
+class SearchCachedState {
+  public:
+    SearchCachedState() {}
+
+    friend class Search;
+    friend class SearchWorker;
+  private:
+    float temperature_offset_decay_ = 0.0f;
 };
 
 }  // namespace dag_classic

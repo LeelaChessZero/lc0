@@ -149,8 +149,8 @@ class MEvaluator {
 };
 
 float TemperatureDecay(float temp, float endgame,
-                        const PositionHistory& history,
-                        const SearchParams& params) {
+                       const PositionHistory& history,
+                       const SearchParams& params) {
   const int cutoff_move = params.GetTemperatureCutoffMove();
   const int decay_moves = params.GetTempDecayMoves();
   const int decay_delay_moves = params.GetTempDecayDelayMoves();
@@ -172,16 +172,36 @@ float TemperatureDecay(float temp, float endgame,
   return temp;
 }
 
+constexpr float kTemperatureOffsetDecayCuttoff = 3.0f;
+
+float UpdateTemperatureOffsetDecay(const Node* root, Move bestmove,
+                                   float draw_score) {
+  float best_q = -1.0f;
+  float selected_q = -1.0f;
+  if (root->GetN() <= 1) return 0.0f;
+  for (const auto& edge : root->Edges()) {
+    if (!edge.HasNode()) continue;
+    float q = edge.GetQ(0.0, draw_score);
+    best_q = std::max(best_q, q);
+    if (edge.GetMove(false) == bestmove) {
+      selected_q = q;
+    }
+  }
+  float div = 50.0f * 0.5f / kTemperatureOffsetDecayCuttoff;
+  return (best_q - selected_q) * div;
+}
+
 }  // namespace
 
-Search::Search(const NodeTree& tree, Backend* backend,
+Search::Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
                std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<SearchStopper> stopper, bool infinite,
                bool ponder, const OptionsDict& options,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!infinite && !ponder),
+    : state_(state),
+      ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       syzygy_tb_(syzygy_tb),
@@ -223,13 +243,16 @@ Search::Search(const NodeTree& tree, Backend* backend,
   }
 
   float root_deviation = params_.GetTemperatureUtilityDeviation();
-  float root_endgame_deviation = params_.GetTemperatureEndgameUtilityDeviation();
+  float root_endgame_deviation =
+      params_.GetTemperatureEndgameUtilityDeviation();
+  root_deviation =
+      std::max(0.0f, root_deviation - state_.temperature_offset_decay_);
   root_deviation = TemperatureDecay(root_deviation, root_endgame_deviation,
                                     played_history_, params_);
 
   if (root_deviation) {
     root_deviation /= 50.0f;
-    const float max_offset = root_deviation * 2.5f;
+    const float max_offset = root_deviation * kTemperatureOffsetDecayCuttoff;
     const float min_offset = -max_offset;
     std::normal_distribution<float> dist(0.0f, root_deviation);
     const int legal_moves =
@@ -689,6 +712,10 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
       !bestmove_is_sent_) {
     SendUciInfo();
     EnsureBestMoveKnown();
+    auto bestmove = final_bestmove_;
+    if (played_history_.IsBlackToMove()) bestmove.Flip();
+    state_.temperature_offset_decay_ += UpdateTemperatureOffsetDecay(
+        root_node_, bestmove, GetDrawScore(played_history_.IsBlackToMove()));
     SendMovesStats();
     BestMoveInfo info(final_bestmove_, final_pondermove_);
     uci_responder_->OutputBestMove(&info);
