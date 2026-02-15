@@ -107,6 +107,7 @@ void DagClassicSearch::NewGame() {
   search_.reset();
   tt_.clear();
   tree_.reset();
+  search_cached_state_.UciNewGame();
   time_manager_ = classic::MakeTimeManager(*options_);
 }
 

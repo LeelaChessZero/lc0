@@ -2460,5 +2460,9 @@ void SearchWorker::UpdateCounters() {
   }
 }
 
+void SearchCachedState::UciNewGame() {
+  temperature_offset_decay_ = 0;
+}
+
 }  // namespace classic
 }  // namespace lczero

@@ -519,6 +519,8 @@ class SearchCachedState {
   public:
     SearchCachedState() {}
 
+    void UciNewGame();
+
     friend class Search;
     friend class SearchWorker;
   private:

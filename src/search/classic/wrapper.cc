@@ -102,6 +102,7 @@ void ClassicSearch::NewGame() {
   LCTRACE_FUNCTION_SCOPE;
   search_.reset();
   tree_.reset();
+  search_cached_state_.UciNewGame();
   time_manager_ = MakeTimeManager(*options_);
 }
 
