@@ -148,6 +148,10 @@ class HloBuilder {
   // Build the HloModuleProto with a given name.
   pblczero::HloModuleProto BuildModule(std::string_view name);
 
+  // === CHECK 4 VERIFICATION ===
+  void PrintOpCounts();
+  // === END CHECK 4 ===
+
  private:
   pblczero::HloInstructionProto* MakeInstruction(
       std::string_view opcode, const pblczero::XlaShapeProto& shape,

@@ -34,14 +34,9 @@
 #include <variant>
 #include <vector>
 
-struct PJRT_Api;
-struct PJRT_Buffer;
-struct PJRT_Client;
-struct PJRT_Device;
-struct PJRT_DeviceDescription;
-struct PJRT_Error;
-struct PJRT_Event;
-struct PJRT_LoadedExecutable;
+// Include the C API declarations directly to remain compatible across
+// older/newer header styles (e.g. API40 typedef-based declarations).
+#include "pjrt_c_api.h"
 
 namespace lczero {
 
@@ -229,6 +224,17 @@ class PjrtClient : protected PjrtCommon {
   ~PjrtClient();
   std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo,
                                              std::string_view config);
+  // Generic compile entrypoint: lets callers compile HLO, MLIR text, or MLIR
+  // bytecode through the exact same codepath, differing only by format.
+  std::unique_ptr<PjrtExecutable> CompileProgram(std::string_view code,
+                                                  std::string_view config,
+                                                  std::string_view format);
+  // Returns the PJRT device id of the first addressable device.
+  // NOTE: If CheckError() is non-const, this may need 'const' removed at
+  // compile time. Drop const from both .h and .cc if you get a const-qualifier
+  // error.
+  int FirstAddressableDeviceId() const;
+
   std::vector<std::unique_ptr<PjrtDevice>> GetDevices();
   std::unique_ptr<PjrtHostToDeviceTransfer> HostToDevice(
       std::string_view buffer, PjrtType type, const std::vector<int64_t>& dims,

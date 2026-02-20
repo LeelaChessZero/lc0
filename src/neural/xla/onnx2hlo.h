@@ -50,6 +50,8 @@ struct Onnx2HloOptions {
   // If not empty, uses these nodes as outputs instead of the ones from the ONNX
   // model.
   std::vector<std::string> outputs_override;
+  // Select SemanticBuilder path for stablehlo flow.
+  bool use_stablehlo = false;
 };
 
 struct Onnx2HloResult {
@@ -64,6 +66,8 @@ struct Onnx2HloResult {
   std::vector<NamedTensor> constants;
   std::vector<NamedTensor> inputs;
   std::vector<NamedTensor> outputs;
+  // Populated when use_stablehlo=true. Empty for legacy HLO path.
+  std::vector<uint8_t> mlirbc_bytes;
   pblczero::HloModuleProto hlo_module;
 };
 

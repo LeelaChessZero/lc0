@@ -211,20 +211,53 @@ PjrtClient::~PjrtClient() {
 
 std::unique_ptr<PjrtExecutable> PjrtClient::CompileHlo(
     std::string_view hlo, std::string_view config) {
-  constexpr std::string_view kFormat = "hlo";
+  return CompileProgram(hlo, config, "hlo");
+}
+
+std::unique_ptr<PjrtExecutable> PjrtClient::CompileProgram(
+    std::string_view code, std::string_view config, std::string_view format) {
   auto program = MakeStruct<PJRT_Program>();
-  program.code = const_cast<char*>(hlo.data());
-  program.code_size = hlo.size();
-  program.format = kFormat.data();
-  program.format_size = kFormat.size();
+  program.code = const_cast<char*>(code.data());
+  program.code_size = code.size();
+  program.format = const_cast<char*>(format.data());
+  program.format_size = format.size();
 
   auto args = MakeStruct<PJRT_Client_Compile_Args>();
   args.client = client_;
   args.program = &program;
   args.compile_options = const_cast<char*>(config.data());
   args.compile_options_size = config.size();
+
   CheckError(api_->PJRT_Client_Compile(&args));
   return std::make_unique<PjrtExecutable>(api_, args.executable);
+}
+
+int PjrtClient::FirstAddressableDeviceId() const {
+  auto dargs = MakeStruct<PJRT_Client_AddressableDevices_Args>();
+  dargs.client = client_;
+  CheckError(api_->PJRT_Client_AddressableDevices(&dargs));
+  if (dargs.num_addressable_devices == 0 || dargs.addressable_devices == nullptr) {
+    throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
+                        "PJRT client reports zero addressable devices");
+  }
+  PJRT_Device* device = dargs.addressable_devices[0];
+
+  // Get device description
+  auto desc_args = MakeStruct<PJRT_Device_GetDescription_Args>();
+  desc_args.device = device;
+  CheckError(api_->PJRT_Device_GetDescription(&desc_args));
+
+  // Optional null check for cleaner failures
+  if (!desc_args.device_description) {
+    throw PjrtException(PjrtErrorCode::INVALID_ARGUMENT,
+                        "PJRT device returned null description");
+  }
+
+  // Get ID from description
+  auto id_args = MakeStruct<PJRT_DeviceDescription_Id_Args>();
+  id_args.device_description = desc_args.device_description;
+  CheckError(api_->PJRT_DeviceDescription_Id(&id_args));
+  return static_cast<int>(id_args.id);
 }
 
 std::vector<std::unique_ptr<PjrtDevice>> PjrtClient::GetDevices() {

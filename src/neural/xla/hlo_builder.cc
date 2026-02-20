@@ -28,12 +28,37 @@
 #include "neural/xla/hlo_builder.h"
 
 #include <algorithm>
+#include <map>
 #include <numeric>
+#include <string>
 
 #include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
+
+// === CHECK 4 VERIFICATION: Op histogram ===
+static std::map<std::string, int> g_op_counts;
+static bool g_op_counts_printed = false;
+// === END CHECK 4 STATIC ===
+
+// === CHECK 5 VERIFICATION: attribute logging toggle ===
+#ifndef LC0_XLA_CHECK5
+#define LC0_XLA_CHECK5 1
+#endif
+
+#if LC0_XLA_CHECK5
+static int g_check5_conv = 0;
+static int g_check5_conv_1x1 = 0;  // Separate counter for 1x1 kernels
+static int g_check5_dot = 0;
+static int g_check5_reduce = 0;
+static int g_check5_gather = 0;
+// Conv caps: regular convs + extra for 1x1 heads (value/policy/etc).
+static constexpr int kCheck5MaxLogsConv = 20;
+static constexpr int kCheck5MaxLogsConv1x1 = 10;
+static constexpr int kCheck5MaxLogsOther = 3;
+#endif
+// === END CHECK 5 TOGGLE ===
 
 HloTensorType::HloTensorType(const pblczero::XlaShapeProto& proto)
     : type_(proto.element_type()), dimensions_(proto.dimensions()) {
@@ -80,6 +105,10 @@ size_t HloTensorType::NumElements() const {
 pblczero::HloInstructionProto* HloBuilder::MakeInstruction(
     std::string_view opcode, const pblczero::XlaShapeProto& shape,
     const std::vector<const pblczero::HloInstructionProto*> operands) {
+  // === CHECK 4 VERIFICATION: count opcodes ===
+  g_op_counts[std::string(opcode)]++;
+  // === END CHECK 4 COUNT ===
+
   auto instr = std::make_unique<pblczero::HloInstructionProto>();
   auto ret = instr.get();
   ret->set_opcode(opcode);
@@ -151,6 +180,84 @@ HloFlow HloBuilder::Convolution(
   auto* flow = MakeInstruction("convolution", shape, {input, filter});
   *flow->mutable_window() = window;
   *flow->mutable_convolution_dimension_numbers() = dn;
+
+#if LC0_XLA_CHECK5
+  // Detect 1x1 kernels (value/policy heads) - always log these even after cap
+  bool is_1x1 = window.dimensions_size() >= 2 &&
+                window.dimensions(0).size() == 1 &&
+                window.dimensions(1).size() == 1;
+  if (g_check5_conv < kCheck5MaxLogsConv ||
+      (is_1x1 && g_check5_conv_1x1 < kCheck5MaxLogsConv1x1)) {
+    if (is_1x1) ++g_check5_conv_1x1;
+    const int idx = ++g_check5_conv;
+    CERR << "\n=== CONVOLUTION[" << idx << "] ===\n";
+    CERR << "  window.size: [";
+    for (int i = 0; i < window.dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << window.dimensions(i).size();
+    }
+    CERR << "]\n";
+    CERR << "  window.stride: [";
+    for (int i = 0; i < window.dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << window.dimensions(i).stride();
+    }
+    CERR << "]\n";
+    CERR << "  window.padding_low: [";
+    for (int i = 0; i < window.dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << window.dimensions(i).padding_low();
+    }
+    CERR << "]\n";
+    CERR << "  window.padding_high: [";
+    for (int i = 0; i < window.dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << window.dimensions(i).padding_high();
+    }
+    CERR << "]\n";
+    CERR << "  window.base_dilation: [";
+    for (int i = 0; i < window.dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << window.dimensions(i).base_dilation();
+    }
+    CERR << "]\n";
+    CERR << "  window.window_dilation: [";
+    for (int i = 0; i < window.dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << window.dimensions(i).window_dilation();
+    }
+    CERR << "]\n";
+    CERR << "  dn.input_batch_dim: " << dn.input_batch_dimension() << "\n";
+    CERR << "  dn.input_feature_dim: " << dn.input_feature_dimension() << "\n";
+    CERR << "  dn.input_spatial_dims: [";
+    for (int i = 0; i < dn.input_spatial_dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << dn.input_spatial_dimensions(i);
+    }
+    CERR << "]\n";
+    CERR << "  dn.kernel_input_feature_dim: " << dn.kernel_input_feature_dimension() << "\n";
+    CERR << "  dn.kernel_output_feature_dim: " << dn.kernel_output_feature_dimension() << "\n";
+    CERR << "  dn.kernel_spatial_dims: [";
+    for (int i = 0; i < dn.kernel_spatial_dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << dn.kernel_spatial_dimensions(i);
+    }
+    CERR << "]\n";
+    CERR << "  dn.output_batch_dim: " << dn.output_batch_dimension() << "\n";
+    CERR << "  dn.output_feature_dim: " << dn.output_feature_dimension() << "\n";
+    CERR << "  dn.output_spatial_dims: [";
+    for (int i = 0; i < dn.output_spatial_dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << dn.output_spatial_dimensions(i);
+    }
+    CERR << "]\n";
+    CERR << "  input_shape: " << HloTensorType(input->shape()).ToString() << "\n";
+    CERR << "  filter_shape: " << HloTensorType(filter->shape()).ToString() << "\n";
+    CERR << "  output_shape: " << HloTensorType(flow->shape()).ToString() << "\n";
+    CERR << "=== END CONVOLUTION ===\n";
+  }
+#endif
+
   return flow;
 }
 
@@ -193,6 +300,25 @@ HloFlow HloBuilder::Reduce(HloFlow input, HloFlow initial,
   *flow->mutable_dimensions() = {reduction_dimensions.begin(),
                                  reduction_dimensions.end()};
   flow->add_called_computation_ids(function.idx());
+
+#if LC0_XLA_CHECK5
+  if (g_check5_reduce < kCheck5MaxLogsOther) {
+    const int idx = ++g_check5_reduce;
+    CERR << "\n=== REDUCE[" << idx << "] ===\n";
+    CERR << "  reduction_dimensions: [";
+    for (size_t i = 0; i < reduction_dimensions.size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << reduction_dimensions[i];
+    }
+    CERR << "]\n";
+    CERR << "  reducer_computation_id: " << function.idx() << "\n";
+    CERR << "  input_shape: " << HloTensorType(input->shape()).ToString() << "\n";
+    CERR << "  initial_shape: " << HloTensorType(initial->shape()).ToString() << "\n";
+    CERR << "  output_shape: " << HloTensorType(flow->shape()).ToString() << "\n";
+    CERR << "=== END REDUCE ===\n";
+  }
+#endif
+
   return flow;
 }
 
@@ -286,6 +412,46 @@ HloFlow HloBuilder::Gather(HloFlow input, HloFlow indices,
       index_vector_dim);
   flow->set_indices_are_sorted(indices_are_sorted);
   flow->set_unique_indices(unique_indicies);
+
+#if LC0_XLA_CHECK5
+  if (g_check5_gather < kCheck5MaxLogsOther) {
+    const int idx = ++g_check5_gather;
+    CERR << "\n=== GATHER[" << idx << "] ===\n";
+    CERR << "  index_vector_dim: " << index_vector_dim << "\n";
+    CERR << "  offset_dims: [";
+    for (size_t i = 0; i < offset_dims.size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << offset_dims[i];
+    }
+    CERR << "]\n";
+    CERR << "  collapsed_slice_dims: [";
+    for (size_t i = 0; i < collapsed_slice_dims.size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << collapsed_slice_dims[i];
+    }
+    CERR << "]\n";
+    CERR << "  start_index_map: [";
+    for (size_t i = 0; i < start_index_map.size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << start_index_map[i];
+    }
+    CERR << "]\n";
+    CERR << "  slice_sizes: [";
+    for (size_t i = 0; i < slice_sizes.size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << slice_sizes[i];
+    }
+    CERR << "]\n";
+    CERR << "  operand_shape: " << HloTensorType(input->shape()).ToString() << "\n";
+    CERR << "  indices_shape: " << HloTensorType(indices->shape()).ToString() << "\n";
+    CERR << "  output_shape: " << HloTensorType(flow->shape()).ToString() << "\n";
+    // Gather flags (for StableHLO completeness)
+    CERR << "  indices_are_sorted: " << (indices_are_sorted ? "true" : "false") << "\n";
+    CERR << "  unique_indices: " << (unique_indicies ? "true" : "false") << "\n";
+    CERR << "=== END GATHER ===\n";
+  }
+#endif
+
   return flow;
 }
 
@@ -342,6 +508,42 @@ HloFlow HloBuilder::Dot(HloFlow lhs, HloFlow rhs,
   }
   auto flow = MakeInstruction("dot", new_shape.ToProto(), {lhs, rhs});
   *flow->mutable_dot_dimension_numbers() = dn;
+
+#if LC0_XLA_CHECK5
+  if (g_check5_dot < kCheck5MaxLogsOther) {
+    const int idx = ++g_check5_dot;
+    CERR << "\n=== DOT[" << idx << "] ===\n";
+    CERR << "  dn.lhs_batch_dims: [";
+    for (int i = 0; i < dn.lhs_batch_dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << dn.lhs_batch_dimensions(i);
+    }
+    CERR << "]\n";
+    CERR << "  dn.rhs_batch_dims: [";
+    for (int i = 0; i < dn.rhs_batch_dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << dn.rhs_batch_dimensions(i);
+    }
+    CERR << "]\n";
+    CERR << "  dn.lhs_contracting_dims: [";
+    for (int i = 0; i < dn.lhs_contracting_dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << dn.lhs_contracting_dimensions(i);
+    }
+    CERR << "]\n";
+    CERR << "  dn.rhs_contracting_dims: [";
+    for (int i = 0; i < dn.rhs_contracting_dimensions_size(); ++i) {
+      if (i) CERR << ", ";
+      CERR << dn.rhs_contracting_dimensions(i);
+    }
+    CERR << "]\n";
+    CERR << "  lhs_shape: " << HloTensorType(lhs->shape()).ToString() << "\n";
+    CERR << "  rhs_shape: " << HloTensorType(rhs->shape()).ToString() << "\n";
+    CERR << "  output_shape: " << HloTensorType(flow->shape()).ToString() << "\n";
+    CERR << "=== END DOT ===\n";
+  }
+#endif
+
   return flow;
 }
 
@@ -564,6 +766,15 @@ HloComputation HloBuilder::AddComputation(std::string_view name,
   {
     const size_t new_id = dependent_computations_.size();
     computation_names_[std::string(name)] = new_id;
+#if LC0_XLA_CHECK5
+    // Check 5 refinement: log reducer computation identity (id -> name)
+    // Filter: only reducer-like computations to avoid log spam.
+    if (name.find("add_") != std::string_view::npos ||
+        name.find("mul_") != std::string_view::npos ||
+        name.find("max_") != std::string_view::npos) {
+      CERR << "  [REDUCER] id=" << new_id << " name=\"" << name << "\"\n";
+    }
+#endif
     dependent_computations_.push_back(ReassignInstructionIds(
         MakeComputation(builder.entry_computation_, name, new_id)));
   }
@@ -598,7 +809,20 @@ pblczero::HloComputationProto HloBuilder::ReassignInstructionIds(
   return computation;
 }
 
+// === CHECK 4 VERIFICATION: Print op histogram ===
+void HloBuilder::PrintOpCounts() {
+  if (g_op_counts_printed) return;
+  g_op_counts_printed = true;
+  CERR << "\n=== OP HISTOGRAM ===\n";
+  for (const auto& kv : g_op_counts) {
+    CERR << "  " << kv.first << ": " << kv.second << "\n";
+  }
+  CERR << "=== END OP HISTOGRAM ===\n";
+}
+// === END CHECK 4 PRINT ===
+
 pblczero::HloModuleProto HloBuilder::BuildModule(std::string_view name) {
+  PrintOpCounts();  // CHECK 4: dump op inventory once
   AssignInstructionNames();
   pblczero::HloModuleProto module;
   for (auto& comp : dependent_computations_) {

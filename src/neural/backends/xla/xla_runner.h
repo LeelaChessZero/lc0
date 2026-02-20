@@ -33,6 +33,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "neural/backends/stablehlo/stablehlo_backend.h"
 #include "neural/backends/xla/pjrt.h"
 #include "neural/xla/xla_tensor.h"
 #include "proto/hlo.pb.h"
@@ -45,9 +46,13 @@ namespace lczero {
 class XlaRunner {
  public:
   // The library_path is the path to the PJRT library, and device indx.
-  XlaRunner(const char* library_path, int device);
+  XlaRunner(const char* library_path, int device,
+            std::string hlo_proto_dump_dir = "");
   // Compiles and adds a module for the given batch size.
   void AddModule(size_t minibatch_size, const pblczero::HloModuleProto& module);
+  // Compiles and adds pre-built StableHLO MLIR bytecode for the given batch
+  // size.
+  void AddModule(size_t minibatch_size, std::vector<uint8_t> mlirbc_bytes);
   // Transfers inputs to the device and execute the executable corresponding to
   // the batch size. Only non-frozen inputs are passed as arguments.
   // Currnetly only single input is supported (just because we don't need more).
@@ -61,10 +66,13 @@ class XlaRunner {
   // the input tensors would be able to fit this size.
   size_t GetMaxBatchSize() const;
   size_t GetPreferredBatchStep() const;
+  const std::vector<PjrtKeyValue>& plugin_attrs() const { return plugin_attrs_; }
+  stablehlo::PluginStableHLOVersionWindow GetStableHLOVersionWindow() const;
 
  private:
   std::unique_ptr<PjrtClient> pjrt_client_;
   std::vector<std::unique_ptr<PjrtDevice>> devices_;
+  std::vector<PjrtKeyValue> plugin_attrs_;
   // Compiled executables per batch size.
   std::vector<std::pair<size_t, std::unique_ptr<PjrtExecutable>>> executables_;
   // Frozen inputs, in no particular order, kept for ownership.
@@ -75,6 +83,7 @@ class XlaRunner {
   std::vector<PjrtDeviceBuffer*> buffers_;
   std::vector<size_t> param_idxs_;
   int device_;
+  std::string hlo_proto_dump_dir_;
 };
 
 }  // namespace lczero
