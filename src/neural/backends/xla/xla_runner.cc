@@ -28,13 +28,23 @@
 #include "neural/backends/xla/xla_runner.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <numeric>
+#include <string_view>
 
 #include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
 namespace {
+
+void WriteBytesToFile(const std::string& path, const std::string& bytes) {
+  std::ofstream out(path, std::ios::binary);
+  if (!out) throw Exception("Cannot open proto dump file for writing: " + path);
+  out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+  if (!out) throw Exception("Cannot write proto dump file: " + path);
+}
 
 pblczero::XlaShapeProto::Type PjrtTypeToXlaType(PjrtType type) {
   switch (type) {
@@ -105,10 +115,32 @@ PjrtType XlaTypeToPjrtType(pblczero::XlaShapeProto::Type type) {
                       pblczero::XlaShapeProto::Type_Name(type));
   }
 }
+
+stablehlo::PluginStableHLOVersionWindow ExtractStableHLOVersionWindow(
+    const std::vector<PjrtKeyValue>& plugin_attrs) {
+  stablehlo::PluginStableHLOVersionWindow window;
+  for (const auto& attr : plugin_attrs) {
+    if (attr.key() == "stablehlo_minimum_version") {
+      window.minimum = stablehlo::ParseStableHLOVersion(attr.value_as_string());
+    } else if (attr.key() == "stablehlo_current_version") {
+      window.current = stablehlo::ParseStableHLOVersion(attr.value_as_string());
+    }
+  }
+  return window;
+}
 }  // namespace
 
-XlaRunner::XlaRunner(const char* library_path, int device)
-    : pjrt_client_(Pjrt(library_path).CreateClient()), device_(device) {
+XlaRunner::XlaRunner(const char* library_path, int device,
+                     std::string hlo_proto_dump_dir)
+    : device_(device),
+      hlo_proto_dump_dir_(std::move(hlo_proto_dump_dir)) {
+  Pjrt pjrt(library_path);
+  plugin_attrs_ = pjrt.GetAttributes();
+  pjrt_client_ = pjrt.CreateClient();
+
+  if (!hlo_proto_dump_dir_.empty()) {
+    std::filesystem::create_directories(hlo_proto_dump_dir_);
+  }
   CERR << "Devices:";
   devices_ = pjrt_client_->GetDevices();
   for (const auto& device : devices_) {
@@ -119,8 +151,13 @@ XlaRunner::XlaRunner(const char* library_path, int device)
   }
 }
 
+stablehlo::PluginStableHLOVersionWindow XlaRunner::GetStableHLOVersionWindow()
+    const {
+  return ExtractStableHLOVersionWindow(plugin_attrs_);
+}
+
 void XlaRunner::AddModule(size_t minibatch_size,
-                          const pblczero::HloModuleProto& module) {
+                          std::vector<uint8_t> mlirbc_bytes) {
   pblczero::CompileOptionsProto options;
   options.mutable_executable_build_options()->set_num_replicas(1);
   options.mutable_executable_build_options()->set_num_partitions(1);
@@ -134,8 +171,19 @@ void XlaRunner::AddModule(size_t minibatch_size,
       ->mutable_device_assignment()
       ->add_computation_devices()
       ->add_replica_device_ids(device_);
-  auto executable = pjrt_client_->CompileHlo(module.OutputAsString(),
-                                             options.OutputAsString());
+
+  if (!hlo_proto_dump_dir_.empty()) {
+    const std::string dump_path = hlo_proto_dump_dir_ + "/batch_" +
+                                  std::to_string(minibatch_size) + ".mlirbc";
+    const std::string bytes(reinterpret_cast<const char*>(mlirbc_bytes.data()),
+                            mlirbc_bytes.size());
+    WriteBytesToFile(dump_path, bytes);
+  }
+
+  std::string_view mlirbc(reinterpret_cast<const char*>(mlirbc_bytes.data()),
+                          mlirbc_bytes.size());
+  auto executable = pjrt_client_->CompileProgram(mlirbc, options.OutputAsString(),
+                                                 "mlir");
   executables_.push_back({minibatch_size, std::move(executable)});
   std::sort(executables_.begin(), executables_.end());
 }

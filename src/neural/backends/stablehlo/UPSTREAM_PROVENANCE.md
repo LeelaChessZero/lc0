@@ -1,0 +1,24 @@
+# UPSTREAM_PROVENANCE
+
+- upstream_source_path: C:\\Users\\iftik\\Downloads\\lc0-m5
+- upstream_writer_headers: include/stablehlo/*.h
+- upstream_writer_sources: src/*.cc
+- upstream_bridge_source: tools/hlo_to_mlirbc.cc
+- upstream_commit_hash: unavailable (source tree has no .git metadata)
+- import_date_utc: 2026-02-12
+- local_deltas:
+  - Added semantic layer:
+    - `semantic/semantic_ir.h`
+    - `semantic/semantic_ir.cc`
+  - Added lowering/backend integration:
+    - `lowering/lowering.h`
+    - `lowering/lowering.cc`
+    - `lowering/op_specs.h`
+    - `lowering/op_specs.cc`
+    - `stablehlo_backend.h`
+    - `stablehlo_backend.cc`
+  - Removed transitional bridge in Phase 6:
+    - `lowering/hlo_proto_bridge.h` (deleted 2026-02-16)
+    - `lowering/hlo_proto_bridge.cc` (deleted 2026-02-16)
+- owner: Goal B Stage-3 integration
+- resync_policy: apply fixes in lc0-m5 source of truth first, then re-import

@@ -64,10 +64,11 @@ struct Onnx2HloResult {
   std::vector<NamedTensor> constants;
   std::vector<NamedTensor> inputs;
   std::vector<NamedTensor> outputs;
-  pblczero::HloModuleProto hlo_module;
+  // StableHLO bytecode output.
+  std::vector<uint8_t> mlirbc_bytes;
 };
 
-// Converts an ONNX model to an HLO module.
+// Converts an ONNX model to StableHLO bytecode.
 Onnx2HloResult ConvertOnnxToHlo(const pblczero::ModelProto& onnx_model,
                                 size_t minibatch_size,
                                 const Onnx2HloOptions& options);

@@ -54,6 +54,10 @@ common_files = []
 files = []
 includes = []
 has_backends = false
+xla_stablehlo_sources = []
+
+# Project-local stablehlo/ include root (must resolve before third_party).
+includes += include_directories('src/neural/backends')
 
 # Third party files.
 includes += include_directories('third_party', is_system: true)
@@ -119,8 +123,9 @@ endif
 files += gen.process('proto/onnx.proto',
   preserve_path_from : meson.current_source_dir())
 
-files += gen.process('proto/hlo.proto',
+hlo_pb = gen.process('proto/hlo.proto',
   preserve_path_from : meson.current_source_dir())
+files += hlo_pb
 
 #############################################################################
 ## Main files
@@ -695,11 +700,43 @@ if get_option('build_backends')
   ## XLA
   ## ~~~~~~~~
   if get_option('xla')
+      xla_stablehlo_sources = [
+        'src/neural/backends/stablehlo/bytecode/types.cc',
+        'src/neural/backends/stablehlo/bytecode/encoding.cc',
+        'src/neural/backends/stablehlo/bytecode/portable_module.cc',
+        'src/neural/backends/stablehlo/bytecode/ir_section.cc',
+        'src/neural/backends/stablehlo/bytecode/dialect_section.cc',
+        'src/neural/backends/stablehlo/bytecode/string_interner.cc',
+        'src/neural/backends/stablehlo/bytecode/type_interner.cc',
+        'src/neural/backends/stablehlo/bytecode/attr_interner.cc',
+        'src/neural/backends/stablehlo/bytecode/attr_type_section.cc',
+        'src/neural/backends/stablehlo/bytecode/numbering.cc',
+        'src/neural/backends/stablehlo/bytecode/writer.cc',
+        # M9 builder contract (present in this branch now).
+        'src/neural/xla/onnx_builder_interface.cc',
+      ]
+
+      # M9 sources are added as they land, without breaking intermediate builds.
+      m9_optional_sources = [
+        'src/neural/xla/hlo_builder_adapter.cc',
+        'src/neural/xla/hlo_builder_adapter_smoke.cc',
+        'src/neural/backends/stablehlo/semantic/semantic_ir.cc',
+        'src/neural/backends/stablehlo/lowering/op_specs.cc',
+        'src/neural/backends/stablehlo/lowering/lowering.cc',
+        'src/neural/backends/stablehlo/stablehlo_backend.cc',
+      ]
+      foreach src : m9_optional_sources
+        if fs.is_file(src)
+          xla_stablehlo_sources += [src]
+        endif
+      endforeach
+
       files += [
         'src/neural/backends/xla/network_xla.cc',
         'src/neural/backends/xla/pjrt.cc',
         'src/neural/backends/xla/xla_runner.cc',
       ]
+      files += xla_stablehlo_sources
       deps += cc.find_library('dl', required: false)
       has_backends = true
   endif
@@ -906,6 +943,123 @@ if get_option('default_backend') != ''
 endif
 configure_file(output : 'default_backend.h',
                configuration : default_backend_h)
+
+## ~~~~~~~~~~~~~~~~
+## PJRT Smoketest
+## ~~~~~~~~~~~~~~~~
+if get_option('pjrt_smoketest')
+  if not get_option('xla')
+    error('pjrt_smoketest requires -Dxla=true')
+  endif
+
+  pjrt_smoke_sources = [
+    'src/tools/pjrt_mlir_smoketest.cc',
+    'src/neural/backends/xla/pjrt.cc',
+    'src/neural/xla/hlo_builder.cc',
+    'src/utils/protomessage.cc',
+    'src/utils/logging.cc',
+    hlo_pb,  # forces hlo.pb.h generation
+  ] + xla_stablehlo_sources
+
+  executable('pjrt_mlir_smoketest',
+    pjrt_smoke_sources,
+    include_directories: includes,
+    dependencies: [cc.find_library('dl', required: false)],
+    install: false,
+  )
+  message('PJRT MLIR smoketest tool will be built')
+endif
+
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+## HloBuilder Adapter Smoke Tool
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+if get_option('xla')
+  adapter_smoke_sources = [
+    'src/tools/hlo_builder_adapter_smoke.cc',
+    'src/neural/xla/hlo_builder.cc',
+    'src/neural/xla/onnx_builder_interface.cc',
+    'src/neural/xla/hlo_builder_adapter.cc',
+    'src/utils/protomessage.cc',
+    'src/utils/logging.cc',
+    hlo_pb,
+  ]
+
+  executable('hlo_builder_adapter_smoke',
+    adapter_smoke_sources,
+    include_directories: includes,
+    install: false,
+  )
+
+  semantic_smoke_sources = [
+    'src/tools/semantic_builder_smoke.cc',
+    'src/neural/backends/stablehlo/semantic/semantic_ir.cc',
+    'src/neural/xla/onnx_builder_interface.cc',
+    'src/utils/protomessage.cc',
+    'src/utils/logging.cc',
+    hlo_pb,
+  ]
+
+  executable('semantic_builder_smoke',
+    semantic_smoke_sources,
+    include_directories: includes,
+    install: false,
+  )
+
+  lowering_type_smoke_sources = [
+    'src/tools/lowering_type_smoke.cc',
+    'src/neural/backends/stablehlo/stablehlo_backend.cc',
+    'src/neural/backends/stablehlo/lowering/lowering.cc',
+    'src/neural/backends/stablehlo/lowering/op_specs.cc',
+    'src/neural/backends/stablehlo/bytecode/types.cc',
+    'src/neural/backends/stablehlo/bytecode/encoding.cc',
+    'src/neural/backends/stablehlo/bytecode/portable_module.cc',
+    'src/neural/backends/stablehlo/bytecode/ir_section.cc',
+    'src/neural/backends/stablehlo/bytecode/dialect_section.cc',
+    'src/neural/backends/stablehlo/bytecode/string_interner.cc',
+    'src/neural/backends/stablehlo/bytecode/type_interner.cc',
+    'src/neural/backends/stablehlo/bytecode/attr_interner.cc',
+    'src/neural/backends/stablehlo/bytecode/attr_type_section.cc',
+    'src/neural/backends/stablehlo/bytecode/numbering.cc',
+    'src/neural/backends/stablehlo/bytecode/writer.cc',
+    'src/utils/logging.cc',
+    hlo_pb,
+  ]
+
+  executable('lowering_type_smoke',
+    lowering_type_smoke_sources,
+    include_directories: includes,
+    install: false,
+  )
+
+  semantic_lowering_e2e_sources = [
+    'src/tools/semantic_lowering_e2e_smoke.cc',
+    'src/neural/backends/stablehlo/stablehlo_backend.cc',
+    'src/neural/backends/stablehlo/semantic/semantic_ir.cc',
+    'src/neural/backends/stablehlo/lowering/lowering.cc',
+    'src/neural/backends/stablehlo/lowering/op_specs.cc',
+    'src/neural/xla/onnx_builder_interface.cc',
+    'src/neural/backends/stablehlo/bytecode/types.cc',
+    'src/neural/backends/stablehlo/bytecode/encoding.cc',
+    'src/neural/backends/stablehlo/bytecode/portable_module.cc',
+    'src/neural/backends/stablehlo/bytecode/ir_section.cc',
+    'src/neural/backends/stablehlo/bytecode/dialect_section.cc',
+    'src/neural/backends/stablehlo/bytecode/string_interner.cc',
+    'src/neural/backends/stablehlo/bytecode/type_interner.cc',
+    'src/neural/backends/stablehlo/bytecode/attr_interner.cc',
+    'src/neural/backends/stablehlo/bytecode/attr_type_section.cc',
+    'src/neural/backends/stablehlo/bytecode/numbering.cc',
+    'src/neural/backends/stablehlo/bytecode/writer.cc',
+    'src/utils/protomessage.cc',
+    'src/utils/logging.cc',
+    hlo_pb,
+  ]
+
+  executable('semantic_lowering_e2e_smoke',
+    semantic_lowering_e2e_sources,
+    include_directories: includes,
+    install: false,
+  )
+endif
 
 if get_option('lc0')
   files += common_files

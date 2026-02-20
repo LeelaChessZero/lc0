@@ -55,7 +55,7 @@ class XlaComputation : public NetworkComputation {
   std::vector<std::unique_ptr<XlaMutableTensor>> outputs_;
 };
 
-// Indices of various heads in the HLO output.
+// Indices of various heads in the compiled module output.
 struct XlaNetworkOptions {
   struct IOInfo {
     size_t idx;
@@ -176,8 +176,8 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
       options_(options),
       capabilities_{format.input(), format.output(), format.moves_left()} {}
 
-// Converts ONNX model to HLO (for various batch sizes) and adds them to the
-// XlaRunner.
+// Converts ONNX model to StableHLO modules (for various batch sizes) and adds
+// them to the XlaRunner.
 XlaNetworkOptions FillXlaRunnerFromOnnx(
     const pblczero::OnnxModel& onnx_model, XlaRunner* runner,
     size_t max_batch_size, size_t steps,
@@ -219,15 +219,22 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(
     onnx2hlo_options.outputs_override.emplace_back(onnx_model.output_mlh());
   }
   onnx2hlo_options.io_type = io_type;
+  const auto target_version = stablehlo::lowering::ResolveTargetVersion();
+  const auto plugin_window = runner->GetStableHLOVersionWindow();
+  const auto version_check =
+      stablehlo::ValidateStableHLOVersion(plugin_window, target_version);
+  if (version_check.status != stablehlo::VersionCheckResult::Status::kOk) {
+    throw Exception(version_check.error_message);
+  }
 
   for (size_t i = 0; i < steps; ++i) {
     size_t batch_size = max_batch_size * (i + 1) / steps;
-    CERR << "Building HLO for batch size " << batch_size << "...";
+    CERR << "Building module for batch size " << batch_size << "...";
     auto conversion = ConvertOnnxToHlo(onnx, batch_size, onnx2hlo_options);
     add_tensors(conversion.constants, constant_to_parameter_idx);
     add_tensors(conversion.inputs, input_to_parameter_idx);
     add_tensors(conversion.outputs, output_to_parameter_idx);
-    runner->AddModule(batch_size, conversion.hlo_module);
+    runner->AddModule(batch_size, std::move(conversion.mlirbc_bytes));
   }
 
   std::vector<std::unique_ptr<XlaTensor>> constants;
@@ -272,7 +279,7 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(
 }
 
 // Makes an XLA network. First converts the weights to ONNX, and then calls
-// FillXlaRunnerFromOnnx to convert them further to HLO and them compile them.
+// FillXlaRunnerFromOnnx to convert and compile StableHLO modules.
 std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict& opts) {
   if (!w) throw Exception("The XLA backend requires a network file.");
@@ -280,13 +287,21 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   // Note: if the plugin_path does NOT contain a slash, it's looked up in the
   // LD_LIBRARY_PATH (and a few other system defined places). If it does
   // contain a slash, it's looked up at the exact relative or absolute path.
+  std::string hlo_proto_dump_dir =
+      opts.GetOrDefault<std::string>("hlo_proto_dump_dir", "");
   auto runner = std::make_unique<XlaRunner>(
       opts.GetOrDefault<std::string>("plugin_path",
                                      "./pjrt_c_api_gpu_plugin.so")
           .c_str(),
-      device);
+      device, hlo_proto_dump_dir);
   int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
   int steps = opts.GetOrDefault<int>("steps", 16);
+  bool use_stablehlo = opts.GetOrDefault<bool>("stablehlo", true);
+  if (!use_stablehlo) {
+    throw Exception(
+        "Legacy HLO compile path is no longer supported; StableHLO is "
+        "required.");
+  }
 
   XlaNetworkOptions options;
   std::optional<pblczero::XlaShapeProto::Type> io_type;
