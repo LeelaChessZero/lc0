@@ -166,11 +166,7 @@ void ConvertLeelaToOnnx() {
   }
   if (dict.OwnExists<std::string>(kHloTextOutputFilenameId) ||
       dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
-    throw Exception(
-        "HLO text/proto output has been removed in this build.\n"
-        "This tool no longer supports exporting HLO artifacts.\n"
-        "Use tag m9_1_closure_2026-02-17 to reproduce the old HLO output "
-        "behavior.");
+    throw Exception("HLO text/proto output is no longer supported.");
   }
   ShowNetworkOnnxInfo(weights_file, false);
   COUT << "Done.";

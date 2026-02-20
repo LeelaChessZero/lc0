@@ -299,8 +299,8 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
   bool use_stablehlo = opts.GetOrDefault<bool>("stablehlo", true);
   if (!use_stablehlo) {
     throw Exception(
-        "Legacy HLO compile path removed in M10; StableHLO is required.\n"
-        "Use tag m9_1_closure_2026-02-17 to reproduce old behavior.");
+        "Legacy HLO compile path is no longer supported; StableHLO is "
+        "required.");
   }
 
   XlaNetworkOptions options;
