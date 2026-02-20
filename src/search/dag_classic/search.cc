@@ -1524,6 +1524,7 @@ void SearchWorker::GatherMinibatch() {
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx)
     REQUIRES(search_->nodes_mutex_) {
+  LCTRACE_FUNCTION_SCOPE;
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
@@ -2250,6 +2251,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   if (node_to_process.IsCollision()) {
     return;
   }
+  LCTRACE_FUNCTION_SCOPE;
 
   auto path = node_to_process.path;
 
