@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "neural/xla/onnx_builder_interface.h"
+#include "neural/xla/onnx_builder_proto_utils.h"
 #include "proto/hlo.pb.h"
 #include "utils/exception.h"
 

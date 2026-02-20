@@ -64,10 +64,12 @@ SemanticModule BuildSmokeModule() {
   SemanticModule module;
   SemanticFunction main_fn;
   main_fn.name = "main";
+  // Keep convolution asymmetric (I != O) to guard against kernel input/output
+  // feature-dimension mapping regressions.
   main_fn.param_types = {
-      TensorType{ElementType::kF32, {1, 8, 8, 3}},
-      TensorType{ElementType::kF32, {3, 3, 3, 4}},
-      TensorType{ElementType::kF32, {1, 8, 8, 4}},
+      TensorType{ElementType::kF32, {1, 8, 8, 112}},
+      TensorType{ElementType::kF32, {3, 3, 112, 256}},
+      TensorType{ElementType::kF32, {1, 8, 8, 256}},
       TensorType{ElementType::kF32, {}},
   };
 
@@ -89,14 +91,14 @@ SemanticModule BuildSmokeModule() {
   SemanticOp conv_op;
   conv_op.kind = OpKind::kConvolution;
   conv_op.operands = {0, 1};
-  conv_op.result_types = {TensorType{ElementType::kF32, {1, 8, 8, 4}}};
+  conv_op.result_types = {TensorType{ElementType::kF32, {1, 8, 8, 256}}};
   conv_op.attrs = conv;
   main_fn.ops.push_back(std::move(conv_op));
 
   SemanticOp add_op;
   add_op.kind = OpKind::kAdd;
   add_op.operands = {4, 2};
-  add_op.result_types = {TensorType{ElementType::kF32, {1, 8, 8, 4}}};
+  add_op.result_types = {TensorType{ElementType::kF32, {1, 8, 8, 256}}};
   main_fn.ops.push_back(std::move(add_op));
 
   ReduceParams reduce;
@@ -106,7 +108,7 @@ SemanticModule BuildSmokeModule() {
   SemanticOp reduce_op;
   reduce_op.kind = OpKind::kReduce;
   reduce_op.operands = {5, 3};
-  reduce_op.result_types = {TensorType{ElementType::kF32, {1, 4}}};
+  reduce_op.result_types = {TensorType{ElementType::kF32, {1, 256}}};
   reduce_op.attrs = reduce;
   main_fn.ops.push_back(std::move(reduce_op));
 

@@ -222,8 +222,6 @@ class PjrtClient : protected PjrtCommon {
  public:
   PjrtClient(const PJRT_Api* api, PJRT_Client* client);
   ~PjrtClient();
-  std::unique_ptr<PjrtExecutable> CompileHlo(std::string_view hlo,
-                                             std::string_view config);
   // Generic compile entrypoint: lets callers compile HLO, MLIR text, or MLIR
   // bytecode through the exact same codepath, differing only by format.
   std::unique_ptr<PjrtExecutable> CompileProgram(std::string_view code,

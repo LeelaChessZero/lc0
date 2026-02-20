@@ -37,10 +37,9 @@
 #include "neural/backends/stablehlo/stablehlo_backend.h"
 #include "neural/backends/stablehlo/semantic/semantic_ir.h"
 #include "neural/xla/hlo_builder.h"
-#include "neural/xla/hlo_builder_adapter.h"
 #include "neural/xla/onnx_builder_interface.h"
+#include "neural/xla/onnx_builder_proto_utils.h"
 #include "neural/xla/tensor_literal_utils.h"
-#include "neural/xla/print_hlo.h"
 #include "utils/bf16_utils.h"
 #include "utils/exception.h"
 #include "utils/fp16_utils.h"
@@ -511,16 +510,10 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["Unsqueeze"] = &Onnx2HloConverter::OpUnsqueeze;
     onnx_op_to_builder_["Where"] = &Onnx2HloConverter::OpWhere;
 
-    if (options_.use_stablehlo) {
-      auto semantic_builder =
-          std::make_unique<stablehlo::semantic::SemanticBuilder>();
-      semantic_builder_ = semantic_builder.get();
-      builder_ = std::move(semantic_builder);
-    } else {
-      auto adapter = std::make_unique<HloBuilderAdapter>();
-      hlo_builder_adapter_ = adapter.get();
-      builder_ = std::move(adapter);
-    }
+    auto semantic_builder =
+        std::make_unique<stablehlo::semantic::SemanticBuilder>();
+    semantic_builder_ = semantic_builder.get();
+    builder_ = std::move(semantic_builder);
   }
 
   Onnx2HloResult Convert(const pblczero::ModelProto& onnx_model,
@@ -564,14 +557,9 @@ class Onnx2HloConverter {
       if (!options_.debugging_allow_partial_result) throw;
       CERR << "Ignoring error in ONNX to HLO conversion: " << e.what();
     }
-    if (options_.use_stablehlo) {
-      semantic_builder_->Return(output_value_ids);
-      auto module = semantic_builder_->BuildModule();
-      result.mlirbc_bytes = stablehlo::SemanticModuleToMlirbc(module);
-    } else {
-      builder_->Tuple(output_value_ids);
-      result.hlo_module = hlo_builder_adapter_->BuildModule("onnx_model");
-    }
+    semantic_builder_->Return(output_value_ids);
+    auto module = semantic_builder_->BuildModule();
+    result.mlirbc_bytes = stablehlo::SemanticModuleToMlirbc(module);
     return result;
   }
 
@@ -624,7 +612,29 @@ class Onnx2HloConverter {
   ValueId EmitConvolution(ValueId input, ValueId filter,
                           const pblczero::XlaWindow& window,
                           const pblczero::XlaConvolutionDimensionNumbers& dn) {
-    return builder_->Convolution(input, filter, ConvolutionParams{window, dn});
+    ConvolutionParams params;
+    params.input_batch_dim = dn.input_batch_dimension();
+    params.input_feature_dim = dn.input_feature_dimension();
+    for (const int64_t dim : dn.input_spatial_dimensions()) {
+      params.input_spatial_dims.push_back(dim);
+    }
+    params.kernel_input_feature_dim = dn.kernel_input_feature_dimension();
+    params.kernel_output_feature_dim = dn.kernel_output_feature_dimension();
+    for (const int64_t dim : dn.kernel_spatial_dimensions()) {
+      params.kernel_spatial_dims.push_back(dim);
+    }
+    params.output_batch_dim = dn.output_batch_dimension();
+    params.output_feature_dim = dn.output_feature_dimension();
+    for (const int64_t dim : dn.output_spatial_dimensions()) {
+      params.output_spatial_dims.push_back(dim);
+    }
+    for (const auto& dim : window.dimensions()) {
+      params.window_strides.push_back(dim.stride());
+      params.padding.emplace_back(dim.padding_low(), dim.padding_high());
+      params.lhs_dilation.push_back(dim.base_dilation());
+      params.rhs_dilation.push_back(dim.window_dilation());
+    }
+    return builder_->Convolution(input, filter, params);
   }
 
   ValueId EmitBroadcast(ValueId input, const HloTensorType& target_shape,
@@ -657,12 +667,31 @@ class Onnx2HloConverter {
   ValueId EmitSlice(
       ValueId input,
       const std::vector<pblczero::HloInstructionProto::SliceDimensions>& dims) {
-    return builder_->Slice(input, SliceParams{dims});
+    SliceParams params;
+    for (const auto& dim : dims) {
+      params.start_indices.push_back(dim.start());
+      params.limit_indices.push_back(dim.limit());
+      params.strides.push_back(dim.stride());
+    }
+    return builder_->Slice(input, params);
   }
 
   ValueId EmitDot(ValueId lhs, ValueId rhs,
                   const pblczero::XlaDotDimensionNumbers& dn) {
-    return builder_->Dot(lhs, rhs, DotParams{dn});
+    DotParams params;
+    for (const int64_t dim : dn.lhs_batch_dimensions()) {
+      params.lhs_batch_dims.push_back(dim);
+    }
+    for (const int64_t dim : dn.rhs_batch_dimensions()) {
+      params.rhs_batch_dims.push_back(dim);
+    }
+    for (const int64_t dim : dn.lhs_contracting_dimensions()) {
+      params.lhs_contracting_dims.push_back(dim);
+    }
+    for (const int64_t dim : dn.rhs_contracting_dimensions()) {
+      params.rhs_contracting_dims.push_back(dim);
+    }
+    return builder_->Dot(lhs, rhs, params);
   }
 
   ValueId EmitCompare(ValueId lhs, ValueId rhs, std::string_view direction) {
@@ -742,7 +771,7 @@ class Onnx2HloConverter {
     if (auto iter = onnx_name_to_value_id_.find(name);
         iter != onnx_name_to_value_id_.end()) {
       if (const auto literal = builder_->TryGetLiteral(iter->second)) {
-        return *literal;
+        return ToLiteralProto(*literal);
       }
     }
     throw Exception("Constant input " + std::string(node.input(idx)) +
@@ -764,7 +793,7 @@ class Onnx2HloConverter {
       if (initializers_.contains(name)) continue;
       if (auto iter = onnx_name_to_value_id_.find(name);
           iter != onnx_name_to_value_id_.end() &&
-          builder_->TryGetLiteral(iter->second) != nullptr) {
+          builder_->TryGetLiteral(iter->second).has_value()) {
         continue;
       }
       return false;
@@ -1867,7 +1896,6 @@ class Onnx2HloConverter {
   std::unordered_map<std::string, const pblczero::TensorProto*> initializers_;
   std::unique_ptr<IBuilder> builder_;
   stablehlo::semantic::SemanticBuilder* semantic_builder_ = nullptr;
-  HloBuilderAdapter* hlo_builder_adapter_ = nullptr;
   size_t batch_size_ = 0;
   size_t opset_version_ = 0;
   Onnx2HloOptions options_;

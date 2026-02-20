@@ -157,34 +157,6 @@ stablehlo::PluginStableHLOVersionWindow XlaRunner::GetStableHLOVersionWindow()
 }
 
 void XlaRunner::AddModule(size_t minibatch_size,
-                          const pblczero::HloModuleProto& module) {
-  pblczero::CompileOptionsProto options;
-  options.mutable_executable_build_options()->set_num_replicas(1);
-  options.mutable_executable_build_options()->set_num_partitions(1);
-  options.mutable_executable_build_options()
-      ->mutable_device_assignment()
-      ->set_replica_count(1);
-  options.mutable_executable_build_options()
-      ->mutable_device_assignment()
-      ->set_computation_count(1);
-  options.mutable_executable_build_options()
-      ->mutable_device_assignment()
-      ->add_computation_devices()
-      ->add_replica_device_ids(device_);
-  std::string module_bytes = module.OutputAsString();
-  if (!hlo_proto_dump_dir_.empty()) {
-    const std::string dump_path = hlo_proto_dump_dir_ + "/batch_" +
-                                  std::to_string(minibatch_size) + ".hlo.pb";
-    WriteBytesToFile(dump_path, module_bytes);
-  }
-
-  auto executable =
-      pjrt_client_->CompileHlo(module_bytes, options.OutputAsString());
-  executables_.push_back({minibatch_size, std::move(executable)});
-  std::sort(executables_.begin(), executables_.end());
-}
-
-void XlaRunner::AddModule(size_t minibatch_size,
                           std::vector<uint8_t> mlirbc_bytes) {
   pblczero::CompileOptionsProto options;
   options.mutable_executable_build_options()->set_num_replicas(1);

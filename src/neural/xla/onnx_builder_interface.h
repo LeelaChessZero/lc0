@@ -35,8 +35,6 @@
 #include <utility>
 #include <vector>
 
-#include "proto/hlo.pb.h"
-
 namespace lczero {
 
 // Shared SSA-style identifier used by ONNX conversion handlers.
@@ -106,16 +104,34 @@ enum class BuilderOpKind : uint8_t {
 };
 
 struct ConvolutionParams {
-  pblczero::XlaWindow window;
-  pblczero::XlaConvolutionDimensionNumbers dimension_numbers;
+  int64_t input_batch_dim = 0;
+  int64_t input_feature_dim = 0;
+  std::vector<int64_t> input_spatial_dims;
+  int64_t kernel_input_feature_dim = 0;
+  int64_t kernel_output_feature_dim = 0;
+  std::vector<int64_t> kernel_spatial_dims;
+  int64_t output_batch_dim = 0;
+  int64_t output_feature_dim = 0;
+  std::vector<int64_t> output_spatial_dims;
+  std::vector<int64_t> window_strides;
+  std::vector<std::pair<int64_t, int64_t>> padding;
+  std::vector<int64_t> lhs_dilation;
+  std::vector<int64_t> rhs_dilation;
+  int64_t feature_group_count = 1;
+  int64_t batch_group_count = 1;
 };
 
 struct DotParams {
-  pblczero::XlaDotDimensionNumbers dimension_numbers;
+  std::vector<int64_t> lhs_batch_dims;
+  std::vector<int64_t> rhs_batch_dims;
+  std::vector<int64_t> lhs_contracting_dims;
+  std::vector<int64_t> rhs_contracting_dims;
 };
 
 struct SliceParams {
-  std::vector<pblczero::HloInstructionProto::SliceDimensions> dimensions;
+  std::vector<int64_t> start_indices;
+  std::vector<int64_t> limit_indices;
+  std::vector<int64_t> strides;
 };
 
 struct GatherParams {
@@ -188,8 +204,7 @@ class IBuilder {
 
   // Constant inspection hooks used by constant-folding paths.
   virtual BuilderOpKind GetOpKind(ValueId value) const = 0;
-  virtual const pblczero::XlaLiteralProto* TryGetLiteral(ValueId value) const =
-      0;
+  virtual std::optional<TensorLiteral> TryGetLiteral(ValueId value) const = 0;
 
   // Metadata/context hooks equivalent to HloContext.
   // Contract: PopMetadataScope is a no-op when scope depth <= 1.
@@ -216,12 +231,5 @@ class BuilderContext {
  private:
   IBuilder* builder_;
 };
-
-TensorType::ElementType ElementTypeFromProto(
-    pblczero::XlaShapeProto::Type element_type);
-pblczero::XlaShapeProto::Type ElementTypeToProto(
-    TensorType::ElementType element_type);
-TensorType TensorTypeFromProto(const pblczero::XlaShapeProto& shape);
-pblczero::XlaShapeProto TensorTypeToProto(const TensorType& type);
 
 }  // namespace lczero

@@ -44,8 +44,8 @@ int main() {
   const lczero::ValueId dot_lhs = iface->Parameter(mat_lhs);
   const lczero::ValueId dot_rhs = iface->Parameter(mat_rhs);
   lczero::DotParams dot_params;
-  dot_params.dimension_numbers.add_lhs_contracting_dimensions(1);
-  dot_params.dimension_numbers.add_rhs_contracting_dimensions(0);
+  dot_params.lhs_contracting_dims = {1};
+  dot_params.rhs_contracting_dims = {0};
   const lczero::ValueId dot = iface->Dot(dot_lhs, dot_rhs, dot_params);
   const auto dot_type = iface->GetType(dot);
   if (dot_type.dimensions != std::vector<int64_t>{2, 4}) return 5;
@@ -85,6 +85,18 @@ int main() {
     // expected
   }
 
+  // Negative test: SliceParams vectors must have matching lengths.
+  try {
+    lczero::SliceParams bad_slice;
+    bad_slice.start_indices = {0, 0};
+    bad_slice.limit_indices = {1};
+    bad_slice.strides = {1, 1};
+    (void)iface->Slice(gather_input, bad_slice);
+    return 24;  // should not reach here
+  } catch (const lczero::Exception&) {
+    // expected
+  }
+
   // Negative test: invalid ValueId must throw.
   try {
     (void)iface->Add(9999, 0);
@@ -101,6 +113,17 @@ int main() {
   if (entry.name != "main") return 2;
   if (entry.param_types.size() != 6) return 3;
   if (entry.ops.size() != 4) return 4;  // add + dot + gather + return
+
+  // Negative test: oversized literal should not be returned by TryGetLiteral.
+  {
+    lczero::stablehlo::semantic::SemanticBuilder literal_builder;
+    lczero::IBuilder* literal_iface = &literal_builder;
+    lczero::TensorLiteral oversized;
+    oversized.type = {lczero::TensorType::ElementType::kF32, {2048}};
+    oversized.bytes.resize(2048 * sizeof(float), 0);
+    const auto id = literal_iface->Constant(oversized);
+    if (literal_iface->TryGetLiteral(id).has_value()) return 25;
+  }
 
   // Tuple type test: tuple GetType should fail-fast once PR11.3 is enabled.
   {

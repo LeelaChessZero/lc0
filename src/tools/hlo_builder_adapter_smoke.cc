@@ -35,12 +35,11 @@
 namespace {
 
 template <typename T>
-std::vector<uint8_t> PackBytes(const std::vector<T>& values) {
+std::vector<uint8_t> BuildBytes(const std::vector<T>& values) {
   std::vector<uint8_t> bytes;
   bytes.reserve(values.size() * sizeof(T));
   for (const T value : values) {
-    const auto* begin = reinterpret_cast<const uint8_t*>(&value);
-    bytes.insert(bytes.end(), begin, begin + sizeof(T));
+    lczero::AppendValueBytes(value, &bytes);
   }
   return bytes;
 }
@@ -57,11 +56,15 @@ void ExpectRoundTrip(const lczero::TensorLiteral& original) {
 
 void RunLiteralRoundTripSmoke() {
   ExpectRoundTrip({{lczero::TensorType::ElementType::kF32, {}},
-                   PackBytes<float>({1.5f})});
+                   BuildBytes<float>({1.5f})});
   ExpectRoundTrip({{lczero::TensorType::ElementType::kS32, {2}},
-                   PackBytes<int32_t>({7, -3})});
+                   BuildBytes<int32_t>({7, -3})});
   ExpectRoundTrip({{lczero::TensorType::ElementType::kS64, {2}},
-                   PackBytes<int64_t>({42, -9})});
+                   BuildBytes<int64_t>({42, -9})});
+  ExpectRoundTrip({{lczero::TensorType::ElementType::kF16, {2}},
+                   BuildBytes<uint16_t>({0x3c00, 0xc000})});
+  ExpectRoundTrip({{lczero::TensorType::ElementType::kBF16, {2}},
+                   BuildBytes<uint16_t>({0x3f80, 0xc000})});
   ExpectRoundTrip({{lczero::TensorType::ElementType::kPred, {3}},
                    std::vector<uint8_t>{1, 0, 1}});
 }

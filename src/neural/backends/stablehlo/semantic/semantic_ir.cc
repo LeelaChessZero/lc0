@@ -29,12 +29,13 @@
 
 #include <algorithm>
 
-#include "neural/xla/tensor_literal_utils.h"
 #include "utils/exception.h"
 
 namespace lczero::stablehlo::semantic {
 
 namespace {
+
+constexpr size_t kMaxFoldableLiteralBytes = 4096;
 
 std::string FormatPermutation(const std::vector<int64_t>& permutation) {
   std::string result = "[";
@@ -187,7 +188,7 @@ TensorType SemanticBuilder::ToSemanticType(const ::lczero::TensorType& type) con
   const ::lczero::ValueId id =
       Emit(OpKind::kConstant, {}, {result_type}, literal.bytes);
   value_kinds_[id] = ::lczero::BuilderOpKind::kConstant;
-  value_literals_[id] = ::lczero::ToLiteralProto(literal);
+  value_literals_[id] = literal;
   return id;
 }
 
@@ -208,55 +209,52 @@ TensorType SemanticBuilder::ToSemanticType(const ::lczero::TensorType& type) con
   EnsureValueExists(filter);
   TensorType result_type = value_types_[input];
   const TensorType& filter_type = value_types_[filter];
-  const auto& dn = params.dimension_numbers;
+  const auto& conv = params;
   if (result_type.dimensions.size() == filter_type.dimensions.size() &&
       !result_type.dimensions.empty()) {
-    result_type.dimensions[dn.output_batch_dimension()] =
-        value_types_[input].dimensions[dn.input_batch_dimension()];
-    result_type.dimensions[dn.output_feature_dimension()] =
-        filter_type.dimensions[dn.kernel_output_feature_dimension()];
-    for (int i = 0; i < dn.input_spatial_dimensions_size(); ++i) {
+    result_type.dimensions[conv.output_batch_dim] =
+        value_types_[input].dimensions[conv.input_batch_dim];
+    result_type.dimensions[conv.output_feature_dim] =
+        filter_type.dimensions[conv.kernel_output_feature_dim];
+    for (size_t i = 0; i < conv.input_spatial_dims.size(); ++i) {
       int64_t stride = 1;
       int64_t pad_low = 0;
       int64_t pad_high = 0;
       int64_t lhs_dilation = 1;
       int64_t rhs_dilation = 1;
-      if (i < params.window.dimensions_size()) {
-        const auto& window_dim = params.window.dimensions(i);
-        stride = window_dim.stride();
-        pad_low = window_dim.padding_low();
-        pad_high = window_dim.padding_high();
-        lhs_dilation = window_dim.base_dilation();
-        rhs_dilation = window_dim.window_dilation();
+      if (i < conv.window_strides.size()) stride = conv.window_strides[i];
+      if (i < conv.padding.size()) {
+        pad_low = conv.padding[i].first;
+        pad_high = conv.padding[i].second;
       }
+      if (i < conv.lhs_dilation.size()) lhs_dilation = conv.lhs_dilation[i];
+      if (i < conv.rhs_dilation.size()) rhs_dilation = conv.rhs_dilation[i];
       const int64_t input_dim =
-          value_types_[input].dimensions[dn.input_spatial_dimensions(i)];
+          value_types_[input].dimensions[conv.input_spatial_dims[i]];
       const int64_t kernel_dim =
-          filter_type.dimensions[dn.kernel_spatial_dimensions(i)];
-      result_type.dimensions[dn.output_spatial_dimensions(i)] =
+          filter_type.dimensions[conv.kernel_spatial_dims[i]];
+      result_type.dimensions[conv.output_spatial_dims[i]] =
           ComputeConvOutputDim(input_dim, kernel_dim, stride, pad_low, pad_high,
                                lhs_dilation, rhs_dilation);
     }
   }
 
   ConvParams conv_params;
-  conv_params.input_batch_dim = dn.input_batch_dimension();
-  conv_params.input_feature_dim = dn.input_feature_dimension();
-  for (int i = 0; i < dn.input_spatial_dimensions_size(); ++i) {
-    conv_params.input_spatial_dims.push_back(dn.input_spatial_dimensions(i));
-    conv_params.kernel_spatial_dims.push_back(dn.kernel_spatial_dimensions(i));
-    conv_params.output_spatial_dims.push_back(dn.output_spatial_dimensions(i));
-  }
-  conv_params.kernel_input_feature_dim = dn.kernel_input_feature_dimension();
-  conv_params.kernel_output_feature_dim = dn.kernel_output_feature_dimension();
-  conv_params.output_batch_dim = dn.output_batch_dimension();
-  conv_params.output_feature_dim = dn.output_feature_dimension();
-  for (const auto& dim : params.window.dimensions()) {
-    conv_params.window_strides.push_back(dim.stride());
-    conv_params.padding.emplace_back(dim.padding_low(), dim.padding_high());
-    conv_params.lhs_dilation.push_back(dim.base_dilation());
-    conv_params.rhs_dilation.push_back(dim.window_dilation());
-  }
+  conv_params.input_batch_dim = conv.input_batch_dim;
+  conv_params.input_feature_dim = conv.input_feature_dim;
+  conv_params.input_spatial_dims = conv.input_spatial_dims;
+  conv_params.kernel_input_feature_dim = conv.kernel_input_feature_dim;
+  conv_params.kernel_output_feature_dim = conv.kernel_output_feature_dim;
+  conv_params.kernel_spatial_dims = conv.kernel_spatial_dims;
+  conv_params.output_batch_dim = conv.output_batch_dim;
+  conv_params.output_feature_dim = conv.output_feature_dim;
+  conv_params.output_spatial_dims = conv.output_spatial_dims;
+  conv_params.window_strides = conv.window_strides;
+  conv_params.padding = conv.padding;
+  conv_params.lhs_dilation = conv.lhs_dilation;
+  conv_params.rhs_dilation = conv.rhs_dilation;
+  conv_params.feature_group_count = conv.feature_group_count;
+  conv_params.batch_group_count = conv.batch_group_count;
 
   const ::lczero::ValueId id = Emit(OpKind::kConvolution, {input, filter},
                                     {result_type}, conv_params);
@@ -326,12 +324,10 @@ TensorType SemanticBuilder::ToSemanticType(const ::lczero::TensorType& type) con
   EnsureValueExists(lhs);
   EnsureValueExists(rhs);
   DotParams dot_params;
-  dot_params.lhs_batch_dims = params.dimension_numbers.lhs_batch_dimensions();
-  dot_params.rhs_batch_dims = params.dimension_numbers.rhs_batch_dimensions();
-  dot_params.lhs_contracting_dims =
-      params.dimension_numbers.lhs_contracting_dimensions();
-  dot_params.rhs_contracting_dims =
-      params.dimension_numbers.rhs_contracting_dimensions();
+  dot_params.lhs_batch_dims = params.lhs_batch_dims;
+  dot_params.rhs_batch_dims = params.rhs_batch_dims;
+  dot_params.lhs_contracting_dims = params.lhs_contracting_dims;
+  dot_params.rhs_contracting_dims = params.rhs_contracting_dims;
 
   const TensorType& lhs_type = value_types_[lhs];
   const TensorType& rhs_type = value_types_[rhs];
@@ -406,14 +402,27 @@ TensorType SemanticBuilder::ToSemanticType(const ::lczero::TensorType& type) con
 ::lczero::ValueId SemanticBuilder::Slice(
     ::lczero::ValueId input, const ::lczero::SliceParams& params) {
   EnsureValueExists(input);
+  if (params.start_indices.size() != params.limit_indices.size() ||
+      params.start_indices.size() != params.strides.size()) {
+    throw Exception("SliceParams invariant failed: mismatched vector sizes");
+  }
+  if (params.start_indices.size() != value_types_[input].dimensions.size()) {
+    throw Exception("SliceParams invariant failed: rank mismatch");
+  }
   SliceParams slice_params;
   TensorType result_type = value_types_[input];
   result_type.dimensions.clear();
-  for (const auto& dim : params.dimensions) {
-    slice_params.start_indices.push_back(dim.start());
-    slice_params.limit_indices.push_back(dim.limit());
-    slice_params.strides.push_back(dim.stride());
-    const int64_t size = (dim.limit() - dim.start()) / dim.stride();
+  for (size_t i = 0; i < params.start_indices.size(); ++i) {
+    const int64_t start = params.start_indices[i];
+    const int64_t limit = params.limit_indices[i];
+    const int64_t stride = params.strides[i];
+    if (stride == 0) {
+      throw Exception("SliceParams invariant failed: zero stride");
+    }
+    slice_params.start_indices.push_back(start);
+    slice_params.limit_indices.push_back(limit);
+    slice_params.strides.push_back(stride);
+    const int64_t size = (limit - start) / stride;
     result_type.dimensions.push_back(size);
   }
   const ::lczero::ValueId id =
@@ -688,11 +697,14 @@ TensorType SemanticBuilder::ToSemanticType(const ::lczero::TensorType& type) con
   return value_kinds_[value];
 }
 
-const pblczero::XlaLiteralProto* SemanticBuilder::TryGetLiteral(
+std::optional<::lczero::TensorLiteral> SemanticBuilder::TryGetLiteral(
     ::lczero::ValueId value) const {
   EnsureValueExists(value);
-  if (!value_literals_[value].has_value()) return nullptr;
-  return &(*value_literals_[value]);
+  if (!value_literals_[value].has_value()) return std::nullopt;
+  if (value_literals_[value]->bytes.size() > kMaxFoldableLiteralBytes) {
+    return std::nullopt;
+  }
+  return value_literals_[value];
 }
 
 void SemanticBuilder::PushMetadataScope() {

@@ -209,11 +209,6 @@ PjrtClient::~PjrtClient() {
   CheckError(api_->PJRT_Client_Destroy(&args));
 }
 
-std::unique_ptr<PjrtExecutable> PjrtClient::CompileHlo(
-    std::string_view hlo, std::string_view config) {
-  return CompileProgram(hlo, config, "hlo");
-}
-
 std::unique_ptr<PjrtExecutable> PjrtClient::CompileProgram(
     std::string_view code, std::string_view config, std::string_view format) {
   auto program = MakeStruct<PJRT_Program>();

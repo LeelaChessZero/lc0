@@ -27,12 +27,15 @@
 
 #include "neural/xla/hlo_builder_adapter.h"
 
+#include "neural/xla/onnx_builder_proto_utils.h"
 #include "neural/xla/tensor_literal_utils.h"
 #include "utils/exception.h"
 
 namespace lczero {
 
 namespace {
+
+constexpr size_t kMaxFoldableLiteralBytes = 4096;
 
 std::string ReduceName(ReduceParams::Computation computation,
                        pblczero::XlaShapeProto::Type type) {
@@ -49,6 +52,80 @@ std::string ReduceName(ReduceParams::Computation computation,
       break;
   }
   return std::string(prefix) + pblczero::XlaShapeProto::Type_Name(type);
+}
+
+pblczero::XlaWindow ToProtoWindow(const ConvolutionParams& params) {
+  pblczero::XlaWindow window;
+  const size_t spatial_rank = params.input_spatial_dims.size();
+  for (size_t i = 0; i < spatial_rank; ++i) {
+    auto* dim = window.add_dimensions();
+    dim->set_stride(i < params.window_strides.size() ? params.window_strides[i] : 1);
+    if (i < params.padding.size()) {
+      dim->set_padding_low(params.padding[i].first);
+      dim->set_padding_high(params.padding[i].second);
+    }
+    dim->set_base_dilation(i < params.lhs_dilation.size() ? params.lhs_dilation[i]
+                                                          : 1);
+    dim->set_window_dilation(i < params.rhs_dilation.size() ? params.rhs_dilation[i]
+                                                             : 1);
+  }
+  return window;
+}
+
+pblczero::XlaConvolutionDimensionNumbers ToProtoConvolutionDn(
+    const ConvolutionParams& params) {
+  pblczero::XlaConvolutionDimensionNumbers dn;
+  dn.set_input_batch_dimension(params.input_batch_dim);
+  dn.set_input_feature_dimension(params.input_feature_dim);
+  dn.set_kernel_input_feature_dimension(params.kernel_input_feature_dim);
+  dn.set_kernel_output_feature_dimension(params.kernel_output_feature_dim);
+  dn.set_output_batch_dimension(params.output_batch_dim);
+  dn.set_output_feature_dimension(params.output_feature_dim);
+  for (const int64_t dim : params.input_spatial_dims) {
+    dn.add_input_spatial_dimensions(dim);
+  }
+  for (const int64_t dim : params.kernel_spatial_dims) {
+    dn.add_kernel_spatial_dimensions(dim);
+  }
+  for (const int64_t dim : params.output_spatial_dims) {
+    dn.add_output_spatial_dimensions(dim);
+  }
+  return dn;
+}
+
+pblczero::XlaDotDimensionNumbers ToProtoDotDn(const DotParams& params) {
+  pblczero::XlaDotDimensionNumbers dn;
+  for (const int64_t dim : params.lhs_batch_dims) {
+    dn.add_lhs_batch_dimensions(dim);
+  }
+  for (const int64_t dim : params.rhs_batch_dims) {
+    dn.add_rhs_batch_dimensions(dim);
+  }
+  for (const int64_t dim : params.lhs_contracting_dims) {
+    dn.add_lhs_contracting_dimensions(dim);
+  }
+  for (const int64_t dim : params.rhs_contracting_dims) {
+    dn.add_rhs_contracting_dimensions(dim);
+  }
+  return dn;
+}
+
+std::vector<pblczero::HloInstructionProto::SliceDimensions> ToProtoSliceDims(
+    const SliceParams& params) {
+  if (params.start_indices.size() != params.limit_indices.size() ||
+      params.start_indices.size() != params.strides.size()) {
+    throw Exception("SliceParams invariant failed: mismatched vector sizes");
+  }
+  std::vector<pblczero::HloInstructionProto::SliceDimensions> dims;
+  dims.reserve(params.start_indices.size());
+  for (size_t i = 0; i < params.start_indices.size(); ++i) {
+    pblczero::HloInstructionProto::SliceDimensions dim;
+    dim.set_start(params.start_indices[i]);
+    dim.set_limit(params.limit_indices[i]);
+    dim.set_stride(params.strides[i]);
+    dims.push_back(dim);
+  }
+  return dims;
 }
 
 }  // namespace
@@ -149,8 +226,12 @@ ValueId HloBuilderAdapter::Convert(ValueId input, TensorType::ElementType type) 
 
 ValueId HloBuilderAdapter::Convolution(ValueId input, ValueId filter,
                                        const ConvolutionParams& params) {
-  return Store(builder_.Convolution(Flow(input), Flow(filter), params.window,
-                                    params.dimension_numbers));
+  if (params.feature_group_count != 1 || params.batch_group_count != 1) {
+    throw Exception("HloBuilderAdapter only supports feature/batch groups = 1");
+  }
+  return Store(builder_.Convolution(Flow(input), Flow(filter),
+                                    ToProtoWindow(params),
+                                    ToProtoConvolutionDn(params)));
 }
 
 ValueId HloBuilderAdapter::Broadcast(
@@ -185,11 +266,11 @@ ValueId HloBuilderAdapter::Reshape(ValueId input, const TensorType& new_shape) {
 }
 
 ValueId HloBuilderAdapter::Dot(ValueId lhs, ValueId rhs, const DotParams& params) {
-  return Store(builder_.Dot(Flow(lhs), Flow(rhs), params.dimension_numbers));
+  return Store(builder_.Dot(Flow(lhs), Flow(rhs), ToProtoDotDn(params)));
 }
 
 ValueId HloBuilderAdapter::Slice(ValueId input, const SliceParams& params) {
-  return Store(builder_.Slice(Flow(input), params.dimensions));
+  return Store(builder_.Slice(Flow(input), ToProtoSliceDims(params)));
 }
 
 ValueId HloBuilderAdapter::Concatenate(const std::vector<ValueId>& inputs,
@@ -279,11 +360,13 @@ BuilderOpKind HloBuilderAdapter::GetOpKind(ValueId value) const {
   return OpcodeToKind(Flow(value)->opcode());
 }
 
-const pblczero::XlaLiteralProto* HloBuilderAdapter::TryGetLiteral(
+std::optional<TensorLiteral> HloBuilderAdapter::TryGetLiteral(
     ValueId value) const {
   const HloFlow flow = Flow(value);
-  if (flow->opcode() != "constant") return nullptr;
-  return &flow->literal();
+  if (flow->opcode() != "constant") return std::nullopt;
+  TensorLiteral literal = ::lczero::FromLiteralProto(flow->literal());
+  if (literal.bytes.size() > kMaxFoldableLiteralBytes) return std::nullopt;
+  return literal;
 }
 
 void HloBuilderAdapter::PushMetadataScope() {

@@ -240,7 +240,7 @@ class SemanticBuilder final : public ::lczero::IBuilder {
 
   ::lczero::TensorType GetType(::lczero::ValueId value) const override;
   ::lczero::BuilderOpKind GetOpKind(::lczero::ValueId value) const override;
-  const pblczero::XlaLiteralProto* TryGetLiteral(
+  std::optional<::lczero::TensorLiteral> TryGetLiteral(
       ::lczero::ValueId value) const override;
 
   void PushMetadataScope() override;
@@ -271,7 +271,7 @@ class SemanticBuilder final : public ::lczero::IBuilder {
   SemanticModule module_;
   std::vector<TensorType> value_types_;
   std::vector<::lczero::BuilderOpKind> value_kinds_;
-  std::vector<std::optional<pblczero::XlaLiteralProto>> value_literals_;
+  std::vector<std::optional<::lczero::TensorLiteral>> value_literals_;
   std::vector<Metadata> metadata_scopes_;
 };
 

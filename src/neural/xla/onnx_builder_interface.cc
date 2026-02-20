@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/xla/onnx_builder_interface.h"
+#include "neural/xla/onnx_builder_proto_utils.h"
 
 namespace lczero {
 

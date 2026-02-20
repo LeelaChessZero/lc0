@@ -31,7 +31,6 @@
 #include "neural/loader.h"
 #include "neural/onnx/converter.h"
 #include "neural/xla/onnx2hlo.h"
-#include "neural/xla/print_hlo.h"
 #include "tools/describenet.h"
 #include "utils/files.h"
 #include "utils/optionsparser.h"
@@ -167,26 +166,11 @@ void ConvertLeelaToOnnx() {
   }
   if (dict.OwnExists<std::string>(kHloTextOutputFilenameId) ||
       dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
-    Onnx2HloOptions hlo_options;
-    hlo_options.debugging_allow_partial_result =
-        dict.Get<bool>(kHloAllowPartialResultId);
-    pblczero::ModelProto onnx_model;
-    onnx_model.ParseFromString(onnx.model());
-    auto hlo_result = ConvertOnnxToHlo(
-        onnx_model, dict.Get<int>(kHloBatchSizeId), hlo_options);
-    if (dict.OwnExists<std::string>(kHloTextOutputFilenameId)) {
-      std::string filename = dict.Get<std::string>(kHloTextOutputFilenameId);
-      if (filename == "-") {
-        PrettyPrintHlo(hlo_result.hlo_module, {}, std::cout);
-      } else {
-        std::ofstream file(filename.c_str());
-        PrettyPrintHlo(hlo_result.hlo_module, {}, file);
-      }
-    }
-    if (dict.OwnExists<std::string>(kHloProtoOutputFilenameId)) {
-      WriteStringToFile(dict.Get<std::string>(kHloProtoOutputFilenameId),
-                        hlo_result.hlo_module.OutputAsString());
-    }
+    throw Exception(
+        "HLO text/proto output has been removed in this build.\n"
+        "This tool no longer supports exporting HLO artifacts.\n"
+        "Use tag m9_1_closure_2026-02-17 to reproduce the old HLO output "
+        "behavior.");
   }
   ShowNetworkOnnxInfo(weights_file, false);
   COUT << "Done.";

@@ -29,6 +29,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -81,7 +82,7 @@ class HloBuilderAdapter : public IBuilder {
 
   TensorType GetType(ValueId value) const override;
   BuilderOpKind GetOpKind(ValueId value) const override;
-  const pblczero::XlaLiteralProto* TryGetLiteral(ValueId value) const override;
+  std::optional<TensorLiteral> TryGetLiteral(ValueId value) const override;
 
   void PushMetadataScope() override;
   void PopMetadataScope() override;
@@ -109,4 +110,3 @@ class HloBuilderAdapter : public IBuilder {
 };
 
 }  // namespace lczero
-
