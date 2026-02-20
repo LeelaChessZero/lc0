@@ -1700,9 +1700,6 @@ void SearchWorker::PickNodesToExtendTask(
   // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
 
-  int passed_off = 0;
-  int completed_visits = 0;
-
   bool is_root_node = node == search_->root_node_;
   [[maybe_unused]] const bool starting_from_root = is_root_node;
   const float even_draw_score = search_->GetDrawScore(false);
@@ -1717,6 +1714,9 @@ void SearchWorker::PickNodesToExtendTask(
       is_root_node && ShouldStopPickingHere(node, true, repetitions);
   const bool visit_root = stop_root && node->TryStartScoreUpdate();
   current_path.emplace_back(collision_limit, true, visit_root, stop_root, 0);
+  // take base sqrt(2) logarithm of root node for large subbranch N limit. It is
+  // used to split tasks.
+  const unsigned large_branch_limit = std::bit_width(search_->root_node_->GetN()) * 2;
 
   while (current_path.size() > 0) {
     assert(full_path.size() >= path.size());
@@ -1728,9 +1728,7 @@ void SearchWorker::PickNodesToExtendTask(
     if (current_path.back().bits_.stop_picking_) {
       if (current_path.back().bits_.visit_child_) {
         cur_limit -= 1;
-        receiver->push_back(
-            NodeToProcess::Visit(full_path, history));
-        completed_visits++;
+        receiver->push_back(NodeToProcess::Visit(full_path, history));
       }
       // Create collisions here.
       if (cur_limit > 0) {
@@ -1741,7 +1739,6 @@ void SearchWorker::PickNodesToExtendTask(
         }
         receiver->push_back(
             NodeToProcess::Collision(full_path, cur_limit, max_count));
-        completed_visits += cur_limit;
       }
       bool saved_is_last_child;
       do {
@@ -1908,6 +1905,8 @@ void SearchWorker::PickNodesToExtendTask(
         auto [child_repetitions, child_moves_left] =
             GetRepetitions(full_path.size(), history.Last());
         full_path.push_back({child_node, child_repetitions, child_moves_left});
+        visits_to_perform[best_idx].bits_.large_branch_ =
+            child_node->GetN() > large_branch_limit;
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
           new_visits -= 1;
@@ -1951,15 +1950,15 @@ void SearchWorker::PickNodesToExtendTask(
       assert(end != visits_to_perform.begin());
       // Actively do any splits now rather than waiting for potentially long
       // tree walk to get there.
-      for (int i = 0; i <= std::distance(end, visits_to_perform.begin()); i++) {
+      bool is_large_main_branch = visits_to_perform[0].bits_.large_branch_;
+      for (int i = 1; i < std::distance(visits_to_perform.begin(), end); i++) {
         int child_limit = visits_to_perform[i].bits_.visits_;
-        if (task_workers_ > 0 && i != 0 &&
-            child_limit > params_.GetMinimumWorkSizeForPicking() &&
-            child_limit <
-                ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
-            child_limit + passed_off + completed_visits <
-                collision_limit -
-                    params_.GetMinimumRemainingWorkSizeForPicking()) {
+        bool is_large_branch = visits_to_perform[i].bits_.large_branch_;
+        if (task_workers_ > 0 &&
+            ((is_large_main_branch && is_large_branch) ||
+             ((is_large_main_branch || is_large_branch) &&
+              child_limit > params_.GetMinimumWorkSizeForPicking()) ||
+             child_limit >= params_.GetMinimumRemainingWorkSizeForPicking())) {
           int idx = visits_to_perform[i].bits_.index_;
           Node* child_node = cur_iters[idx].GetOrSpawnNode(/* parent */ node);
           history.Append(cur_iters[idx].GetMove());
@@ -1979,7 +1978,6 @@ void SearchWorker::PickNodesToExtendTask(
                 task_count_.fetch_add(1, std::memory_order_acq_rel);
                 task_added_.notify_all();
                 passed = true;
-                passed_off += child_limit;
               }
             }
             if (passed) {
@@ -1992,9 +1990,15 @@ void SearchWorker::PickNodesToExtendTask(
       }
       auto rend = visits_to_perform.rend();
       auto rbegin = rend - std::distance(visits_to_perform.begin(), end);
-      rbegin->bits_.last_child_ = 1;
+      bool first = true;
       std::copy_if(rbegin, rend, std::back_inserter(current_path),
-          [](CurrentPath v) {return !!v;});
+                   [&first](CurrentPath& v) {
+                     if (!!v && first) {
+                       first = false;
+                       v.bits_.last_child_ = true;
+                     }
+                     return !!v;
+                   });
       // Fall through to select the first child.
     }
     // Prepare state for the next node to be processed. The paren node

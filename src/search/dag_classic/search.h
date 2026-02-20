@@ -402,7 +402,8 @@ class SearchWorker {
   // pushed into the current_path stack.
   struct CurrentPath {
     struct Bits {
-      uint32_t visits_ : 21;       // <= collision limit
+      uint32_t visits_ : 20;       // <= collision limit
+      uint32_t large_branch_ : 1;  // bool
       uint32_t last_child_ : 1;    // bool
       uint32_t visit_child_ : 1;   // bool
       uint32_t stop_picking_ : 1;  // bool
