@@ -563,14 +563,12 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 #ifdef USE_ONNX_CUDART
     if (network_->provider_ == OnnxProvider::TRT ||
         network_->provider_ == OnnxProvider::CUDA) {
+      ReportCUDAErrors(cudaEventRecord(inputs_outputs_->evaluation_done_event_,
+                                       network_->compute_stream_));
+      ReportCUDAErrors(cudaStreamWaitEvent(
+          network_->download_stream_, inputs_outputs_->evaluation_done_event_));
       for (size_t j = 0; j < inputs_outputs_->output_tensors_step_.size();
            j++) {
-        ReportCUDAErrors(
-            cudaEventRecord(inputs_outputs_->evaluation_done_event_,
-                            network_->compute_stream_));
-        ReportCUDAErrors(
-            cudaStreamWaitEvent(network_->download_stream_,
-                                inputs_outputs_->evaluation_done_event_));
         size_t offset = i * inputs_outputs_->output_tensors_step_[j];
         ReportCUDAErrors(cudaMemcpyAsync(
             static_cast<DataType*>(inputs_outputs_->output_tensors_data_[j]) +
@@ -580,10 +578,9 @@ void OnnxComputation<DataType>::ComputeBlocking() {
                 offset,
             batch * inputs_outputs_->output_tensors_step_[j] * sizeof(DataType),
             cudaMemcpyDeviceToHost, network_->download_stream_));
-        ReportCUDAErrors(
-            cudaEventRecord(inputs_outputs_->outputs_download_event_,
-                            network_->download_stream_));
       }
+      ReportCUDAErrors(cudaEventRecord(inputs_outputs_->outputs_download_event_,
+                                       network_->download_stream_));
     } else
 #endif
     {
