@@ -1717,17 +1717,18 @@ void SearchWorker::PickNodesToExtendTask(
   current_path.emplace_back(collision_limit, true, visit_root, stop_root, 0);
   // take base sqrt(2) logarithm of root node for large subbranch N limit. It is
   // used to split tasks.
-  const unsigned large_branch_limit = std::bit_width(search_->root_node_->GetN()) * 2;
+  const unsigned large_branch_limit =
+      std::bit_width(search_->root_node_->GetN()) * 2;
 
   while (current_path.size() > 0) {
     assert(full_path.size() >= path.size());
     // First prepare visits_to_perform.
-    int cur_limit = current_path.back().bits_.visits_;
+    int cur_limit = current_path.back().visits_;
     // First prepare visits_to_perform.
     // First check if node is terminal or not-expanded.  If either than create
     // a collision of appropriate size and pop current_path.
-    if (current_path.back().bits_.stop_picking_) {
-      if (current_path.back().bits_.visit_child_) {
+    if (current_path.back().stop_picking_) {
+      if (current_path.back().visit_child_) {
         cur_limit -= 1;
         receiver->push_back(NodeToProcess::Visit(full_path, history));
       }
@@ -1743,7 +1744,7 @@ void SearchWorker::PickNodesToExtendTask(
       }
       bool saved_is_last_child;
       do {
-        saved_is_last_child = current_path.back().bits_.last_child_;
+        saved_is_last_child = current_path.back().last_child_;
         current_path.pop_back();
         if (current_path.size() == 0) break;
         history.Pop();
@@ -1884,7 +1885,7 @@ void SearchWorker::PickNodesToExtendTask(
         // We have already checked this child. We can use simplified process to
         // add more visits to the node.
         if (already_visited) {
-          if (visits_to_perform[best_idx].bits_.stop_picking_) {
+          if (visits_to_perform[best_idx].stop_picking_) {
             // We found a collision. All remaining visits go here.
             visits_to_perform[best_idx] += cur_limit;
             cur_limit = 0;
@@ -1906,14 +1907,14 @@ void SearchWorker::PickNodesToExtendTask(
         auto [child_repetitions, child_moves_left] =
             GetRepetitions(full_path.size(), history.Last());
         full_path.push_back({child_node, child_repetitions, child_moves_left});
-        visits_to_perform[best_idx].bits_.large_branch_ =
+        visits_to_perform[best_idx].large_branch_ =
             child_node->GetN() > large_branch_limit;
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
           new_visits -= 1;
           if (ShouldStopPickingHere(child_node, false, child_repetitions)) {
-            visits_to_perform[best_idx].bits_.visit_child_ = 1;
-            visits_to_perform[best_idx].bits_.stop_picking_ = 1;
+            visits_to_perform[best_idx].visit_child_ = 1;
+            visits_to_perform[best_idx].stop_picking_ = 1;
           } else {
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
@@ -1924,7 +1925,7 @@ void SearchWorker::PickNodesToExtendTask(
         } else {
           // We found a collision. Remaining visits go here.
           visits_to_perform[best_idx] += cur_limit;
-          visits_to_perform[best_idx].bits_.stop_picking_ = 1;
+          visits_to_perform[best_idx].stop_picking_ = 1;
           cur_limit = 0;
           // Collision will take all future visits. The collision can expand
           // based on the parent limit.
@@ -1951,16 +1952,16 @@ void SearchWorker::PickNodesToExtendTask(
       assert(end != visits_to_perform.begin());
       // Actively do any splits now rather than waiting for potentially long
       // tree walk to get there.
-      bool is_large_main_branch = visits_to_perform[0].bits_.large_branch_;
+      bool is_large_main_branch = visits_to_perform[0].large_branch_;
       for (int i = 1; i < std::distance(visits_to_perform.begin(), end); i++) {
-        int child_limit = visits_to_perform[i].bits_.visits_;
-        bool is_large_branch = visits_to_perform[i].bits_.large_branch_;
+        int child_limit = visits_to_perform[i].visits_;
+        bool is_large_branch = visits_to_perform[i].large_branch_;
         if (task_workers_ > 0 &&
             ((is_large_main_branch && is_large_branch) ||
              ((is_large_main_branch || is_large_branch) &&
               child_limit > params_.GetMinimumWorkSizeForPicking()) ||
              child_limit >= params_.GetMinimumRemainingWorkSizeForPicking())) {
-          int idx = visits_to_perform[i].bits_.index_;
+          int idx = visits_to_perform[i].index_;
           Node* child_node = cur_iters[idx].GetOrSpawnNode(/* parent */ node);
           history.Append(cur_iters[idx].GetMove());
           auto [child_repetitions, child_moves_left] =
@@ -1968,7 +1969,7 @@ void SearchWorker::PickNodesToExtendTask(
           full_path.push_back(
               {child_node, child_repetitions, child_moves_left});
           // Don't split if not expanded or terminal.
-          if (!visits_to_perform[i].bits_.stop_picking_) {
+          if (!visits_to_perform[i].stop_picking_) {
             bool passed = false;
             {
               // Multiple writers, so need mutex here.
@@ -1996,7 +1997,7 @@ void SearchWorker::PickNodesToExtendTask(
                    [&first](CurrentPath& v) {
                      if (!!v && first) {
                        first = false;
-                       v.bits_.last_child_ = true;
+                       v.last_child_ = true;
                      }
                      return !!v;
                    });
@@ -2007,7 +2008,7 @@ void SearchWorker::PickNodesToExtendTask(
     // the last element in the curren_path stack.
     if (current_path.size() > 0) {
       assert(!full_path.empty());
-      unsigned index = current_path.back().bits_.index_;
+      unsigned index = current_path.back().index_;
       assert(index < node->GetNumEdges());
       auto child = node->Edges();
       std::advance(child, index);

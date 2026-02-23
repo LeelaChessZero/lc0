@@ -401,51 +401,44 @@ class SearchWorker {
   // variable. Packed value stores required visit infromation which can be
   // pushed into the current_path stack.
   struct CurrentPath {
-    struct Bits {
-      uint32_t visits_ : 20;       // <= collision limit
-      uint32_t large_branch_ : 1;  // bool
-      uint32_t last_child_ : 1;    // bool
-      uint32_t visit_child_ : 1;   // bool
-      uint32_t stop_picking_ : 1;  // bool
-      uint32_t index_ : 8;         // < 218
-      Bits(unsigned visits, bool last, bool visit, bool stop, unsigned index)
-          : visits_(visits),
-            last_child_(last),
-            visit_child_(visit),
-            stop_picking_(stop),
-            index_(index) {}
-    };
-    union {
-      Bits bits_;
-      uint32_t value_;
-    };
-    CurrentPath(unsigned visits, bool last, bool visit, bool stop, unsigned index)
-        : bits_(visits, last, visit, stop, index) {}
+    uint32_t visits_ : 20;       // <= collision limit
+    uint32_t large_branch_ : 1;  // bool
+    uint32_t last_child_ : 1;    // bool
+    uint32_t visit_child_ : 1;   // bool
+    uint32_t stop_picking_ : 1;  // bool
+    uint32_t index_ : 8;         // < 218
+    CurrentPath(unsigned visits, bool last, bool visit, bool stop,
+                unsigned index)
+        : visits_(visits),
+          large_branch_(0),
+          last_child_(last),
+          visit_child_(visit),
+          stop_picking_(stop),
+          index_(index) {}
     // Implicit conversion from int to allow comparing to a visit integer.
-    CurrentPath(int visits) : bits_(visits, 0, 0, 0, 0) {}
+    CurrentPath(int visits) : visits_(visits) {}
     CurrentPath() {}
 
     auto operator<=>(CurrentPath b) const {
-      return (uint32_t)bits_.visits_ <=> (uint32_t)b.bits_.visits_;
+      return (uint32_t)visits_ <=> (uint32_t)b.visits_;
     }
     bool operator==(CurrentPath b) const {
-      return (uint32_t)bits_.visits_ == (uint32_t)b.bits_.visits_;
+      return (uint32_t)visits_ == (uint32_t)b.visits_;
     }
-    explicit operator bool() const { return !!bits_.visits_; }
+    explicit operator bool() const { return !!visits_; }
 
     CurrentPath& operator+=(unsigned visits) {
-      CurrentPath temp(*this);
-      std::ignore = temp;
-      assert(temp.bits_.visits_ += visits == visits + bits_.visits_);
-      value_ += visits;
+      visits_ += visits;
       return *this;
     }
     CurrentPath& operator-=(unsigned visits) {
-      assert(bits_.visits_ >= visits);
-      value_ -= visits;
+      visits_ -= visits;
       return *this;
     }
   };
+
+  static_assert(sizeof(CurrentPath) == sizeof(uint32_t),
+                "CurrentPath must be packed into 32 bits");
 
   // Holds per task worker scratch data
   struct TaskWorkspace {
