@@ -218,6 +218,25 @@ const OptionId BaseSearchParams::kRootHasOwnCpuctParamsId{
          "parameters. Otherwise, they are the same as for the rest of nodes. "
          "Temporary flag for transition to a new version.",
      .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyValueTemperatureId{
+    {.long_flag = "policy-value-temperature",
+     .uci_option = "PolicyValueTemperature",
+     .help_text = "Tau value from softmax formula when convert value to policy "
+                  "for decay.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyDecayVisitsId{
+    {.long_flag = "policy-decay-visits",
+     .uci_option = "PolicyDecayVisits",
+     .help_text =
+         "Number of visits prior policy is valid. Prior policy decays to value "
+         "policy linearly until reaching the set visit number.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyDecayValueShareId{
+  {.long_flag = "policy-decay-value-share",
+   .uci_option = "PolicyDecayValueShare",
+   .help_text =
+       "The maximum percentage that value based policy decay can reach.",
+   .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kTwoFoldDrawsId{
     "two-fold-draws", "TwoFoldDraws",
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
@@ -551,6 +570,9 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
+  options->Add<FloatOption>(kPolicyValueTemperatureId, 1e-15f, 100.0f) = 0.05f;
+  options->Add<IntOption>(kPolicyDecayVisitsId, 0, 100000000) = 4000;
+  options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 90.0f;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
@@ -653,6 +675,9 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
       kCpuctFactorAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
                                                       : kCpuctFactorId)),
+      kPolicyValueTemperature(1.0f / options.Get<float>(kPolicyValueTemperatureId)),
+      kPolicyDecayVisits(options.Get<int>(kPolicyDecayVisitsId)),
+      kPolicyDecayValueShare(options.Get<float>(kPolicyDecayValueShareId) / 100.0f),
       kTwoFoldDraws(options.Get<bool>(kTwoFoldDrawsId)),
       kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),

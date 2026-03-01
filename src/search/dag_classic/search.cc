@@ -508,6 +508,45 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
   const float base = params.GetCpuctBase(is_root_node);
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
+
+using FloatArray = std::array<float, 256>;
+void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
+                 const FloatArray& value, int last_visited, int max_needed) {
+  const float value_temperature = params.GetPolicyValueTemperature();
+  const float maximum_policy_decay = params.GetPolicyDecayValueShare();
+  const uint32_t policy_decay_visits = params.GetPolicyDecayVisits();
+  const float decay_share = std::min(n, policy_decay_visits) /
+                            static_cast<float>(policy_decay_visits) *
+                            maximum_policy_decay;
+  const float kNoUncertantyPolicyValue = -9000.0f;
+  float max = -std::numeric_limits<float>::max();
+  float unvisited_policy = 0.0f;
+
+  if (maximum_policy_decay == 0.0f || last_visited < 0) return;
+
+  int i;
+
+  for (i = 0; i <= last_visited; i++) {
+    if (policy[i] == 0.0f) {
+      policy[i] = kNoUncertantyPolicyValue;
+      continue;
+    }
+    policy[i] = std::lerp(FastLog(policy[i]) + 1.0f,
+                          value[i] * value_temperature, decay_share);
+    max = std::max(max, policy[i]);
+  }
+  for (; i < max_needed; i++) {
+    unvisited_policy += policy[i];
+  }
+  float sum =
+      1.0f /
+      std::accumulate(
+          policy.begin(), policy.begin() + last_visited + 1, 0.0f,
+          [max](float acc, float& p) { return acc + FastExp(p = (p - max)); }) *
+      (1.0f - unvisited_policy);
+  std::for_each(policy.begin(), policy.begin() + last_visited + 1,
+                [sum](float& p) { p = FastExp(p) * sum; });
+}
 }  // namespace
 
 // Ignore the last tuple element when sorting in GetVerboseStats
@@ -608,19 +647,35 @@ std::vector<std::string> Search::GetVerboseStats(
   std::vector<std::string> infos;
   const auto m_evaluator =
       backend_attributes_.has_mlh ? MEvaluator(params_, node) : MEvaluator();
+  std::array<float, 256> policy;
+  std::array<float, 256> utility;
+  int index = -1;
   for (const auto& edge_tuple : edges) {
     const auto& edge = std::get<2>(edge_tuple);
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
+    policy[edge.GetIndex(node)] = edge.GetP();
+    utility[edge.GetIndex(node)] = Q + M;
+    if (edge.HasNode()) {
+      index = std::max(index, (int)edge.GetIndex(node));
+    }
+  }
+  PolicyDecay(params_, node->GetTotalVisits(), policy, utility, index,
+              node->GetNumEdges());
+  for (const auto& edge_tuple : edges) {
+    const auto& edge = std::get<2>(edge_tuple);
+    float Q = edge.GetQ(fpu, draw_score);
+    float M = m_evaluator.GetMUtility(edge, Q);
+    float U = U_coeff * policy[edge.GetIndex(node)] / (1 + edge.GetNStarted());
     std::ostringstream oss;
     oss << std::left;
     // TODO: should this be displaying transformed index?
     print_head(&oss, edge.GetMove(is_black_to_move).ToString(true),
                MoveToNNIndex(edge.GetMove(), 0), edge.GetN(),
-               edge.GetNInFlight(), edge.GetP());
+               edge.GetNInFlight(), policy[edge.GetIndex(node)]);
     print_stats(&oss, edge.node());
-    print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
-    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
+    print(&oss, "(U: ", U, ") ", 6, 5);
+    print(&oss, "(S: ", Q + U + M, ") ", 8, 5);
     print_tail(&oss, edge.node(), true);
     infos.emplace_back(oss.str());
   }
@@ -1356,6 +1411,7 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
                            params.GetMaxCollisionVisitsScalingStart()),
                       params.GetMaxCollisionVisitsScalingPower()));
 }
+
 }  // namespace
 
 void SearchWorker::GatherMinibatch() {
@@ -1697,6 +1753,7 @@ void SearchWorker::PickNodesToExtendTask(
   }
 
   // This 1 is 'filled pre-emptively'.
+  std::array<float, 256> policy_decay;
   std::array<float, 256> current_util;
 
   // These 3 are 'filled on demand'.
@@ -1795,19 +1852,26 @@ void SearchWorker::PickNodesToExtendTask(
           (full_path.size() % 2 == 0) ? odd_draw_score : even_draw_score;
       m_evaluator.SetParent(node);
       float visited_pol = 0.0f;
+      int index = -1;
       for (Node* child : node->VisitedNodes()) {
-        int index = child->Index();
-        visited_pol += child->GetP();
+        index = child->Index();
+        float pol = child->GetP();
+        visited_pol += pol;
+        policy_decay[index] = pol;
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
+
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
       for (int i = 0; i < max_needed; i++) {
         if (current_util[i] == std::numeric_limits<float>::lowest()) {
           current_util[i] = fpu + m_evaluator.GetDefaultMUtility();
+          policy_decay[i] = node->GetLowNode()->GetEdges()[i].GetP();
         }
       }
+      PolicyDecay(params_, node->GetTotalVisits(), policy_decay, current_util,
+                  index, max_needed);
 
       const float cpuct =
           ComputeCpuct(params_, node->GetTotalVisits(), is_root_node);
@@ -1836,7 +1900,7 @@ void SearchWorker::PickNodesToExtendTask(
           const float util = current_util[idx];
           if (idx > cache_filled_idx) {
             current_score[idx] =
-                cur_iters[idx].GetP() * puct_mult / (1 + nstarted) + util;
+                policy_decay[idx] * puct_mult / (1 + nstarted) + util;
             cache_filled_idx++;
           }
           if (is_root_node) {
@@ -1884,7 +1948,7 @@ void SearchWorker::PickNodesToExtendTask(
           if (best_without_u < second_best) {
             const auto n1 = current_nstarted[best_idx] + 1;
             estimated_visits_to_change_best = static_cast<int>(
-                std::max(1.0f, std::min(cur_iters[best_idx].GetP() * puct_mult /
+                std::max(1.0f, std::min(policy_decay[best_idx] * puct_mult /
                                                 (second_best - best_without_u) -
                                             n1 + 1,
                                         1e9f)));
@@ -1922,7 +1986,7 @@ void SearchWorker::PickNodesToExtendTask(
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
           }
-          current_score[best_idx] = cur_iters[best_idx].GetP() * puct_mult /
+          current_score[best_idx] = policy_decay[best_idx] * puct_mult /
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
         }
