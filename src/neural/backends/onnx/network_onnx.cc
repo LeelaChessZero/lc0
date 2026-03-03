@@ -790,6 +790,21 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
 
 #ifdef USE_ONNX_CUDART
   if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
+    auto nv_version = [](int v) {
+      return std::to_string(v / 1000) + "." + std::to_string((v % 1000) / 10) +
+             "." + std::to_string(v % 10);
+    };
+    int runtime_version;
+    ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
+    int driver_version;
+    ReportCUDAErrors(cudaDriverGetVersion(&driver_version));
+    CERR << "CUDA runtime version: " << nv_version(runtime_version);
+    CERR << "Latest version of CUDA supported by the driver: "
+         << nv_version(driver_version);
+    if (driver_version < runtime_version) {
+      throw Exception(
+          "ERROR: The CUDA driver version is older than the runtime version.");
+    }
     cudaDeviceProp deviceProp = {};
     if (!cudaGetDeviceProperties(&deviceProp, gpu_)) {
       CERR << "GPU: " << deviceProp.name;
@@ -801,8 +816,6 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       CERR << "GPU clock frequency: " << clockRate / 1e3f << " MHz";
     }
 #if CUDART_VERSION >= 12080
-    int runtime_version;
-    ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
     if (runtime_version >= 12080) {
       int attr;
       ReportCUDAErrors(
