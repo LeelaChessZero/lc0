@@ -476,6 +476,7 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
   LCTRACE_FUNCTION_SCOPE;
+  if (GetBatchSize() == 0) return;
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
     batch_size =
