@@ -221,8 +221,8 @@ const OptionId BaseSearchParams::kRootHasOwnCpuctParamsId{
 const OptionId BaseSearchParams::kPolicyValueTemperatureId{
     {.long_flag = "policy-value-temperature",
      .uci_option = "PolicyValueTemperature",
-     .help_text = "Tau value from softmax formula when convert value to policy "
-                  "for decay.",
+     .help_text = "Tau value from softmax formula when converting value to "
+                  "policy for decay.",
      .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kPolicyDecayVisitsId{
     {.long_flag = "policy-decay-visits",
@@ -235,7 +235,7 @@ const OptionId BaseSearchParams::kPolicyDecayValueShareId{
   {.long_flag = "policy-decay-value-share",
    .uci_option = "PolicyDecayValueShare",
    .help_text =
-       "The maximum percentage that value based policy decay can reach.",
+       "The maximum percentage that value-based policy decay can reach.",
    .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kTwoFoldDrawsId{
     "two-fold-draws", "TwoFoldDraws",
