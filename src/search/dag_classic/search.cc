@@ -563,15 +563,15 @@ std::vector<std::string> Search::GetVerboseStats(
   edges.reserve(node->GetNumEdges());
   for (const auto& edge : node->Edges()) {
     edges.emplace_back(edge.GetN(),
-                       edge.GetQ(fpu, draw_score) + edge.GetU(U_coeff),
-                       edge);
+                       edge.GetQ(fpu, draw_score) + edge.GetU(U_coeff), edge);
   }
   std::sort(edges.begin(), edges.end());
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
   };
-  auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p) {
+  auto print_head = [&](auto* oss, auto label, int i, auto n, auto f, auto p,
+                        auto pd) {
     *oss << std::fixed;
     print(oss, "", label, " ", 5);
     print(oss, "(", i, ") ", 4);
@@ -579,6 +579,9 @@ std::vector<std::string> Search::GetVerboseStats(
     print(oss, "N: ", n, " ", 7);
     print(oss, "(+", f, ") ", 2);
     print(oss, "(P: ", p * 100, "%) ", 5, p >= 0.99995f ? 1 : 2);
+    if (pd != -1.0f) {
+      print(oss, "(PD: ", pd * 100, "%) ", 5, pd >= 0.99995f ? 1 : 2);
+    }
   };
   auto print_stats = [&](auto* oss, const auto* n) {
     const auto sign = n == node ? -1 : 1;
@@ -671,7 +674,7 @@ std::vector<std::string> Search::GetVerboseStats(
     // TODO: should this be displaying transformed index?
     print_head(&oss, edge.GetMove(is_black_to_move).ToString(true),
                MoveToNNIndex(edge.GetMove(), 0), edge.GetN(),
-               edge.GetNInFlight(), policy[edge.GetIndex(node)]);
+               edge.GetNInFlight(), edge.GetP(), policy[edge.GetIndex(node)]);
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", U, ") ", 6, 5);
     print(&oss, "(S: ", Q + U + M, ") ", 8, 5);
@@ -682,7 +685,7 @@ std::vector<std::string> Search::GetVerboseStats(
   // Include stats about the node in similar format to its children above.
   std::ostringstream oss;
   print_head(&oss, "node ", node->GetNumEdges(), node->GetN(),
-             node->GetNInFlight(), node->GetVisitedPolicy());
+             node->GetNInFlight(), node->GetVisitedPolicy(), -1.0f);
   print_stats(&oss, node);
   print_tail(&oss, node, false);
   infos.emplace_back(oss.str());
