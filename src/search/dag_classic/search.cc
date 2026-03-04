@@ -512,7 +512,7 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 
 using FloatArray = std::array<float, 256>;
 void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
-                 const FloatArray& value, int last_visited, int max_needed) {
+                 const FloatArray& value, int last_visited, float visited_pol) {
   const float value_temperature = params.GetPolicyValueTemperature();
   const float maximum_policy_decay = params.GetPolicyDecayValueShare();
   const uint32_t policy_decay_visits = params.GetPolicyDecayVisits();
@@ -521,7 +521,6 @@ void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
                             maximum_policy_decay;
   const float kNoUncertantyPolicyValue = -9000.0f;
   float max = -std::numeric_limits<float>::max();
-  float unvisited_policy = 0.0f;
 
   if (maximum_policy_decay == 0.0f || last_visited < 0) return;
 
@@ -532,19 +531,16 @@ void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
       policy[i] = kNoUncertantyPolicyValue;
       continue;
     }
-    policy[i] = std::lerp(FastLog(policy[i]) + 1.0f,
-                          value[i] * value_temperature, decay_share);
+    policy[i] = std::lerp(FastLog(policy[i]), value[i] * value_temperature,
+                          decay_share);
     max = std::max(max, policy[i]);
-  }
-  for (; i < max_needed; i++) {
-    unvisited_policy += policy[i];
   }
   float sum =
       1.0f /
       std::accumulate(
           policy.begin(), policy.begin() + last_visited + 1, 0.0f,
           [max](float acc, float& p) { return acc + FastExp(p = (p - max)); }) *
-      (1.0f - unvisited_policy);
+      visited_pol;
   std::for_each(policy.begin(), policy.begin() + last_visited + 1,
                 [sum](float& p) { p = FastExp(p) * sum; });
 }
@@ -651,6 +647,7 @@ std::vector<std::string> Search::GetVerboseStats(
   std::array<float, 256> policy;
   std::array<float, 256> utility;
   int index = -1;
+  float visited_pol = 0.0f;
   for (const auto& edge_tuple : edges) {
     const auto& edge = std::get<2>(edge_tuple);
     float Q = edge.GetQ(fpu, draw_score);
@@ -659,10 +656,11 @@ std::vector<std::string> Search::GetVerboseStats(
     utility[edge.GetIndex(node)] = Q + M;
     if (edge.HasNode()) {
       index = std::max(index, (int)edge.GetIndex(node));
+      visited_pol += edge.GetP();
     }
   }
   PolicyDecay(params_, node->GetTotalVisits(), policy, utility, index,
-              node->GetNumEdges());
+              visited_pol);
   for (const auto& edge_tuple : edges) {
     const auto& edge = std::get<2>(edge_tuple);
     float Q = edge.GetQ(fpu, draw_score);
@@ -1872,7 +1870,7 @@ void SearchWorker::PickNodesToExtendTask(
         }
       }
       PolicyDecay(params_, node->GetTotalVisits(), policy_decay, current_util,
-                  index, max_needed);
+                  index, visited_pol);
 
       const float cpuct =
           ComputeCpuct(params_, node->GetTotalVisits(), is_root_node);
