@@ -1306,7 +1306,7 @@ void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
       policy[i] = kNoUncertaintyPolicyValue;
-      max = std::max(max, -1.0f * value_temperature);
+      max = std::max(max, kNoUncertaintyPolicyValue);
       continue;
     }
     policy[i] = std::lerp(FastLog(policy[i]),
