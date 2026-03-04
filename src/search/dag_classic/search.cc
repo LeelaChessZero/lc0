@@ -519,7 +519,7 @@ void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
   const float decay_share = std::min(n, policy_decay_visits) /
                             static_cast<float>(policy_decay_visits) *
                             maximum_policy_decay;
-  const float kNoUncertantyPolicyValue = -9000.0f;
+  const float kNoUncertaintyPolicyValue = -9000.0f;
   float max = -std::numeric_limits<float>::max();
 
   if (maximum_policy_decay == 0.0f || last_visited < 0) return;
@@ -528,7 +528,7 @@ void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
 
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
-      policy[i] = kNoUncertantyPolicyValue;
+      policy[i] = kNoUncertaintyPolicyValue;
       continue;
     }
     policy[i] = std::lerp(FastLog(policy[i]), value[i] * value_temperature,
