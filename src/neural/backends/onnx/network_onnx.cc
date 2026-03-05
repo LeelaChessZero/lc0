@@ -60,7 +60,7 @@
 namespace lczero {
 namespace onnx {
 
-enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT, MIGRAPHX };
+enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT, MIGRAPHX, COREML };
 
 class OnnxNetwork;
 
@@ -476,6 +476,7 @@ Ort::IoBinding OnnxComputation<DataType>::PrepareInputs(int start,
 template <typename DataType>
 void OnnxComputation<DataType>::ComputeBlocking() {
   LCTRACE_FUNCTION_SCOPE;
+  if (GetBatchSize() == 0) return;
   int batch_size = network_->batch_size_;
   if (batch_size < 0) {
     batch_size =
@@ -563,14 +564,12 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 #ifdef USE_ONNX_CUDART
     if (network_->provider_ == OnnxProvider::TRT ||
         network_->provider_ == OnnxProvider::CUDA) {
+      ReportCUDAErrors(cudaEventRecord(inputs_outputs_->evaluation_done_event_,
+                                       network_->compute_stream_));
+      ReportCUDAErrors(cudaStreamWaitEvent(
+          network_->download_stream_, inputs_outputs_->evaluation_done_event_));
       for (size_t j = 0; j < inputs_outputs_->output_tensors_step_.size();
            j++) {
-        ReportCUDAErrors(
-            cudaEventRecord(inputs_outputs_->evaluation_done_event_,
-                            network_->compute_stream_));
-        ReportCUDAErrors(
-            cudaStreamWaitEvent(network_->download_stream_,
-                                inputs_outputs_->evaluation_done_event_));
         size_t offset = i * inputs_outputs_->output_tensors_step_[j];
         ReportCUDAErrors(cudaMemcpyAsync(
             static_cast<DataType*>(inputs_outputs_->output_tensors_data_[j]) +
@@ -580,10 +579,9 @@ void OnnxComputation<DataType>::ComputeBlocking() {
                 offset,
             batch * inputs_outputs_->output_tensors_step_[j] * sizeof(DataType),
             cudaMemcpyDeviceToHost, network_->download_stream_));
-        ReportCUDAErrors(
-            cudaEventRecord(inputs_outputs_->outputs_download_event_,
-                            network_->download_stream_));
       }
+      ReportCUDAErrors(cudaEventRecord(inputs_outputs_->outputs_download_event_,
+                                       network_->download_stream_));
     } else
 #endif
     {
@@ -661,6 +659,14 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       dml_options["device_id"] = std::to_string(gpu_);
       dml_options["performance_preference"] = "high_performance";
       options.AppendExecutionProvider("DML", dml_options);
+      break;
+    }
+    case OnnxProvider::COREML: {
+      std::unordered_map<std::string, std::string> provider_options;
+      provider_options["ModelFormat"] = "MLProgram";
+      provider_options["ProfileComputePlan"] = "1";
+      provider_options["AllowLowPrecisionAccumulationOnGPU"] = "1";
+      options.AppendExecutionProvider("CoreML", provider_options);
       break;
     }
     case OnnxProvider::TRT: {
@@ -785,11 +791,25 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       cpu_wdl_(cpu_wdl),
       provider_(provider) {
   onnx_env_.DisableTelemetryEvents();
-
   gpu_ = opts.GetOrDefault<int>("gpu", 0);
 
 #ifdef USE_ONNX_CUDART
   if (provider_ == OnnxProvider::CUDA || provider_ == OnnxProvider::TRT) {
+    auto nv_version = [](int v) {
+      return std::to_string(v / 1000) + "." + std::to_string((v % 1000) / 10) +
+             "." + std::to_string(v % 10);
+    };
+    int runtime_version;
+    ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
+    int driver_version;
+    ReportCUDAErrors(cudaDriverGetVersion(&driver_version));
+    CERR << "CUDA runtime version: " << nv_version(runtime_version);
+    CERR << "Latest version of CUDA supported by the driver: "
+         << nv_version(driver_version);
+    if (driver_version < runtime_version) {
+      throw Exception(
+          "ERROR: The CUDA driver version is older than the runtime version.");
+    }
     cudaDeviceProp deviceProp = {};
     if (!cudaGetDeviceProperties(&deviceProp, gpu_)) {
       CERR << "GPU: " << deviceProp.name;
@@ -801,8 +821,6 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       CERR << "GPU clock frequency: " << clockRate / 1e3f << " MHz";
     }
 #if CUDART_VERSION >= 12080
-    int runtime_version;
-    ReportCUDAErrors(cudaRuntimeGetVersion(&runtime_version));
     if (runtime_version >= 12080) {
       int attr;
       ReportCUDAErrors(
@@ -828,6 +846,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   switch (provider) {
     case OnnxProvider::DML:
     case OnnxProvider::MIGRAPHX:
+    case OnnxProvider::COREML:
       default_batch = 16;
       default_steps = 4;
       break;
@@ -911,7 +930,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     WeightsToOnnxConverterOptions converter_options;
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
-        "alt_mish", kProvider == OnnxProvider::CPU ? true : false);
+        "alt_mish",
+        kProvider == OnnxProvider::CPU || kProvider == OnnxProvider::COREML
+            ? true
+            : false);
     converter_options.alt_layernorm = opts.GetOrDefault<bool>(
         "alt_layernorm",
         kProvider == OnnxProvider::DML &&
@@ -925,6 +947,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
     converter_options.no_wdl_softmax = true;
+    converter_options.alt_selu =
+        kProvider == OnnxProvider::COREML ? true : false;
     // No execution provider has a better mish version, some don't even have it.
     converter_options.real_mish = false;
 
@@ -932,8 +956,14 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     if (opts.Exists<std::string>("datatype")) {
       datatype = opts.Get<std::string>("datatype");
     } else {
-      bool fp16 = opts.GetOrDefault<bool>(
-          "fp16", kProvider == OnnxProvider::CPU ? false : true);
+      bool fp16 = kProvider == OnnxProvider::CPU ? false : true;
+#if ORT_API_VERSION < 24
+      if (kProvider == OnnxProvider::COREML) {
+        CERR << "WARNING: CoreML with onnxruntime before v1.24 is very slow.";
+        fp16 = false;
+      }
+#endif
+      fp16 = opts.GetOrDefault<bool>("fp16", fp16);
       datatype = fp16 ? "f16" : "f32";
     }
     converter_options.data_type =
@@ -958,6 +988,7 @@ REGISTER_NETWORK("onnx-rocm", MakeOnnxNetwork<OnnxProvider::ROCM>, 64)
 #ifdef USE_DML
 REGISTER_NETWORK("onnx-dml", MakeOnnxNetwork<OnnxProvider::DML>, 63)
 #endif
+REGISTER_NETWORK("onnx-coreml", MakeOnnxNetwork<OnnxProvider::COREML>, 59)
 REGISTER_NETWORK("onnx-trt", MakeOnnxNetwork<OnnxProvider::TRT>, 60)
 REGISTER_NETWORK("onnx-cuda", MakeOnnxNetwork<OnnxProvider::CUDA>, 61)
 REGISTER_NETWORK("onnx-cpu", MakeOnnxNetwork<OnnxProvider::CPU>, 62)
