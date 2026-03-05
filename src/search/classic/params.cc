@@ -570,8 +570,8 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
-  options->Add<FloatOption>(kPolicyValueTemperatureId, 1e-15f, 10.0f) = 0.030f;
-  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 100000000) = 3500;
+  options->Add<FloatOption>(kPolicyValueTemperatureId, 1e-15f, 10.0f) = 0.043f;
+  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 100000000) = 7000;
   options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 100.0f;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
