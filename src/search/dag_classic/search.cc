@@ -504,9 +504,8 @@ inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_n
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
                           bool is_root_node) {
   const float init = params.GetCpuct(is_root_node);
-  const float k = params.GetCpuctFactor(is_root_node);
-  const float base = params.GetCpuctBase(is_root_node);
-  return init + (k ? k * FastLog((N + base) / base) : 0.0f);
+  const float p = params.GetCpuctExponent(is_root_node);
+  return init * FastExp(p * FastLog(std::max(N, 1u)));
 }
 }  // namespace
 
@@ -520,9 +519,8 @@ std::vector<std::string> Search::GetVerboseStats(
   const bool is_black_to_move = (played_history_.IsBlackToMove() == is_root);
   const float draw_score = GetDrawScore(is_odd_depth);
   const float fpu = GetFpu(params_, node, is_root, draw_score);
-  const float cpuct = ComputeCpuct(params_, node->GetTotalVisits(), is_root);
   const float U_coeff =
-      cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+      ComputeCpuct(params_, node->GetChildrenVisits(), is_root);
   std::vector<std::tuple<uint32_t, float, EdgeAndNode>> edges;
   edges.reserve(node->GetNumEdges());
   for (const auto& edge : node->Edges()) {
@@ -1809,10 +1807,8 @@ void SearchWorker::PickNodesToExtendTask(
         }
       }
 
-      const float cpuct =
-          ComputeCpuct(params_, node->GetTotalVisits(), is_root_node);
       const float puct_mult =
-          cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+          ComputeCpuct(params_, node->GetChildrenVisits(), is_root_node);
       int cache_filled_idx = -1;
       while (cur_limit > 0) {
         // Perform UCT for current node.
