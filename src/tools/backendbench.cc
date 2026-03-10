@@ -27,6 +27,8 @@
 
 #include "tools/backendbench.h"
 
+#include <atomic>
+
 #include "chess/board.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
@@ -144,9 +146,12 @@ void BackendBenchmark::Run() {
          i += option_dict.Get<int>(kBatchStepId)) {
       handles.reserve(threads);
       std::atomic<int> j{0};
+      std::atomic<size_t> first_thread_done{1};
+      std::vector<tp> first_batch_times(threads + 1);
 
       auto compute = [&](int tid = 0) {
         int count = 0;
+        bool first = true;
         auto& end = ends[tid];
         // Ignore the first batch to let GPU queue fill for stable measurements.
         while (j++ < batches) {
@@ -157,9 +162,17 @@ void BackendBenchmark::Run() {
           }
           computation->ComputeBlocking();
           end[count++] = std::chrono::steady_clock::now();
+          if (first) {
+            size_t idx =
+                first_thread_done.fetch_add(1, std::memory_order_relaxed);
+            first_batch_times[idx] = end[0];
+            first = false;
+          }
         }
         thread_counts[tid] = count;
       };
+
+      first_batch_times[0] = std::chrono::steady_clock::now();
 
       for (int t = 1; t < threads; t++) {
         handles.emplace_back(compute, t);
@@ -215,8 +228,22 @@ void BackendBenchmark::Run() {
                      " max nps,"
                      "  median,"
                      " min nps,"
+                     " first max,"
+                     " first mean"
                   << std::endl;
       }
+      double first_max = 0.0;
+      double first_mean = 0.0;
+      for (size_t j = 1; j < first_batch_times.size(); j++) {
+        auto duration = first_batch_times[j] - first_batch_times[j - 1];
+        double time = std::chrono::duration<double>(duration).count();
+        time *= 1000;
+        first_mean += time;
+        if (time > first_max) {
+          first_max = time;
+        }
+      }
+      first_mean /= threads;
       // clang-format off
       std::cout << std::setw(4) << i << ","
                 << std::fixed << std::setprecision(0)
@@ -229,7 +256,10 @@ void BackendBenchmark::Run() {
                 << std::fixed << std::setprecision(0)
                 << std::setw(8) << i / times[0].count() << ","
                 << std::setw(8) << median << ","
-                << std::setw(8) << i / times[batches_done - 1].count()
+                << std::setw(8) << i / times[batches_done - 1].count() << ","
+                << std::fixed << std::setprecision(4)
+                << std::setw(10) << first_max << ","
+                << std::setw(11) << first_mean
                 << std::endl;
       // clang-format on
 
