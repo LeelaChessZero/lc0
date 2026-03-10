@@ -43,6 +43,6 @@ bool RescorerPolicySubstitutionSetup(std::string policySubsDir);
 std::vector<V6TrainingData> RescoreTrainingData(
     std::vector<V6TrainingData> fileContents, SyzygyTablebase* tablebase,
     float distTemp = 1.0f, float distOffset = 0.0f, float dtzBoost = 0.0f,
-    int newInputFormat = -1);
+    int newInputFormat = -1, float winningMovePolicyShare = 0.5f);
 
 }  // namespace lczero
