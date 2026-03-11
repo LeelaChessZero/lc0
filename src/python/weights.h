@@ -74,7 +74,7 @@ class Weights {
     if (weights_.weights().residual_size() == 0) {
       throw Exception(
           "filters() is not available for this network architecture "
-          "(no residual blocks found — likely a transformer/T1 network).");
+          "(no residual blocks found - likely a transformer/T1 network).");
     }
     return weights_.weights().residual(0).conv1().weights().params().size() /
            2304;
