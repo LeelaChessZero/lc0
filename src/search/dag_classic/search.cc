@@ -514,7 +514,6 @@ using FloatArray = std::array<float, 256>;
 void PolicyDecay(const SearchParams& params, const Node* node,
                  FloatArray& policy, const FloatArray& value, int last_visited,
                  float visited_pol) {
-  const float value_temperature = params.GetPolicyValueTemperature();
   const float maximum_policy_decay = params.GetPolicyDecayValueShare();
   const uint32_t policy_decay_visits = params.GetPolicyDecayVisits();
   const float inv_policy_decay_visits = 1.0f / policy_decay_visits;
@@ -527,6 +526,11 @@ void PolicyDecay(const SearchParams& params, const Node* node,
 
   int i;
 
+  auto [min_iter, max_iter] =
+      std::minmax_element(value.begin(), value.begin() + last_visited + 1);
+  const float value_temperature = params.GetPolicyValueTemperature() /
+                                  (std::max(*max_iter - *min_iter, epsilon));
+
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
       new_policy[i] = kNoUncertaintyPolicyValue;
@@ -538,8 +542,7 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   const float sum = std::accumulate(
       new_policy.begin(), new_policy.begin() + last_visited + 1, 0.0f,
       [max](float acc, float& p) { return acc + (p = FastExp(p - max)); });
-  const float inv_sum =
-      1.0f / std::max(sum, epsilon) * visited_pol;
+  const float inv_sum = 1.0f / std::max(sum, epsilon) * visited_pol;
   i = 0;
   for (const auto* child : node->VisitedNodes()) {
     const uint32_t n = child->GetN();
