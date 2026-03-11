@@ -511,16 +511,17 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }
 
 using FloatArray = std::array<float, 256>;
-void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
-                 const FloatArray& value, int last_visited, float visited_pol) {
+void PolicyDecay(const SearchParams& params, const Node* node,
+                 FloatArray& policy, const FloatArray& value, int last_visited,
+                 float visited_pol) {
   const float value_temperature = params.GetPolicyValueTemperature();
   const float maximum_policy_decay = params.GetPolicyDecayValueShare();
   const uint32_t policy_decay_visits = params.GetPolicyDecayVisits();
-  const float decay_share = std::min(n, policy_decay_visits) /
-                            static_cast<float>(policy_decay_visits) *
-                            maximum_policy_decay;
-  const float kNoUncertaintyPolicyValue = -9000.0f;
+  const float inv_policy_decay_visits = 1.0f / policy_decay_visits;
+  const float kNoUncertaintyPolicyValue = -std::numeric_limits<float>::max();
   float max = -std::numeric_limits<float>::max();
+  std::array<float, 256> new_policy;
+  const float epsilon = 1e-6f;
 
   if (maximum_policy_decay == 0.0f || last_visited < 0) return;
 
@@ -528,22 +529,25 @@ void PolicyDecay(const SearchParams& params, uint32_t n, FloatArray& policy,
 
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
-      policy[i] = kNoUncertaintyPolicyValue;
-      max = std::max(max, kNoUncertaintyPolicyValue);
+      new_policy[i] = kNoUncertaintyPolicyValue;
       continue;
     }
-    policy[i] = std::lerp(FastLog(policy[i]), value[i] * value_temperature,
-                          decay_share);
-    max = std::max(max, policy[i]);
+    new_policy[i] = value[i] * value_temperature;
+    max = std::max(max, new_policy[i]);
   }
-  float sum =
-      1.0f /
-      std::accumulate(
-          policy.begin(), policy.begin() + last_visited + 1, 0.0f,
-          [max](float acc, float& p) { return acc + FastExp(p = (p - max)); }) *
-      visited_pol;
-  std::for_each(policy.begin(), policy.begin() + last_visited + 1,
-                [sum](float& p) { p = FastExp(p) * sum; });
+  const float sum = std::accumulate(
+      new_policy.begin(), new_policy.begin() + last_visited + 1, 0.0f,
+      [max](float acc, float& p) { return acc + (p = FastExp(p - max)); });
+  const float inv_sum =
+      1.0f / std::max(sum, epsilon) * visited_pol;
+  i = 0;
+  for (const auto* child : node->VisitedNodes()) {
+    const uint32_t n = child->GetN();
+    const float decay_share = std::min(n, policy_decay_visits) *
+                              (inv_policy_decay_visits * maximum_policy_decay);
+    policy[i] = std::lerp(policy[i], new_policy[i] * inv_sum, decay_share);
+    i++;
+  }
 }
 }  // namespace
 
@@ -663,8 +667,7 @@ std::vector<std::string> Search::GetVerboseStats(
       visited_pol += edge.GetP();
     }
   }
-  PolicyDecay(params_, node->GetTotalVisits(), policy, utility, index,
-              visited_pol);
+  PolicyDecay(params_, node, policy, utility, index, visited_pol);
   for (const auto& edge_tuple : edges) {
     const auto& edge = std::get<2>(edge_tuple);
     float Q = edge.GetQ(fpu, draw_score);
@@ -1864,6 +1867,8 @@ void SearchWorker::PickNodesToExtendTask(
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
+      PolicyDecay(params_, node, policy_decay, current_util, index,
+                  visited_pol);
 
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
@@ -1873,8 +1878,6 @@ void SearchWorker::PickNodesToExtendTask(
           policy_decay[i] = node->GetLowNode()->GetEdges()[i].GetP();
         }
       }
-      PolicyDecay(params_, node->GetTotalVisits(), policy_decay, current_util,
-                  index, visited_pol);
 
       const float cpuct =
           ComputeCpuct(params_, node->GetTotalVisits(), is_root_node);
