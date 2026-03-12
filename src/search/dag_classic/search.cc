@@ -528,9 +528,14 @@ void PolicyDecay(const SearchParams& params, const Node* node,
 
   auto [min_iter, max_iter] =
       std::minmax_element(value.begin(), value.begin() + last_visited + 1);
-  const float value_temperature = params.GetPolicyValueTemperature() /
-                                  (std::max(*max_iter - *min_iter, epsilon));
+  const float param_temperature = params.GetPolicyValueTemperature();
+  // Adjust policy sharpness based on maximum value difference.
+  const float temp = param_temperature * (*max_iter - *min_iter);
+  // Prevent too sharp policy when all values are very close to each others.
+  const float value_temperature = 1.0f / (temp >= param_temperature ? temp :
+    param_temperature - (param_temperature - temp) * 0.99f);
 
+  // Calculate decay target policy as softmax of values.
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
       new_policy[i] = kNoUncertaintyPolicyValue;
@@ -544,6 +549,9 @@ void PolicyDecay(const SearchParams& params, const Node* node,
       [max](float acc, float& p) { return acc + (p = FastExp(p - max)); });
   const float inv_sum = 1.0f / std::max(sum, epsilon) * visited_pol;
   i = 0;
+
+  // Interpolate from prior policy to decay target policy based on child visit
+  // count.
   for (const auto* child : node->VisitedNodes()) {
     const uint32_t n = child->GetN();
     const float decay_share = std::min(n, policy_decay_visits) *

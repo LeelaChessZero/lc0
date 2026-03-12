@@ -675,7 +675,7 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
       kCpuctFactorAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
                                                       : kCpuctFactorId)),
-      kPolicyValueTemperature(1.0f / options.Get<float>(kPolicyValueTemperatureId)),
+      kPolicyValueTemperature(options.Get<float>(kPolicyValueTemperatureId)),
       kPolicyDecayVisits(options.Get<int>(kPolicyDecayVisitsId)),
       kPolicyDecayValueShare(options.Get<float>(kPolicyDecayValueShareId) / 100.0f),
       kTwoFoldDraws(options.Get<bool>(kTwoFoldDrawsId)),
