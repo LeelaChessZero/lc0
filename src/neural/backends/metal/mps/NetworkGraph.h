@@ -55,7 +55,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     // Variables to track results of graph inference.
     NSArray<MPSGraphTensor *> * _resultTensors;
     NSArray<MPSGraphTensor *> * _targetTensors;
-    NSMutableDictionary<NSNumber *, MPSGraphTensorDataDictionary *> * _resultDataDicts;
+    NSMutableDictionary<NSNumber *, NSArray<MPSGraphTensorData *> *> * _resultDataDicts;
     NSMutableDictionary<NSString *, MPSGraphTensor *> * _readVariables;
 
     // Variables for triple buffering
@@ -63,6 +63,14 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
     // Global smolgen weights.
     float * __nullable _globalSmolgenWeights;
+
+    // Graph queue compilation and execution.
+    MPSGraphExecutable * _executable;
+    BOOL _isGraphBuilt;
+    BOOL _isCompiled;
+    NSError * _compilationError;
+//    NSUInteger _totalInferences;
+//    NSUInteger _totalInferenceTime;
 }
 
 +(Lc0NetworkGraph * _Nonnull) getGraphAt:(NSNumber * _Nonnull)index;
@@ -71,6 +79,10 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                   index:(NSNumber * _Nonnull)index;
 
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
+
+-(void) compileGraph;
+
+-(void) compileGraphAsync:(void (^ __nonnull)(BOOL success, NSError * __nonnull error))completion;
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
                                                         label:(NSString * __nullable)label;
@@ -212,11 +224,13 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                                           inputs:(float * __nonnull)inputs
                                                            masks:(uint64_t * __nonnull)masks
                                                          outputs:(float * __nonnull * __nonnull)outputBuffers;
+//                                                executionBackend:(MPSGraphTargetExecutionBackend * __nonnull)backend;
 
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
                                                      masks:(uint64_t * __nonnull)masks
                                                   subBatch:(NSUInteger)subBatch
                                               subBatchSize:(NSUInteger)subBatchSize;
+//                                          executionBackend:(MPSGraphTargetExecutionBackend * __nonnull)backend;
 
 -(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers
                 subBatchSize:(NSUInteger)subBatchSize;
