@@ -592,7 +592,7 @@ void BaseSearchParams::Populate(OptionsParser* options) {
                                          "Q",
                                          "W-L",
                                          "WDL_mu"};
-  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "WDL_mu";
+  options->Add<ChoiceOption>(kScoreTypeId, score_type) = "centipawn";
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<FloatOption>(kMovesLeftMaxEffectId, 0.0f, 1.0f) = 0.0345f;
   options->Add<FloatOption>(kMovesLeftThresholdId, 0.0f, 1.0f) = 0.8f;
