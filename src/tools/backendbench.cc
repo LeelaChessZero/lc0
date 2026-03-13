@@ -31,6 +31,7 @@
 #include "neural/register.h"
 #include "neural/shared_params.h"
 #include "search/classic/node.h"
+#include "utils/clippy.h"
 #include "utils/optionsparser.h"
 
 namespace lczero {
@@ -52,29 +53,6 @@ const OptionId kHeaderOnlyOnceId{"header-only-once", "",
 const OptionId kFenId{"fen", "", "Benchmark initial position FEN."};
 
 const OptionId kClippyId{"clippy", "", "Enable helpful assistant."};
-
-void Clippy(std::string title, std::string msg3, std::string best3,
-            std::string msg2, std::string best2, std::string msg,
-            std::string best) {
-  std::cout << "  __" << std::endl;
-  std::cout << " /  \\" << std::endl;
-  std::cout << " |  |    " << std::string(title.length() + 2, '_') << std::endl;
-  std::cout << " +  +   | " << std::string(title.length() + 1, ' ') << "|"
-            << std::endl;
-  std::cout << "(@)(@) _| " << title << " |" << std::endl;
-  std::cout << " |  |  \\  " << std::string(6, ' ') << msg3
-            << std::string(4 - best3.length(), ' ') << best3
-            << std::string(title.length() - 33, ' ') << "|" << std::endl;
-  std::cout << " || |/  | " << std::string(6, ' ') << msg2
-            << std::string(4 - best2.length(), ' ') << best2
-            << std::string(title.length() - 33, ' ') << "|" << std::endl;
-  std::cout << " || ||  | " << std::string(6, ' ') << msg
-            << std::string(4 - best.length(), ' ') << best
-            << std::string(title.length() - 33, ' ') << "|" << std::endl;
-  std::cout << " |\\_/|  |" << std::string(title.length() + 2, '_') << "|"
-            << std::endl;
-  std::cout << " \\___/" << std::endl;
-}
 }  // namespace
 
 void BackendBenchmark::Run() {
@@ -128,6 +106,17 @@ void BackendBenchmark::Run() {
     int best = 1;
     int best2 = 1;
     int best3 = 1;
+    auto clippy_msg = [&](bool fin) {
+      // clang-format off
+      std::string s =
+          "Recommended minibatch-size for this net" +
+          std::string(fin ? "" : " (so far)") + ":\n" +
+          "1s/move   (Bullet):     " + std::to_string(best3) + "\n" +
+          "15s/move  (Rapid):      " + std::to_string(best2) + "\n" +
+          "3min/move (Tournament): " + std::to_string(best);
+      // clang-format on
+      return s;
+    };
     float best_nps = 0.0f;
     float best_nps2 = 0.0f;
     float best_nps3 = 0.0f;
@@ -263,20 +252,14 @@ void BackendBenchmark::Run() {
           std::chrono::duration<double> time =
               std::chrono::steady_clock::now() - *pending;
           if (time.count() > 10) {
-            Clippy("Recommended minibatch-size for this net (so far):",
-                   "1s/move   (Bullet):     ", std::to_string(best3),
-                   "15s/move  (Rapid):      ", std::to_string(best2),
-                   "3min/move (Tournament): ", std::to_string(best));
+            Clippy(clippy_msg(false));
             pending.reset();
           }
         }
       }
     }
     if (option_dict.Get<bool>(kClippyId)) {
-      Clippy("Recommended minibatch-size for this net:",
-             "1s/move   (Bullet):     ", std::to_string(best3),
-             "15s/move  (Rapid):      ", std::to_string(best2),
-             "3min/move (Tournament): ", std::to_string(best));
+      Clippy(clippy_msg(true));
     }
   } catch (Exception& ex) {
     std::cerr << ex.what() << std::endl;
