@@ -271,7 +271,8 @@ void ApplyDirichletNoise(LowNode* node, float eps, double alpha) {
 
 namespace {
 // WDL conversion formula based on random walk model.
-inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
+template <typename T>
+inline double WDLRescale(T& v, T& d, float wdl_rescale_ratio,
                          float wdl_rescale_diff, float sign, bool invert,
                          float max_reasonable_s) {
   if (invert) {
@@ -476,7 +477,7 @@ void Search::RecordNPSStartTime() {
 }
 
 // Root is depth 0, i.e. even depth.
-float Search::GetDrawScore(bool is_odd_depth) const {
+double Search::GetDrawScore(bool is_odd_depth) const {
   return (is_odd_depth == played_history_.IsBlackToMove()
               ? params_.GetDrawScore()
               : -params_.GetDrawScore());
@@ -1641,9 +1642,6 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, bool is_root_node,
   auto low_node = node->GetLowNode().get();
   assert(low_node);
 
-  // Only known transpositions can differ.
-  if (!low_node->IsTransposition()) return false;
-
   // LowNode is terminal when Node is not.
   if (low_node->IsTerminal()) return true;
 
@@ -2181,8 +2179,8 @@ void SearchWorker::DoBackupUpdate() {
 }
 
 bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
-    Node* n, const std::shared_ptr<LowNode>& nl, float& v, float& d, float& m,
-    uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
+    Node* n, const std::shared_ptr<LowNode>& nl, double& v, double& d, float& m,
+    uint32_t& n_to_fix, double& v_delta, double& d_delta, float& m_delta,
     bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
     v = n->GetWL();
@@ -2193,7 +2191,7 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
   }
 
   // Use information from transposition or a new terminal.
-  if (nl->IsTransposition() || nl->IsTerminal() || n->GetN() < nl->GetN()) {
+  if (nl->IsTransposition() || nl->IsTerminal() || n->GetN() + 1 < nl->GetN()) {
     // Adapt information from low node to node by flipping Q sign, bounds,
     // result and incrementing m.
     v = -nl->GetWL();
@@ -2269,19 +2267,18 @@ void SearchWorker::DoBackupUpdateSingleNode(
   auto update_parent_bounds =
       params_.GetStickyEndgames() && n->IsTerminal() && !n->GetN();
   const auto& nl = n->GetLowNode();
-  float v = 0.0f;
-  float d = 0.0f;
+  double v = 0.0;
+  double d = 0.0;
   float m = 0.0f;
   uint32_t n_to_fix = 0;
-  float v_delta = 0.0f;
-  float d_delta = 0.0f;
+  double v_delta = 0.0;
+  double d_delta = 0.0;
   float m_delta = 0.0f;
 
   // Update the low node at the start of the backup path first, but only visit
   // it the first time that backup sees it.
   if (nl && nl->GetN() == 0) {
-    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(),
-                            node_to_process.multivisit);
+    nl->FinalizeScoreUpdate(nl->GetWL(), nl->GetD(), nl->GetM(), 1);
   }
 
   if (nr >= 2) {
@@ -2303,9 +2300,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
   // Backup V value up to a root. After 1 visit, V = Q.
   for (auto it = path.crbegin(); it != path.crend();
        /* ++it in the body */) {
-    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    auto divisor = n->FinalizeScoreUpdate(v, d, m, 1);
     if (n_to_fix > 0 && !n->IsTerminal()) {
-      n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+      n->AdjustForTerminal(v_delta, d_delta, m_delta, divisor, n_to_fix);
     }
 
     // Stop delta update on repetition "terminal" and propagate a draw above
@@ -2335,9 +2332,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
       m = pl->GetM();
       n_to_fix = 0;
     }
-    pl->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    divisor = pl->FinalizeScoreUpdate(v, d, m, 1);
     if (n_to_fix > 0) {
-      pl->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
+      pl->AdjustForTerminal(v_delta, d_delta, m_delta, divisor, n_to_fix);
     }
 
     bool old_update_parent_bounds = update_parent_bounds;
@@ -2375,18 +2372,17 @@ void SearchWorker::DoBackupUpdateSingleNode(
     nr = pr;
     nm = pm;
   }
-  search_->total_playouts_ += node_to_process.multivisit;
+  search_->total_playouts_ += 1;
   if (node_to_process.nn_queried && !node_to_process.is_cache_hit) {
     search_->network_evaluations_++;
   }
-  search_->cum_depth_ +=
-      node_to_process.path.size() * node_to_process.multivisit;
+  search_->cum_depth_ += node_to_process.path.size();
   search_->max_depth_ =
       std::max(search_->max_depth_, (uint16_t)node_to_process.path.size());
 }
 
 bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
-                                  float* v_delta, float* d_delta,
+                                  double* v_delta, double* d_delta,
                                   float* m_delta) const {
   auto losing_m = 0.0f;
   auto prefer_tb = false;
