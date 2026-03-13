@@ -36,6 +36,7 @@
 #include "search/classic/stoppers/factory.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
+#include "utils/numa.h"
 #include "utils/optionsparser.h"
 #include "utils/random.h"
 
@@ -112,6 +113,7 @@ void SelfPlayTournament::PopulateOptions(OptionsParser* options) {
   }
 
   SharedBackendParams::Populate(options);
+  Numa::Init(options);
   options->Add<IntOption>(kThreadsId, 1, 8) = 1;
   classic::SearchParams::Populate(options);
 
