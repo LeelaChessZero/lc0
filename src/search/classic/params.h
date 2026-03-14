@@ -65,6 +65,7 @@ class BaseSearchParams {
   }
   float GetPolicyValueTemperature() const { return kPolicyValueTemperature; }
   uint32_t GetPolicyDecayVisits() const { return kPolicyDecayVisits; }
+  uint32_t GetPolicyDecayParentVisits() const { return kPolicyDecayParentVisits; }
   float GetPolicyDecayValueShare() const { return kPolicyDecayValueShare; }
   bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
@@ -178,6 +179,7 @@ class BaseSearchParams {
   static const OptionId kPolicyValueTemperatureId;
   static const OptionId kPolicyDecayValueShareId;
   static const OptionId kPolicyDecayVisitsId;
+  static const OptionId kPolicyDecayParentVisitsId;
   static const OptionId kTwoFoldDrawsId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
@@ -256,6 +258,7 @@ class BaseSearchParams {
   const float kCpuctFactorAtRoot;
   const float kPolicyValueTemperature;
   const uint32_t kPolicyDecayVisits;
+  const uint32_t kPolicyDecayParentVisits;
   const float kPolicyDecayValueShare;
   const bool kTwoFoldDraws;
   const float kNoiseEpsilon;

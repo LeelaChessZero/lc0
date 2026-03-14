@@ -1293,7 +1293,11 @@ void PolicyDecay(const SearchParams& params, const Node* node,
                  float visited_pol) {
   const float maximum_policy_decay = params.GetPolicyDecayValueShare();
   const uint32_t policy_decay_visits = params.GetPolicyDecayVisits();
+  const uint32_t policy_decay_parent_visits =
+      params.GetPolicyDecayParentVisits();
   const float inv_policy_decay_visits = 1.0f / policy_decay_visits;
+  const float inv_policy_decay_parent_visits =
+      1.0f / policy_decay_parent_visits;
   const float kNoUncertaintyPolicyValue = -std::numeric_limits<float>::max();
   float max = -std::numeric_limits<float>::max();
   std::array<float, 256> new_policy;
@@ -1309,8 +1313,10 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   // Adjust policy sharpness based on maximum value difference.
   const float temp = param_temperature * (*max_iter - *min_iter);
   // Prevent too sharp policy when all values are very close to each others.
-  const float value_temperature = 1.0f / (temp >= param_temperature ? temp :
-    param_temperature - (param_temperature - temp) * 0.99f);
+  const float value_temperature =
+      1.0f / (temp >= param_temperature
+                  ? temp
+                  : param_temperature - (param_temperature - temp) * 0.99f);
 
   // Calculate decay target policy as softmax of values.
   for (i = 0; i <= last_visited; i++) {
@@ -1327,13 +1333,19 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   const float inv_sum = 1.0f / std::max(sum, epsilon) * visited_pol;
   i = 0;
 
+  const uint32_t n_p = node->GetN();
+  const float parent_decay_share =
+      std::min(n_p, policy_decay_parent_visits) *
+      (inv_policy_decay_parent_visits * maximum_policy_decay);
+
   // Interpolate from prior policy to decay target policy based on child visit
   // count.
   for (const auto* child : node->VisitedNodes()) {
     const uint32_t n = child->GetN();
     const float decay_share = std::min(n, policy_decay_visits) *
                               (inv_policy_decay_visits * maximum_policy_decay);
-    policy[i] = std::lerp(policy[i], new_policy[i] * inv_sum, decay_share);
+    policy[i] = std::lerp(policy[i], new_policy[i] * inv_sum,
+                          std::min(decay_share, parent_decay_share));
     i++;
   }
 }
