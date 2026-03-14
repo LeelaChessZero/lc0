@@ -233,7 +233,7 @@ const OptionId BaseSearchParams::kPolicyDecayVisitsId{
      .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kPolicyDecayParentVisitsId{
     {.long_flag = "policy-decay-parent-visits",
-     .uci_option = "PolicyDecayVisits",
+     .uci_option = "PolicyDecayParentVisits",
      .help_text =
          "Number of parent visits prior policy is valid. Prior policy decays to "
          "value policy linearly until reaching the set visit number.",
