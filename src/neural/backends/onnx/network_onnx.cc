@@ -209,6 +209,7 @@ class OnnxNetwork final : public Network {
   // The lower limit for variable batch size.
   int min_batch_size_;
   int gpu_;
+  std::string compute_units_;
   static constexpr int max_batch_size_ = 1024;
   // For conditional locking if running the DML/ROCM/TRT provider.
   OnnxProvider provider_;
@@ -664,7 +665,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
     case OnnxProvider::COREML: {
       std::unordered_map<std::string, std::string> provider_options;
       provider_options["ModelFormat"] = "MLProgram";
-      provider_options["ProfileComputePlan"] = "1";
+      provider_options["MLComputeUnits"] = compute_units_;
       provider_options["AllowLowPrecisionAccumulationOnGPU"] = "1";
       options.AppendExecutionProvider("CoreML", provider_options);
       break;
@@ -860,6 +861,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   batch_size_ = opts.GetOrDefault<int>("batch", default_batch);
   steps_ = opts.GetOrDefault<int>("steps", default_steps);
   min_batch_size_ = opts.GetOrDefault<int>("min_batch", default_min_batch);
+  compute_units_ = opts.GetOrDefault<std::string>("compute_units", "ALL");
 
   // Sanity checks.
   if (batch_size_ <= 0) {
