@@ -218,11 +218,18 @@ const OptionId BaseSearchParams::kRootHasOwnCpuctParamsId{
          "parameters. Otherwise, they are the same as for the rest of nodes. "
          "Temporary flag for transition to a new version.",
      .visibility = OptionId::kProOnly}};
-const OptionId BaseSearchParams::kPolicyValueTemperatureId{
-    {.long_flag = "policy-value-temperature",
-     .uci_option = "PolicyValueTemperature",
-     .help_text = "Tau value from softmax formula when converting value to "
-                  "policy for decay.",
+const OptionId BaseSearchParams::kPolicyValueExponentId{
+    {.long_flag = "policy-value-exponent",
+     .uci_option = "PolicyValueExponent",
+     .help_text = "Control sharpness of value based policy decay target. "
+                  "Higher exponents increase the share for the best move.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyValueBaseId{
+    {.long_flag = "policy-value-base",
+     .uci_option = "PolicyValueBase",
+     .help_text =
+         "Control the share of policy reserved for the worst moves. Higher "
+         "values increase share of policy for lowest ranked moves.",
      .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kPolicyDecayVisitsId{
     {.long_flag = "policy-decay-visits",
@@ -234,16 +241,16 @@ const OptionId BaseSearchParams::kPolicyDecayVisitsId{
 const OptionId BaseSearchParams::kPolicyDecayParentVisitsId{
     {.long_flag = "policy-decay-parent-visits",
      .uci_option = "PolicyDecayParentVisits",
-     .help_text =
-         "Number of parent visits prior policy is valid. Prior policy decays to "
-         "value policy linearly until reaching the set visit number.",
+     .help_text = "Number of parent visits prior policy is valid. Prior policy "
+                  "decays to "
+                  "value policy linearly until reaching the set visit number.",
      .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kPolicyDecayValueShareId{
-  {.long_flag = "policy-decay-value-share",
-   .uci_option = "PolicyDecayValueShare",
-   .help_text =
-       "The maximum percentage that value-based policy decay can reach.",
-   .visibility = OptionId::kProOnly}};
+    {.long_flag = "policy-decay-value-share",
+     .uci_option = "PolicyDecayValueShare",
+     .help_text =
+         "The maximum percentage that value-based policy decay can reach.",
+     .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kTwoFoldDrawsId{
     "two-fold-draws", "TwoFoldDraws",
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
@@ -577,8 +584,9 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
-  options->Add<FloatOption>(kPolicyValueTemperatureId, 1e-15f, 10.0f) = 0.02f;
-  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 10000) = 50;
+  options->Add<FloatOption>(kPolicyValueExponentId, 0, 100.0f) = 8.0f;
+  options->Add<FloatOption>(kPolicyValueBaseId, 0, 100.0f) = 0.0002f;
+  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 10000) = 200;
   options->Add<IntOption>(kPolicyDecayParentVisitsId, 1, 100000) = 2000;
   options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 100.0f;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
@@ -683,10 +691,12 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
       kCpuctFactorAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
                                                       : kCpuctFactorId)),
-      kPolicyValueTemperature(options.Get<float>(kPolicyValueTemperatureId)),
+      kPolicyValueExponent(options.Get<float>(kPolicyValueExponentId)),
+      kPolicyValueBase(options.Get<float>(kPolicyValueBaseId)),
       kPolicyDecayVisits(options.Get<int>(kPolicyDecayVisitsId)),
       kPolicyDecayParentVisits(options.Get<int>(kPolicyDecayParentVisitsId)),
-      kPolicyDecayValueShare(options.Get<float>(kPolicyDecayValueShareId) / 100.0f),
+      kPolicyDecayValueShare(options.Get<float>(kPolicyDecayValueShareId) /
+                             100.0f),
       kTwoFoldDraws(options.Get<bool>(kTwoFoldDrawsId)),
       kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),

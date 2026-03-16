@@ -63,7 +63,8 @@ class BaseSearchParams {
   float GetCpuctFactor(bool at_root) const {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
-  float GetPolicyValueTemperature() const { return kPolicyValueTemperature; }
+  float GetPolicyValueExponent() const { return kPolicyValueExponent; }
+  float GetPolicyValueBase() const { return kPolicyValueBase; }
   uint32_t GetPolicyDecayVisits() const { return kPolicyDecayVisits; }
   uint32_t GetPolicyDecayParentVisits() const { return kPolicyDecayParentVisits; }
   float GetPolicyDecayValueShare() const { return kPolicyDecayValueShare; }
@@ -176,7 +177,8 @@ class BaseSearchParams {
   static const OptionId kCpuctFactorId;
   static const OptionId kCpuctFactorAtRootId;
   static const OptionId kRootHasOwnCpuctParamsId;
-  static const OptionId kPolicyValueTemperatureId;
+  static const OptionId kPolicyValueExponentId;
+  static const OptionId kPolicyValueBaseId;
   static const OptionId kPolicyDecayValueShareId;
   static const OptionId kPolicyDecayVisitsId;
   static const OptionId kPolicyDecayParentVisitsId;
@@ -256,7 +258,8 @@ class BaseSearchParams {
   const float kCpuctBaseAtRoot;
   const float kCpuctFactor;
   const float kCpuctFactorAtRoot;
-  const float kPolicyValueTemperature;
+  const float kPolicyValueExponent;
+  const float kPolicyValueBase;
   const uint32_t kPolicyDecayVisits;
   const uint32_t kPolicyDecayParentVisits;
   const float kPolicyDecayValueShare;

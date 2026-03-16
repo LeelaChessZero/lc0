@@ -1298,10 +1298,9 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   const float inv_policy_decay_visits = 1.0f / policy_decay_visits;
   const float inv_policy_decay_parent_visits =
       1.0f / policy_decay_parent_visits;
-  const float kNoUncertaintyPolicyValue = -std::numeric_limits<float>::max();
-  float max = -std::numeric_limits<float>::max();
+  const float kNoUncertaintyPolicyValue = 0.0f;
   std::array<float, 256> new_policy;
-  const float epsilon = 1e-6f;
+  const float epsilon = 1e-9f;
 
   if (maximum_policy_decay == 0.0f || last_visited < 0) return;
 
@@ -1309,27 +1308,19 @@ void PolicyDecay(const SearchParams& params, const Node* node,
 
   auto [min_iter, max_iter] =
       std::minmax_element(value.begin(), value.begin() + last_visited + 1);
-  const float param_temperature = params.GetPolicyValueTemperature();
-  // Adjust policy sharpness based on maximum value difference.
-  const float temp = param_temperature * (*max_iter - *min_iter);
-  // Prevent too sharp policy when all values are very close to each others.
-  const float value_temperature =
-      1.0f / (temp >= param_temperature
-                  ? temp
-                  : param_temperature - (param_temperature - temp) * 0.99f);
+  const float policy_exponent = params.GetPolicyValueExponent();
+  const float policy_base = params.GetPolicyValueBase();
 
+  float sum = 0.0f;
   // Calculate decay target policy as softmax of values.
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
       new_policy[i] = kNoUncertaintyPolicyValue;
       continue;
     }
-    new_policy[i] = value[i] * value_temperature;
-    max = std::max(max, new_policy[i]);
+    new_policy[i] = FastExp(policy_exponent * FastLog(value[i] - *min_iter + epsilon)) + policy_base;
+    sum += new_policy[i];
   }
-  const float sum = std::accumulate(
-      new_policy.begin(), new_policy.begin() + last_visited + 1, 0.0f,
-      [max](float acc, float& p) { return acc + (p = FastExp(p - max)); });
   const float inv_sum = 1.0f / std::max(sum, epsilon) * visited_pol;
   i = 0;
 
