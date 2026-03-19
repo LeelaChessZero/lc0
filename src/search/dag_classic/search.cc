@@ -535,13 +535,17 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   const float policy_base = params.GetPolicyValueBase();
 
   float sum = 0.0f;
+  const float offset = *min_iter - epsilon;
+  const float scale = 1.0f / (std::max(*max_iter - *min_iter, epsilon));
   // Calculate decay target policy as softmax of values.
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
       new_policy[i] = kNoUncertaintyPolicyValue;
       continue;
     }
-    new_policy[i] = FastExp(policy_exponent * FastLog(value[i] - *min_iter + epsilon)) + policy_base;
+    new_policy[i] =
+        FastExp(policy_exponent * FastLog((value[i] - offset) * scale)) +
+        policy_base;
     sum += new_policy[i];
   }
   const float inv_sum = 1.0f / std::max(sum, epsilon) * visited_pol;
