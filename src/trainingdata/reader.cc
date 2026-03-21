@@ -117,6 +117,10 @@ InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {
   return result;
 }
 
+InputPlanes PlanesFromTrainingData(const V7TrainingData& data) {
+  return PlanesFromTrainingData(static_cast<const V6TrainingData&>(data));
+}
+
 TrainingDataReader::TrainingDataReader(std::string filename)
     : filename_(filename) {
   fin_ = gzopen(filename_.c_str(), "rb");
@@ -205,7 +209,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         data->played_idx = 0;
         data->best_idx = 0;
         data->policy_kld = 0.0f;
-        data->reserved = 0;
+        data->q_st = 0.0f;
         return true;
       }
       case 6: {
