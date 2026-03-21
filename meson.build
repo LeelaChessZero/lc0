@@ -484,7 +484,7 @@ if get_option('build_backends')
         nvcc_arguments += ['-Xcompiler', '-MD']
       endif
     else
-      nvcc_arguments += ['--std=c++17', '-Xcompiler', '-fPIC']
+      nvcc_arguments += ['-Xcompiler', '-fPIC']
       if get_option('debug')
         nvcc_arguments += ['-g']
       endif
@@ -525,8 +525,36 @@ if get_option('build_backends')
     endif
     nvcc_ok = true
 
+    nvcc_args = []
+    foreach a : nvcc_arguments
+      if a in ['-c', '@INPUT@', '-o', '@OUTPUT@']
+      else
+        nvcc_args += [a]
+      endif
+    endforeach
+    nvcc_stdversion_list = [20, 17, 14]
+    flag_not_supported = 'flag is not supported with the configured host compiler'
+    nvcc_stdversion = 14
+    foreach v : nvcc_stdversion_list
+      s = '--std=c++' + v.to_string()
+      nvcc_status = run_command(nvcc, '--dryrun', s, nvcc_extra_args, nvcc_args, 'foo.cu', check : false)
+      if host_machine.system() == 'windows'
+        nvcc_dryrun = nvcc_status.stdout()
+      else
+        nvcc_dryrun = nvcc_status.stderr()
+      endif
+      if nvcc_status.returncode() != 0 or nvcc_dryrun.contains(flag_not_supported)
+        continue
+      endif
+      nvcc_arguments += [s]
+      nvcc_args += [s]
+      nvcc_stdversion = v
+      break
+    endforeach
+    message('Detected NVCC C++ standard support: ' + nvcc_stdversion.to_string())
+
     max_cuda = 0
-    nvcc_status = run_command(nvcc, '--dryrun', nvcc_extra_args, 'foo.cu', check : false)
+    nvcc_status = run_command(nvcc, '--dryrun', nvcc_extra_args, nvcc_args, 'foo.cu', check : false)
     if host_machine.system() == 'windows'
       nvcc_dryrun = nvcc_status.stdout()
     else
@@ -540,7 +568,7 @@ if get_option('build_backends')
         endif
       endif
     endforeach
-    message('Maximum detected CUDA architecture: ' + max_cuda.to_string())
+    message('Detected maximum CUDA architecture: ' + max_cuda.to_string())
   endif
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_dart.found() and cu_blas.found() and nvcc_ok
     deps += [cu_blas, cu_dart]
@@ -556,7 +584,8 @@ if get_option('build_backends')
     includes += include_directories('src/neural/backends/cuda/')
 	 files += cuda_files
 
-    if get_option('cutlass') and max_cuda >= 800
+    if get_option('cutlass') and max_cuda >= 800 and nvcc_stdversion >= 17
+      message('Building with CUTLASS support')
       add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
       nvcc_arguments += ['-DUSE_CUTLASS']
       if get_option('cutlass_include') != ''
