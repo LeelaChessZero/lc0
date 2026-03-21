@@ -320,6 +320,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
       uci_info.score = 90 * tan(1.5637541897 * q);
     } else if (score_type == "centipawn") {
       uci_info.score = 100.79055 * tan(1.56292199291664 * wl);
+    } else if (score_type == "centipawn_2020") {
+      uci_info.score = 90 * tan(1.5637541897 * wl);
     } else if (score_type == "centipawn_2019") {
       uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(wl, 14));
     } else if (score_type == "centipawn_2018") {
