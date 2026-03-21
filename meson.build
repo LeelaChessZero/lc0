@@ -526,15 +526,21 @@ if get_option('build_backends')
     nvcc_ok = true
 
     max_cuda = 0
-    nvcc_dryrun = run_command(nvcc, '--dryrun', nvcc_extra_args, 'foo.cu', check : false).stderr()
+    nvcc_status = run_command(nvcc, '--dryrun', nvcc_extra_args, 'foo.cu', check : false)
+    if host_machine.system() == 'windows'
+      nvcc_dryrun = nvcc_status.stdout()
+    else
+      nvcc_dryrun = nvcc_status.stderr()
+    endif
     foreach x : nvcc_dryrun.split()
-      if x.contains('-D__CUDA_ARCH__=')
-        arch = x.substring(16).to_int()
+      if x.contains('__CUDA_ARCH__=')
+        arch = x.split('=')[1].to_int()
         if arch > max_cuda
           max_cuda = arch
         endif
       endif
     endforeach
+    message('Maximum detected CUDA architecture: ' + max_cuda.to_string())
   endif
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_dart.found() and cu_blas.found() and nvcc_ok
     deps += [cu_blas, cu_dart]
