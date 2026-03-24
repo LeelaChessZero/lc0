@@ -1492,7 +1492,8 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
       picked_node.is_cache_hit = false;
       node = child;
     }
-    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder() &&
+        !(params_.GetCachePiercing() > 0 && picked_node.is_cache_hit)) {
       // Perform out of order eval for the last entry in minibatch_.
       FetchSingleNodeResult(&picked_node);
       picked_node.ooo_completed = true;
