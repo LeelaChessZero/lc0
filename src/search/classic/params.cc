@@ -525,6 +525,10 @@ const OptionId BaseSearchParams::kUCIRatingAdvId{
 const OptionId BaseSearchParams::kSearchSpinBackoffId{
     "search-spin-backoff", "SearchSpinBackoff",
     "Enable backoff for the spin lock that acquires available searcher."};
+const OptionId BaseSearchParams::kCachePiercingId{
+    "cache-piercing", "CachePiercing",
+    "Maximum number of times per visit that a new node found in the cache "
+    "is immediately created and the visit continued through it."};
 const OptionId BaseSearchParams::kGarbageCollectionDelayId{
     "garbage-collection-delay", "GarbageCollectionDelay",
     "The percentage of expected move time until garbage collection start. "
@@ -630,6 +634,7 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<StringOption>(kUCIOpponentId);
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
+  options->Add<IntOption>(kCachePiercingId, 0, 450) = 0;
   options->Add<FloatOption>(kGarbageCollectionDelayId, 0.0f, 100.0f) = 10.0f;
 }
 
@@ -666,6 +671,7 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
                           ? kFpuValue
                           : options.Get<float>(kFpuValueAtRootId)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId)),
+      kCachePiercing(options.Get<int>(kCachePiercingId)),
       kPolicySoftmaxTemp(
           options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp)),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId)),
