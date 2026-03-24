@@ -2249,6 +2249,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float m = node_to_process.eval->m;
   const int multivisit = node_to_process.multivisit;
   int extra_multivisit = 0;
+  const auto cp_backprop = params_.GetCachePiercingBackprop();
   int n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
@@ -2265,16 +2266,38 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
       m = n->GetM();
     }
-    // Repair cache-pierced intermediate nodes: their cached value becomes a
-    // real visit, and the extra visit count propagates to all ancestors.
+    // Handle cache-pierced intermediate nodes according to backprop mode.
     if (n->GetN() == 0 && n != node) {
-      if (extra_multivisit > 0) n->IncrementNInFlight(extra_multivisit);
-      n->MakeCachedVisitReal();
-      n->FinalizeScoreUpdate(v, d, m, multivisit + extra_multivisit);
-      v = n->GetWL();
-      d = n->GetD();
-      m = n->GetM();
-      extra_multivisit++;
+      using M = CachePiercingBackpropMode;
+      switch (cp_backprop) {
+        case M::kNone:
+          n->FinalizeScoreUpdate(v, d, m, multivisit + extra_multivisit);
+          break;
+        case M::kAccumulate:
+          if (extra_multivisit > 0) n->IncrementNInFlight(extra_multivisit);
+          n->MakeCachedVisitReal();
+          n->FinalizeScoreUpdate(v, d, m, multivisit + extra_multivisit);
+          v = n->GetWL();
+          d = n->GetD();
+          m = n->GetM();
+          extra_multivisit++;
+          break;
+        case M::kNode:
+          v = n->GetWL();
+          d = n->GetD();
+          m = n->GetM();
+          n->MakeCachedVisitReal();
+          n->CancelScoreUpdate(multivisit);
+          break;
+        case M::kBlend:
+          v = 0.5f * v + 0.5f * static_cast<float>(n->GetWL());
+          d = 0.5f * d + 0.5f * n->GetD();
+          m = 0.5f * m + 0.5f * n->GetM();
+          n->SetCachedValue(v, d, m);
+          n->MakeCachedVisitReal();
+          n->CancelScoreUpdate(multivisit);
+          break;
+      }
     } else {
       if (extra_multivisit > 0) n->IncrementNInFlight(extra_multivisit);
       n->FinalizeScoreUpdate(v, d, m, multivisit + extra_multivisit);

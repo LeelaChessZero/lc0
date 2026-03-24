@@ -54,6 +54,14 @@ FillEmptyHistory EncodeHistoryFill(std::string history_fill) {
   return FillEmptyHistory::NO;
 }
 
+CachePiercingBackpropMode EncodeCachePiercingBackprop(const std::string& s) {
+  if (s == "accumulate") return CachePiercingBackpropMode::kAccumulate;
+  if (s == "node") return CachePiercingBackpropMode::kNode;
+  if (s == "blend") return CachePiercingBackpropMode::kBlend;
+  assert(s == "none");
+  return CachePiercingBackpropMode::kNone;
+}
+
 float GetContempt(std::string name, std::string contempt_str,
                   float uci_rating_adv) {
   float contempt = uci_rating_adv;
@@ -529,6 +537,13 @@ const OptionId BaseSearchParams::kCachePiercingId{
     "cache-piercing", "CachePiercing",
     "Maximum number of times per visit that a new node found in the cache "
     "is immediately created and the visit continued through it."};
+const OptionId BaseSearchParams::kCachePiercingBackpropId{
+    "cache-piercing-backprop", "CachePiercingBackprop",
+    "How cache-pierced intermediate nodes are handled during "
+    "backpropagation. \"none\": leaf value overwrites cached value. "
+    "\"accumulate\": cached value counts as extra visit, multivisit "
+    "increases. \"node\": propagate node's own cached value, ignore leaf. "
+    "\"blend\": 50/50 mix of propagated and cached value at each step."};
 const OptionId BaseSearchParams::kGarbageCollectionDelayId{
     "garbage-collection-delay", "GarbageCollectionDelay",
     "The percentage of expected move time until garbage collection start. "
@@ -635,6 +650,11 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kUCIRatingAdvId, -10000.0f, 10000.0f) = 0.0f;
   options->Add<BoolOption>(kSearchSpinBackoffId) = false;
   options->Add<IntOption>(kCachePiercingId, 0, 450) = 0;
+  {
+    std::vector<std::string> cp_backprop = {"none", "accumulate", "node",
+                                            "blend"};
+    options->Add<ChoiceOption>(kCachePiercingBackpropId, cp_backprop) = "none";
+  }
   options->Add<FloatOption>(kGarbageCollectionDelayId, 0.0f, 100.0f) = 10.0f;
 }
 
@@ -672,6 +692,8 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
                           : options.Get<float>(kFpuValueAtRootId)),
       kCacheHistoryLength(options.Get<int>(kCacheHistoryLengthId)),
       kCachePiercing(options.Get<int>(kCachePiercingId)),
+      kCachePiercingBackprop(EncodeCachePiercingBackprop(
+          options.Get<std::string>(kCachePiercingBackpropId))),
       kPolicySoftmaxTemp(
           options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp)),
       kMaxCollisionEvents(options.Get<int>(kMaxCollisionEventsId)),
