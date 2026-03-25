@@ -339,11 +339,11 @@ void Node::MakeNotTerminal() {
     // Recompute with current eval (instead of network's) and children's eval.
     wl_ /= n_;
     d_ /= n_;
-    x_ = std::numeric_limits<float>::lowest();
+    x_ = std::numeric_limits<float>::max();
     for (auto* child : VisitedNodes()) {
-      x_ = std::max(x_, -child->x_);
+      x_ = std::min(x_, -child->x_);
     }
-    if (x_ == std::numeric_limits<float>::lowest()) x_ = 0.0f;
+    if (x_ == std::numeric_limits<float>::max()) x_ = 0.0f;
   }
 }
 
@@ -402,20 +402,20 @@ bool Node::UpdateX(float child_old_x, float child_new_x) {
   float neg_old = -child_old_x;
   float neg_new = -child_new_x;
   if (x_ != neg_old) {
-    if (neg_new <= x_) return false;
+    if (neg_new >= x_) return false;
     x_ = neg_new;
     return true;
   }
-  if (neg_new >= x_) {
+  if (neg_new <= x_) {
     if (neg_new == x_) return false;
     x_ = neg_new;
     return true;
   }
   // Best child worsened — rescan all visited children.
   float old_x = x_;
-  x_ = std::numeric_limits<float>::lowest();
+  x_ = std::numeric_limits<float>::max();
   for (auto* child : VisitedNodes()) {
-    x_ = std::max(x_, -child->x_);
+    x_ = std::min(x_, -child->x_);
   }
   return x_ != old_x;
 }
