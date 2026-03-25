@@ -1721,6 +1721,54 @@ void SearchWorker::PickNodesToExtendTask(
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       int cache_filled_idx = -1;
+      // Route minimax fraction of visits to the best-X child.
+      const float minimax_fraction = params_.GetMinimaxFraction();
+      if (minimax_fraction > 0.0f && cur_limit > 1) {
+        int minimax_visits = static_cast<int>(minimax_fraction * cur_limit);
+        if (minimax_visits > 0) {
+          int best_x_idx = -1;
+          float best_x = std::numeric_limits<float>::lowest();
+          for (Node* child : node->VisitedNodes()) {
+            float x = child->GetX();
+            if (x > best_x) {
+              best_x = x;
+              best_x_idx = child->Index();
+            }
+          }
+          if (best_x_idx >= 0) {
+            // Find the edge iterator for best_x_idx.
+            auto mm_iter = node->Edges();
+            for (int i = 0; i < best_x_idx; i++) ++mm_iter;
+            // Pre-assign minimax visits in vtp array.
+            auto* vtp_array = visits_to_perform.back().get()->data();
+            std::fill(vtp_array, vtp_array + best_x_idx + 1, 0);
+            (*visits_to_perform.back())[best_x_idx] = minimax_visits;
+            vtp_last_filled.back() = best_x_idx;
+            cur_limit -= minimax_visits;
+            // Spawn node and handle n_in_flight.
+            Node* child_node = mm_iter.GetOrSpawnNode(/* parent */ node);
+            EnsureNodeTwoFoldCorrectForDepth(
+                child_node, current_path.size() + base_depth + 1 - 1);
+            if (child_node->TryStartScoreUpdate()) {
+              minimax_visits -= 1;
+              if (child_node->GetN() > 0 && !child_node->IsTerminal()) {
+                child_node->IncrementNInFlight(minimax_visits);
+              }
+              if (child_node->GetN() == 0 || child_node->IsTerminal()) {
+                (*visits_to_perform.back())[best_x_idx] -= 1;
+                receiver->push_back(NodeToProcess::Visit(
+                    child_node, static_cast<uint16_t>(current_path.size() + 1 +
+                                                      base_depth)));
+                completed_visits++;
+                receiver->back().moves_to_visit.reserve(
+                    moves_to_path.size() + 1);
+                receiver->back().moves_to_visit = moves_to_path;
+                receiver->back().moves_to_visit.push_back(mm_iter.GetMove());
+              }
+            }
+          }
+        }
+      }
       while (cur_limit > 0) {
         // Perform UCT for current node.
         float best = std::numeric_limits<float>::lowest();
