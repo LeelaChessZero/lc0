@@ -246,6 +246,8 @@ void V6TrainingDataArray::Add(
       DriftCorrect(result.root_q, result.root_d);
   std::tie(result.played_q, result.played_d) =
       DriftCorrect(result.played_q, result.played_d);
+  std::tie(result.orig_q, result.orig_d) =
+      DriftCorrect(result.orig_q, result.orig_d);
 
   result.root_m = node->GetM();
   result.best_m = best_eval.ml;
