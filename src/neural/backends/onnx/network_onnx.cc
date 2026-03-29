@@ -661,9 +661,13 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       break;
     }
     case OnnxProvider::COREML: {
+      // gpu=0 (default)=CPUAndGPU, gpu=1=CPUAndNeuralEngine, other=ALL.
+      std::string compute_units = "ALL";
+      if (gpu_ == 0) compute_units = "CPUAndGPU";
+      else if (gpu_ == 1) compute_units = "CPUAndNeuralEngine";
       std::unordered_map<std::string, std::string> provider_options;
       provider_options["ModelFormat"] = "MLProgram";
-      provider_options["ProfileComputePlan"] = "1";
+      provider_options["MLComputeUnits"] = compute_units;
       provider_options["AllowLowPrecisionAccumulationOnGPU"] = "1";
       options.AppendExecutionProvider("CoreML", provider_options);
       break;
