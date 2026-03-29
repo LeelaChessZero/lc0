@@ -584,11 +584,11 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
-  options->Add<FloatOption>(kPolicyValueExponentId, 0, 100.0f) = 8.9f;
-  options->Add<FloatOption>(kPolicyValueBaseId, 0, 100.0f) = 0.00012f;
-  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 10000) = 310;
-  options->Add<IntOption>(kPolicyDecayParentVisitsId, 1, 100000) = 2800;
-  options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 100.0f;
+  options->Add<FloatOption>(kPolicyValueExponentId, 0, 100.0f) = 11.5f;
+  options->Add<FloatOption>(kPolicyValueBaseId, 0, 100.0f) = 8e-5f;
+  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 10000) = 450;
+  options->Add<IntOption>(kPolicyDecayParentVisitsId, 1, 100000) = 5000;
+  options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 98.0f;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
