@@ -536,7 +536,8 @@ void PolicyDecay(const SearchParams& params, const Node* node,
 
   float sum = 0.0f;
   const float offset = *min_iter - epsilon;
-  const float scale = 1.0f / (std::max(*max_iter - *min_iter, epsilon));
+  const float scale =
+      std::max(1.0f / (std::max(*max_iter - *min_iter, epsilon)), 1.0f);
   // Calculate decay target policy as softmax of values.
   for (i = 0; i <= last_visited; i++) {
     if (policy[i] == 0.0f) {
