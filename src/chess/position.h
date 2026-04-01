@@ -121,6 +121,19 @@ class PositionHistory {
     positions_.erase(positions_.begin() + size, positions_.end());
   }
 
+  // Used to pass history to task workers.
+  template<typename Iterator>
+  void Assign(Iterator first, Iterator last) {
+    positions_.assign(first, last);
+  }
+
+  // Used to pass history to task workers. Caller ensures that the inserted
+  // history is consistent.
+  template<typename Iterator>
+  void Insert(Iterator first, Iterator last) {
+    positions_.insert(positions_.end(), first, last);
+  }
+
   // Can be used to reduce allocation cost while performing a sequence of moves
   // in succession.
   void Reserve(int size) { positions_.reserve(size); }
