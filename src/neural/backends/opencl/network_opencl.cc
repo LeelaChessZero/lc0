@@ -83,6 +83,21 @@ class OpenCLComputation : public NetworkComputation {
   // Adds a sample to the batch.
   void AddInput(InputPlanes&& input) override { planes_.emplace_back(input); }
 
+  // Makes the command-buffers executable
+  void FinalizeGraph() { buffers_->finalizeGraph(); }
+
+  // Captures a command-buffer for each batch-size
+  void CaptureGraph() {
+    const auto plane_count = planes_.size();
+    const auto max_batch_size = opencl_net_.getMaxMatchSize();
+    const auto largest_batch_size = std::min(max_batch_size, plane_count);
+
+    for (size_t i = 0; i < plane_count; i += largest_batch_size) {
+      const auto batch_size = std::min(plane_count - i, largest_batch_size);
+      buffers_->forward_kernels(batch_size, true);
+    }
+  }
+
   // Do the computation.
   void ComputeBlocking() override {
     // Determine the largest batch for allocations.
@@ -247,6 +262,7 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
+    params_.graph_capture = options.GetOrDefault<bool>("graph_capture", true);
     if (options.Exists<std::string>("tuner_file")) {
       params_.tuner_file = options.Get<std::string>("tuner_file");
     } else {
@@ -404,6 +420,25 @@ class OpenCLNetwork : public Network {
     }
 
     opencl_net_.setMaxMatchSize(max_batch_size_);
+
+    if (opencl_.graph_capture_enabled()) {
+      // pre-allocate 2 command-buffers as the default number of search threads.
+      // A user may manually specify more search threads, and the extra threads
+      // will use the eager submission path.
+      auto allocateGraph = [&](OpenCLComputation* comp) {
+        for (unsigned i = 0; i < max_batch_size_; i++) {
+          comp->AddInput(InputPlanes{(size_t)kInputPlanes});
+          comp->CaptureGraph();
+        }
+        comp->FinalizeGraph();
+      };
+      OpenCLComputation comp1(opencl_net_, weights_, wdl_, moves_left_);
+      OpenCLComputation comp2(opencl_net_, weights_, wdl_, moves_left_);
+
+      std::thread t2(allocateGraph, &comp1);
+      allocateGraph(&comp2);
+      t2.join();
+    }
   }
 
   std::unique_ptr<NetworkComputation> NewComputation() override {

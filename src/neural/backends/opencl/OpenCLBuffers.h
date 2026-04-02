@@ -34,6 +34,7 @@
 #include <string>
 #include <thread>
 
+#define CL_ENABLE_BETA_EXTENSIONS
 #include "neural/backends/opencl/OpenCL.h"
 #include "neural/backends/opencl/OpenCLParams.h"
 #include "neural/backends/opencl/OpenCLTuner.h"
@@ -49,9 +50,13 @@ class OpenCLBuffers {
  public:
   OpenCLBuffers(const OpenCL_Network& opencl_net);
 
+  void forward_kernels(const int batch_size, const bool capture_graph);
+
   void forward(const std::vector<net_t>& input, std::vector<net_t>& output_pol,
                std::vector<net_t>& output_val, std::vector<net_t>& output_mov,
                const int batch_size);
+
+  void finalizeGraph();
 
  private:
   using weight_slice_t = std::vector<cl::Buffer>::const_iterator;
@@ -61,28 +66,32 @@ class OpenCLBuffers {
                  cl::Buffer& bufferM, weight_slice_t weights,
                  cl::Buffer* bufferResidual, weight_slice_t biases,
                  bool skip_in_transform, bool fuse_in_transform,
-                 bool store_inout, bool relu, int batch_size);
+                 bool store_inout, bool relu, int batch_size,
+                 bool capture_kernels);
 
   void convolve1(int channels, int outputs, cl::Buffer& bufferInput,
                  cl::Buffer& bufferOutput, cl::Buffer& bufferMerge,
-                 weight_slice_t weights, weight_slice_t biases, int batch_size);
+                 weight_slice_t weights, weight_slice_t biases, int batch_size,
+                 bool capture_kernels);
 
   void innerproduct(cl::Buffer& input, weight_slice_t weights,
                     weight_slice_t biases, cl::Buffer& output, const int inputs,
-                    const int outputs, const int relu, int batch_size);
+                    const int outputs, const int relu, int batch_size,
+                    bool capture_kernels);
 
   void squeeze_excitation(int channels, int fc_outputs, cl::Buffer& bufferIn,
                           cl::Buffer& bufferTemp1, cl::Buffer& bufferTemp2,
                           weight_slice_t weights, cl::Buffer& bufferResidual,
-                          int batch_size);
+                          int batch_size, bool capture_kernels);
 
   void policymap(int N, const cl::Buffer& input, cl::Buffer& output,
                  const cl::Buffer& indices, int inputSize, int usedSize,
-                 int outputSize);
+                 int outputSize, bool capture_kernels);
 
   const OpenCL_Network& m_opencl_net;
   const OpenCL& m_opencl;
 
+  std::vector<cl::CommandBufferKhr> m_commandbuffers;
   cl::CommandQueue m_commandqueue;
   cl::Kernel m_convolve1_kernel;
   cl::Kernel m_merge_kernel;
@@ -105,4 +114,6 @@ class OpenCLBuffers {
   size_t m_finalSize_pol;
   size_t m_finalSize_val;
   size_t m_finalSize_mov;
+  bool m_enable_graph_capture;
+  bool m_graph_finalized{false};
 };
