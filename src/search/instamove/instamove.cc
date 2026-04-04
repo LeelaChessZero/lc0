@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <vector>
 
 #include "chess/gamestate.h"
@@ -35,16 +36,43 @@
 #include "neural/batchsplit.h"
 #include "search/register.h"
 #include "search/search.h"
+#include "utils/optionsparser.h"
 
 namespace lczero {
 namespace {
+
+const OptionId kValueHeadDepthId{
+    {.long_flag = "valuehead-depth",
+     .uci_option = "ValueHeadDepth",
+     .help_text = "Fixed minimax depth in plies for valuehead search. The "
+                  "standard `go depth` command overrides this value.",
+     .visibility = OptionId::kAlwaysVisible}};
+
+MoveList StringsToMovelist(const std::vector<std::string>& moves,
+                           const ChessBoard& board) {
+  MoveList legal_moves = board.GenerateLegalMoves();
+  if (moves.empty()) return legal_moves;
+
+  MoveList result;
+  result.reserve(moves.size());
+  for (const auto& move : moves) {
+    const Move parsed_move = board.ParseMove(move);
+    if (std::find(legal_moves.begin(), legal_moves.end(), parsed_move) !=
+        legal_moves.end()) {
+      result.emplace_back(parsed_move);
+    }
+  }
+  if (result.empty()) throw Exception("No legal searchmoves.");
+  return result;
+}
 
 class InstamoveSearch : public SearchBase {
  public:
   using SearchBase::SearchBase;
 
  private:
-  virtual Move GetBestMove(const GameState& game_state) = 0;
+  virtual Move GetBestMove(const GameState& game_state,
+                           const GoParams& go_params) = 0;
 
   void SetPosition(const GameState& game_state) final {
     game_state_ = game_state;
@@ -52,7 +80,7 @@ class InstamoveSearch : public SearchBase {
 
   void StartSearch(const GoParams& go_params) final {
     responded_bestmove_.store(false, std::memory_order_relaxed);
-    bestmove_ = GetBestMove(game_state_);
+    bestmove_ = GetBestMove(game_state_, go_params);
     if (!go_params.infinite && !go_params.ponder) RespondBestMove();
   }
   void WaitSearch() final {
@@ -90,9 +118,12 @@ class PolicyHeadSearch : public InstamoveSearch {
  public:
   using InstamoveSearch::InstamoveSearch;
 
-  Move GetBestMove(const GameState& game_state) final {
+  Move GetBestMove(const GameState& game_state,
+                   const GoParams& go_params) final {
     const std::vector<Position> positions = game_state.GetPositions();
-    MoveList legal_moves = positions.back().GetBoard().GenerateLegalMoves();
+    MoveList legal_moves =
+        StringsToMovelist(go_params.searchmoves, positions.back().GetBoard());
+    if (legal_moves.empty()) return Move{};
     std::vector<EvalResult> res = backend_->EvaluateBatch(
         std::vector<EvalPosition>{EvalPosition{positions, legal_moves}});
     const size_t best_move_idx =
@@ -102,7 +133,8 @@ class PolicyHeadSearch : public InstamoveSearch {
         .depth = 1,
         .seldepth = 1,
         .nodes = 1,
-        .score = 90 * std::tan(1.5637541897 * res[0].q),
+        .score = static_cast<int>(
+            std::round(90 * std::tan(1.5637541897 * res[0].q))),
         .wdl =
             ThinkingInfo::WDL{
                 static_cast<int>(std::round(
@@ -120,80 +152,189 @@ class PolicyHeadSearch : public InstamoveSearch {
 
 class ValueHeadSearch : public InstamoveSearch {
  public:
-  using InstamoveSearch::InstamoveSearch;
-  Move GetBestMove(const GameState& game_state) final {
-    std::unique_ptr<BackendComputation> computation =
-        backend_->CreateComputation();
+  ValueHeadSearch(UciResponder* responder, const OptionsDict* options)
+      : InstamoveSearch(responder), options_(options) {}
 
-    PositionHistory history(game_state.GetPositions());
-    const ChessBoard& board = history.Last().GetBoard();
-    const std::vector<Move> legal_moves = board.GenerateLegalMoves();
+ private:
+  struct MateScore {
+    bool winning;
+    int plies;
+  };
 
-    struct Score {
-      float negative_q;  // Negative because NN evaluates from opponent's
-                         // perspective.
-      float d;
-      std::optional<int> mate;
+  struct Score {
+    float q = 0.0f;
+    float d = 0.0f;
+    std::optional<MateScore> mate;
+  };
 
-      bool operator<(const Score& other) const {
-        // Mate always beats non-mate
-        if (mate && !other.mate) return true;
-        if (!mate && other.mate) return false;
-        // Both mates: shorter is better
-        if (mate && other.mate) return *mate < *other.mate;
-        // Neither mate: lower negative_q is better
-        return negative_q < other.negative_q;
-      }
+  struct SearchStats {
+    int seldepth = 0;
+    int64_t nodes = 0;
+  };
+
+  static Score FlipScore(const Score& score) {
+    Score flipped{
+        .q = -score.q,
+        .d = score.d,
+        .mate = score.mate
+                    ? std::make_optional<MateScore>(
+                          MateScore{.winning = !score.mate->winning,
+                                    .plies = score.mate->plies + 1})
+                    : std::nullopt,
     };
+    return flipped;
+  }
 
-    std::vector<Score> results(legal_moves.size());
+  static bool IsBetterScore(const Score& lhs, const Score& rhs) {
+    if (lhs.mate || rhs.mate) {
+      if (!lhs.mate) return rhs.mate->winning ? false : true;
+      if (!rhs.mate) return lhs.mate->winning ? true : false;
+      if (lhs.mate->winning != rhs.mate->winning) return lhs.mate->winning;
+      if (lhs.mate->winning) return lhs.mate->plies < rhs.mate->plies;
+      return lhs.mate->plies > rhs.mate->plies;
+    }
+    return lhs.q > rhs.q;
+  }
 
-    for (size_t i = 0; i < legal_moves.size(); i++) {
-      Move move = legal_moves[i];
-      history.Append(move);
-      switch (history.ComputeGameResult()) {
-        case GameResult::UNDECIDED:
-          computation->AddInput(
-              EvalPosition{history.GetPositions(), {}},
-              EvalResultPtr{.q = &results[i].negative_q, .d = &results[i].d});
-          break;
-        case GameResult::DRAW:
-          results[i] = {.negative_q = 0, .d = 1, .mate = std::nullopt};
-          break;
-        default:
-          // A legal move to a non-drawn terminal without tablebases must be a
-          // win.
-          results[i] = {.negative_q = -1, .d = 0, .mate = 1};
-      }
-      history.Pop();
+  static int ToUciMate(const MateScore& mate) {
+    return mate.winning ? (mate.plies + 1) / 2 : -(mate.plies / 2);
+  }
+
+  int GetSearchDepth(const GoParams& go_params) const {
+    if (go_params.depth) return std::max(1, *go_params.depth);
+    return std::max(1, options_->Get<int>(kValueHeadDepthId));
+  }
+
+  Score EvaluatePosition(PositionHistory* history, SearchStats* stats,
+                         int ply_from_root) {
+    stats->seldepth = std::max(stats->seldepth, ply_from_root);
+    switch (history->ComputeGameResult()) {
+      case GameResult::DRAW:
+        return Score{.q = 0.0f, .d = 1.0f, .mate = std::nullopt};
+      case GameResult::UNDECIDED:
+        break;
+      default:
+        return Score{
+            .q = -1.0f,
+            .d = 0.0f,
+            .mate = MateScore{.winning = false, .plies = 0},
+        };
     }
 
-    computation->ComputeBlocking();
+    const EvalResult eval = backend_->EvaluateBatch(
+        std::vector<EvalPosition>{EvalPosition{history->GetPositions(), {}}})[0];
+    return Score{.q = eval.q, .d = eval.d, .mate = std::nullopt};
+  }
 
+  std::vector<Score> EvaluateMoves(PositionHistory* history,
+                                   const MoveList& legal_moves, int depth,
+                                   int ply_from_root, SearchStats* stats) {
+    std::vector<Score> results(legal_moves.size());
+    if (depth == 1) {
+      std::unique_ptr<BackendComputation> computation =
+          backend_->CreateComputation();
+      std::vector<size_t> pending_indices;
+      pending_indices.reserve(legal_moves.size());
+      for (size_t i = 0; i < legal_moves.size(); ++i) {
+        history->Append(legal_moves[i]);
+        ++stats->nodes;
+        stats->seldepth = std::max(stats->seldepth, ply_from_root + 1);
+        switch (history->ComputeGameResult()) {
+          case GameResult::UNDECIDED:
+            computation->AddInput(
+                EvalPosition{history->GetPositions(), {}},
+                EvalResultPtr{.q = &results[i].q, .d = &results[i].d});
+            pending_indices.emplace_back(i);
+            break;
+          case GameResult::DRAW:
+            results[i] = Score{.q = 0.0f, .d = 1.0f, .mate = std::nullopt};
+            break;
+          default:
+            results[i] = Score{
+                .q = 1.0f,
+                .d = 0.0f,
+                .mate = MateScore{.winning = true, .plies = 1},
+            };
+            break;
+        }
+        history->Pop();
+      }
+      computation->ComputeBlocking();
+      for (const size_t idx : pending_indices) {
+        results[idx] = FlipScore(results[idx]);
+      }
+      return results;
+    }
+
+    for (size_t i = 0; i < legal_moves.size(); ++i) {
+      history->Append(legal_moves[i]);
+      ++stats->nodes;
+      results[i] =
+          FlipScore(EvaluateNode(history, depth - 1, ply_from_root + 1, stats));
+      history->Pop();
+    }
+    return results;
+  }
+
+  Score EvaluateNode(PositionHistory* history, int depth, int ply_from_root,
+                     SearchStats* stats) {
+    if (depth <= 0) return EvaluatePosition(history, stats, ply_from_root);
+    const MoveList legal_moves = history->Last().GetBoard().GenerateLegalMoves();
+    if (legal_moves.empty()) {
+      return EvaluatePosition(history, stats, ply_from_root);
+    }
+
+    const std::vector<Score> results =
+        EvaluateMoves(history, legal_moves, depth, ply_from_root, stats);
+    return *std::max_element(results.begin(), results.end(),
+                             [](const Score& lhs, const Score& rhs) {
+                               return IsBetterScore(rhs, lhs);
+                             });
+  }
+
+  Move GetBestMove(const GameState& game_state,
+                   const GoParams& go_params) final {
+    PositionHistory history(game_state.GetPositions());
+    const MoveList legal_moves =
+        StringsToMovelist(go_params.searchmoves, history.Last().GetBoard());
+    if (legal_moves.empty()) return Move{};
+
+    SearchStats stats;
+    const int search_depth = GetSearchDepth(go_params);
+    const std::vector<Score> results =
+        EvaluateMoves(&history, legal_moves, search_depth, 0, &stats);
     const size_t best_idx =
-        std::min_element(results.begin(), results.end()) - results.begin();
+        std::max_element(results.begin(), results.end(),
+                         [](const Score& lhs, const Score& rhs) {
+                           return IsBetterScore(rhs, lhs);
+                         }) -
+        results.begin();
 
     const Score& r = results[best_idx];
     auto to_int = [](double x) { return static_cast<int>(std::round(x)); };
     std::vector<ThinkingInfo> infos{
-        {.depth = 1,
-         .seldepth = 1,
-         .nodes = static_cast<int64_t>(legal_moves.size()),
-         .mate = r.mate,
+        {.depth = search_depth,
+         .seldepth = stats.seldepth,
+         .nodes = stats.nodes,
+         .mate = r.mate ? std::make_optional(ToUciMate(*r.mate))
+                        : std::nullopt,
          .score = r.mate ? std::nullopt
                          : std::make_optional<int>(
-                               -90 * std::tan(1.5637541897 * r.negative_q)),
+                               static_cast<int>(
+                                   std::round(90 * std::tan(1.5637541897 *
+                                                            r.q)))),
          .wdl = r.mate
                     ? std::nullopt
                     : std::make_optional<ThinkingInfo::WDL>(ThinkingInfo::WDL{
-                          .w = to_int(500 * (1 - r.negative_q - r.d)),
+                          .w = to_int(500 * (1 + r.q - r.d)),
                           .d = to_int(1000 * r.d),
-                          .l = to_int(500 * (1 + r.negative_q - r.d)),
+                          .l = to_int(500 * (1 - r.q - r.d)),
                       })}};
     uci_responder_->OutputThinkingInfo(&infos);
-    Move best_move = legal_moves[best_idx];
-    return best_move;
+    return legal_moves[best_idx];
   }
+
+  const OptionsDict* options_;
 };
 
 class PolicyHeadFactory : public SearchFactory {
@@ -207,8 +348,12 @@ class PolicyHeadFactory : public SearchFactory {
 class ValueHeadFactory : public SearchFactory {
   std::string_view GetName() const override { return "valuehead"; }
   std::unique_ptr<SearchBase> CreateSearch(UciResponder* responder,
-                                           const OptionsDict*) const override {
-    return std::make_unique<ValueHeadSearch>(responder);
+                                           const OptionsDict* options)
+      const override {
+    return std::make_unique<ValueHeadSearch>(responder, options);
+  }
+  void PopulateParams(OptionsParser* parser) const override {
+    parser->Add<IntOption>(kValueHeadDepthId, 1, 99) = 1;
   }
 };
 

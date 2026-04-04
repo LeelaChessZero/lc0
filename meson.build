@@ -931,7 +931,7 @@ endif
 if get_option('gtest')
   gtest = dependency('gtest', fallback: ['gtest', 'gtest_dep'])
   gmock = dependency('gmock', fallback: ['gtest', 'gmock_dep'])
-  lc0_lib = library('lc0_lib', common_files, include_directories: includes, dependencies: deps)
+  lc0_lib = static_library('lc0_lib', common_files, include_directories: includes, dependencies: deps)
 
   test('ChessBoard',
     executable('chessboard_test', 'src/chess/board_test.cc',
@@ -974,6 +974,13 @@ if get_option('gtest')
                'src/neural/memcache.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
+
+  test('InstamoveTest',
+    executable('instamove_test', 'src/search/instamove/instamove_test.cc',
+               'src/search/instamove/instamove.cc', 'src/search/register.cc',
+               pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest),
+    args: '--gtest_output=xml:instamove_test.xml', timeout: 90)
 endif
 
 
