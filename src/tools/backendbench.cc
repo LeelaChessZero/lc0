@@ -232,18 +232,18 @@ void BackendBenchmark::Run() {
                      " first mean"
                   << std::endl;
       }
+      using DurationMS = std::chrono::duration<double, std::milli>;
       double first_max = 0.0;
       double first_mean = 0.0;
       for (size_t j = 1; j < first_batch_times.size(); j++) {
-        auto duration = first_batch_times[j] - first_batch_times[j - 1];
-        double time = std::chrono::duration<double>(duration).count();
-        time *= 1000;
-        first_mean += time;
-        if (time > first_max) {
-          first_max = time;
-        }
+        first_max = std::max(first_max, DurationMS(first_batch_times[j] -
+                                                   first_batch_times[j - 1])
+                                            .count());
       }
-      first_mean /= threads;
+      first_mean =
+          DurationMS(first_batch_times.back() - first_batch_times.front())
+              .count() /
+          threads;
       // clang-format off
       std::cout << std::setw(4) << i << ","
                 << std::fixed << std::setprecision(0)
