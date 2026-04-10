@@ -1,6 +1,6 @@
 [wrap-git]
 url = https://github.com/NVIDIA/cutlass.git
-revision = v2.11.0
+revision = v4.4.1
 
 patch_directory = cutlass
 
