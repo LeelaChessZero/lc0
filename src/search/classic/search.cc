@@ -234,11 +234,11 @@ inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
     // Keep centipawn scores within resonable limits when l or d becomes close
     // to zero.
     const float wl_threshold = 0.006f;
-    const float d_threshold = 0.000492143f;
+    const float d_threshold = 0.0004875f;
     w = std::max(w, wl_threshold);
     l = std::max(l, wl_threshold);
-    float d_copy = std::max(d, d_threshold);
-    const float scale = 1.0f / (w + l + d_copy);
+    d = std::max(d, d_threshold);
+    const float scale = 1.0f / (w + l + d);
     w *= scale;
     l *= scale;
   }
