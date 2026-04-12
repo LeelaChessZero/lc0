@@ -238,6 +238,16 @@ const OptionId BaseSearchParams::kPolicyDecayVisitsId{
          "Number of visits prior policy is valid. Prior policy decays to value "
          "policy linearly until reaching the set visit number.",
      .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyDecayReductionDelayId{
+    {.long_flag = "policy-decay-reduction-delay",
+     .uci_option = "PolicyDecayReductionDelay",
+     .help_text =
+         "Number of visits to delay the start of policy decay reduction. "
+         "During "
+         "the delay, the policy decay is not reduced by value policy at all, "
+         "after the delay, the policy decay is reduced linearly until reaching "
+         "the set visit number.",
+     .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kPolicyDecayParentVisitsId{
     {.long_flag = "policy-decay-parent-visits",
      .uci_option = "PolicyDecayParentVisits",
@@ -584,11 +594,12 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
-  options->Add<FloatOption>(kPolicyValueExponentId, 0, 100.0f) = 11.5f;
+  options->Add<FloatOption>(kPolicyValueExponentId, 0, 100.0f) = 10.5f;
   options->Add<FloatOption>(kPolicyValueBaseId, 0, 100.0f) = 1.4e-4f;
-  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 10000) = 450;
+  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 100000) = 800;
+  options->Add<IntOption>(kPolicyDecayReductionDelayId, 0, 100000) = 800;
   options->Add<IntOption>(kPolicyDecayParentVisitsId, 1, 100000) = 5000;
-  options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 99.0f;
+  options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 85.0f;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
@@ -694,6 +705,8 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
       kPolicyValueExponent(options.Get<float>(kPolicyValueExponentId)),
       kPolicyValueBase(options.Get<float>(kPolicyValueBaseId)),
       kPolicyDecayVisits(options.Get<int>(kPolicyDecayVisitsId)),
+      kPolicyDecayReductionDelay(
+          options.Get<int>(kPolicyDecayReductionDelayId)),
       kPolicyDecayParentVisits(options.Get<int>(kPolicyDecayParentVisitsId)),
       kPolicyDecayValueShare(options.Get<float>(kPolicyDecayValueShareId) /
                              100.0f),

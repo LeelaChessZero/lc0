@@ -1293,6 +1293,8 @@ void PolicyDecay(const SearchParams& params, const Node* node,
                  float visited_pol) {
   const float maximum_policy_decay = params.GetPolicyDecayValueShare();
   const uint32_t policy_decay_visits = params.GetPolicyDecayVisits();
+  const uint32_t policy_decay_reduction_delay =
+      params.GetPolicyDecayReductionDelay();
   const uint32_t policy_decay_parent_visits =
       params.GetPolicyDecayParentVisits();
   const float inv_policy_decay_visits = 1.0f / policy_decay_visits;
@@ -1337,7 +1339,12 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   // Interpolate from prior policy to decay target policy based on child visit
   // count.
   for (const auto* child : node->VisitedNodes()) {
-    const uint32_t n = child->GetN();
+    const bool is_reducing = new_policy[i] * inv_sum < policy[i];
+    const uint32_t n = is_reducing
+                           ? child->GetN() < policy_decay_reduction_delay
+                                 ? 0
+                                 : child->GetN() - policy_decay_reduction_delay
+                           : child->GetN();
     const float decay_share = std::min(n, policy_decay_visits) *
                               (inv_policy_decay_visits * maximum_policy_decay);
     policy[i] = std::lerp(policy[i], new_policy[i] * inv_sum,
