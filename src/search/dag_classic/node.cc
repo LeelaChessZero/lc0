@@ -343,44 +343,44 @@ void Node::CancelScoreUpdate(uint32_t multivisit) {
   n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
-float LowNode::FinalizeScoreUpdate(double v, double d, float m,
+double LowNode::FinalizeScoreUpdate(double v, double d, float m,
                                    uint32_t multivisit) {
   assert(edges_);
   // Increment N.
   n_ += multivisit;
 
   // Recompute Q.
-  float divisor = 1.0f / n_;
+  double divisor = 1.0 / n_;
   wl_ += multivisit * (v - wl_) * divisor;
   d_ += multivisit * (d - d_) * divisor;
-  m_ += multivisit * (m - m_) * divisor;
+  m_ += multivisit * (m - m_) * static_cast<float>(divisor);
 
   assert(WLDMInvariantsHold());
   return divisor;
 }
 
-void LowNode::AdjustForTerminal(double v, double d, float m, float divisor,
+void LowNode::AdjustForTerminal(double v, double d, float m, double divisor,
                                 uint32_t multivisit) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
   wl_ += multivisit * v * divisor;
   d_ += multivisit * d * divisor;
-  m_ += multivisit * m * divisor;
+  m_ += multivisit * m * static_cast<float>(divisor);
 
   assert(WLDMInvariantsHold());
 }
 
-float Node::FinalizeScoreUpdate(double v, double d, float m,
+double Node::FinalizeScoreUpdate(double v, double d, float m,
                                 uint32_t multivisit) {
   // Increment N.
   n_ += multivisit;
 
   // Recompute Q.
-  float divisor = 1.0f / n_;
+  double divisor = 1.0 / n_;
   wl_ += multivisit * (v - wl_) * divisor;
   d_ += multivisit * (d - d_) * divisor;
-  m_ += multivisit * (m - m_) * divisor;
+  m_ += multivisit * (m - m_) * static_cast<float>(divisor);
 
   assert(WLDMInvariantsHold());
   // Decrement virtual loss.
@@ -389,14 +389,14 @@ float Node::FinalizeScoreUpdate(double v, double d, float m,
   return divisor;
 }
 
-void Node::AdjustForTerminal(double v, double d, float m, float divisor,
+void Node::AdjustForTerminal(double v, double d, float m, double divisor,
                              uint32_t multivisit) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
   wl_ += multivisit * v * divisor;
   d_ += multivisit * d * divisor;
-  m_ += multivisit * m * divisor;
+  m_ += multivisit * m * static_cast<float>(divisor);
 
   assert(WLDMInvariantsHold());
 }
