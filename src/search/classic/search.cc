@@ -1341,9 +1341,9 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   for (const auto* child : node->VisitedNodes()) {
     const bool is_reducing = new_policy[i] * inv_sum < policy[i];
     const uint32_t n = is_reducing
-                           ? child->GetN() < policy_decay_reduction_delay
+                           ? child->GetN() <= policy_decay_reduction_delay * policy[i]
                                  ? 0
-                                 : child->GetN() - policy_decay_reduction_delay
+                                 : child->GetN() - policy_decay_reduction_delay * policy[i]
                            : child->GetN();
     const float decay_share = std::min(n, policy_decay_visits) *
                               (inv_policy_decay_visits * maximum_policy_decay);
