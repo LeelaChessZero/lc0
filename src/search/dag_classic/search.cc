@@ -364,12 +364,21 @@ void Search::SendUciInfo(const classic::IterationStats& stats)
                    played_history_.IsBlackToMove())
                       ? 1.0f
                       : -1.0f;
+      auto wl_copy = wl, d_copy = d;
       mu_uci = WDLRescale(
-          wl, d, params_.GetWDLRescaleRatio(),
+          wl_copy, d_copy, params_.GetWDLRescaleRatio(),
           contempt_mode_ == ContemptMode::NONE
               ? 0
               : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
           sign, true, params_.GetWDLMaxS(), true);
+      if (params_.GetWDLRescaleDiff() != 0.0f &&
+          contempt_mode_ != ContemptMode::NONE &&
+          params_.GetWDLEvalObjectivity() != 0.0f) {
+        WDLRescale(
+            wl, d, params_.GetWDLRescaleRatio(),
+            params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(), sign,
+            true, params_.GetWDLMaxS());
+      }
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
