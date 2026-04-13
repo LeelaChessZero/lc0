@@ -520,7 +520,6 @@ void PolicyDecay(const SearchParams& params, const Node* node,
       params.GetPolicyDecayReductionDelay();
   const uint32_t policy_decay_parent_visits =
       params.GetPolicyDecayParentVisits();
-  const float inv_policy_decay_visits = 1.0f / policy_decay_visits;
   const float inv_policy_decay_parent_visits =
       1.0f / policy_decay_parent_visits;
   const float kNoUncertaintyPolicyValue = 0.0f;
@@ -531,6 +530,7 @@ void PolicyDecay(const SearchParams& params, const Node* node,
 
   int i;
 
+  // Scale Q to [0, 1] range if it is smaller range.
   auto [min_iter, max_iter] =
       std::minmax_element(value.begin(), value.begin() + last_visited + 1);
   const float policy_exponent = params.GetPolicyValueExponent();
@@ -546,14 +546,17 @@ void PolicyDecay(const SearchParams& params, const Node* node,
       new_policy[i] = kNoUncertaintyPolicyValue;
       continue;
     }
+    // new_policy = pow(Q, E) + B = exp(E * log(Q)) + B
     new_policy[i] =
         FastExp(policy_exponent * FastLog((value[i] - offset) * scale)) +
         policy_base;
     sum += new_policy[i];
   }
+  // Calculate the scaling factor to let the new policy sum to 1.
   const float inv_sum = 1.0f / std::max(sum, epsilon) * visited_pol;
   i = 0;
 
+  // Calculate parent visit decay share from the parent visits.
   const uint32_t n_p = node->GetN();
   const float parent_decay_share =
       std::min(n_p, policy_decay_parent_visits) *
@@ -562,15 +565,23 @@ void PolicyDecay(const SearchParams& params, const Node* node,
   // Interpolate from prior policy to decay target policy based on child visit
   // count.
   for (const auto* child : node->VisitedNodes()) {
-    const bool is_reducing = new_policy[i] * inv_sum < policy[i];
-    const uint32_t n = is_reducing
-                           ? child->GetN() <= policy_decay_reduction_delay * policy[i]
-                                 ? 0
-                                 : child->GetN() - policy_decay_reduction_delay * policy[i]
-                           : child->GetN();
-    const float decay_share = std::min(n, policy_decay_visits) *
-                              (inv_policy_decay_visits * maximum_policy_decay);
-    policy[i] = std::lerp(policy[i], new_policy[i] * inv_sum,
+    const float new_policy_value = new_policy[i] * inv_sum;
+    const bool is_reducing = new_policy_value < policy[i];
+    const float reduction_delay = policy_decay_reduction_delay * policy[i];
+    // Scale the child based decay share by prior policy. It also allows search
+    // a little extra time before decay starts to reduce the prior policy. It
+    // avoids problem cases where the early value estimate is worse than policy.
+    if (is_reducing && child->GetN() <= reduction_delay) {
+      i++;
+      continue;
+    }
+    const float n =
+        is_reducing ? child->GetN() - reduction_delay : child->GetN();
+    const float visit_limit = policy_decay_visits * policy[i];
+    // Decay share is the lower from child visit decay and parent visit decay.
+    const float decay_share =
+        std::min(n, visit_limit) * maximum_policy_decay / visit_limit;
+    policy[i] = std::lerp(policy[i], new_policy_value,
                           std::min(decay_share, parent_decay_share));
     i++;
   }
