@@ -187,16 +187,60 @@ bool IsTasksCompleted(const std::atomic<int>& task_count,
   return tc == ct || (nta == ct && tc == -1);
 }
 
+float TemperatureDecay(float temp, float endgame,
+                       const PositionHistory& history,
+                       const SearchParams& params) {
+  const int cutoff_move = params.GetTemperatureCutoffMove();
+  const int decay_moves = params.GetTempDecayMoves();
+  const int decay_delay_moves = params.GetTempDecayDelayMoves();
+  const int moves = history.Last().GetGamePly() / 2;
+  if (cutoff_move && (moves + 1) >= cutoff_move) {
+    temp = endgame;
+  } else if (temp && decay_moves) {
+    if (moves >= decay_delay_moves + decay_moves) {
+      temp = 0.0;
+    } else if (moves >= decay_delay_moves) {
+      temp *= static_cast<float>(decay_delay_moves + decay_moves - moves) /
+              decay_moves;
+    }
+    // don't allow temperature to decay below endgame temperature
+    if (temp < endgame) {
+      temp = endgame;
+    }
+  }
+  return temp;
+}
+
+constexpr float kTemperatureOffsetDecayCuttoff = 3.0f;
+
+float UpdateTemperatureOffsetDecay(const Node* root, Move bestmove,
+                                   float draw_score) {
+  float best_q = -1.0f;
+  float selected_q = -1.0f;
+  if (root->GetN() <= 1) return 0.0f;
+  for (const auto& edge : root->Edges()) {
+    if (!edge.HasNode()) continue;
+    float q = edge.GetQ(0.0, draw_score);
+    best_q = std::max(best_q, q);
+    if (edge.GetMove(false) == bestmove) {
+      selected_q = q;
+    }
+  }
+  float div = 50.0f * 0.5f / kTemperatureOffsetDecayCuttoff;
+  return (best_q - selected_q) * div;
+}
+
 }  // namespace
 
-Search::Search(const NodeTree& tree, Backend* backend,
+Search::Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
                std::unique_ptr<UciResponder> uci_responder,
                const MoveList& searchmoves,
                std::chrono::steady_clock::time_point start_time,
                std::unique_ptr<classic::SearchStopper> stopper, bool infinite,
                bool ponder, const OptionsDict& options, TranspositionTable* tt,
                SyzygyTablebase* syzygy_tb)
-    : ok_to_respond_bestmove_(!infinite && !ponder),
+    : state_(state),
+      ok_to_respond_bestmove_(!infinite && !ponder),
       stopper_(std::move(stopper)),
       root_node_(tree.GetCurrentHead()),
       tt_(tt),
@@ -242,6 +286,31 @@ Search::Search(const NodeTree& tree, Backend* backend,
       contempt_mode_ = played_history_.IsBlackToMove() != ponder
                            ? ContemptMode::BLACK
                            : ContemptMode::WHITE;
+    }
+  }
+
+  float root_deviation = params_.GetTemperatureUtilityDeviation();
+  float root_endgame_deviation =
+      params_.GetTemperatureEndgameUtilityDeviation();
+  root_deviation =
+      std::max(0.0f, root_deviation - state_.temperature_offset_decay_);
+  root_deviation = TemperatureDecay(root_deviation, root_endgame_deviation,
+                                    played_history_, params_);
+
+  if (root_deviation) {
+    root_deviation /= 50.0f;
+    const float max_offset = root_deviation * kTemperatureOffsetDecayCuttoff;
+    const float min_offset = -max_offset;
+    std::normal_distribution<float> dist(0.0f, root_deviation);
+    const int legal_moves =
+        root_node_->GetN() > 0
+            ? root_node_->GetNumEdges()
+            : played_history_.Last().GetBoard().GenerateLegalMoves().size();
+    root_utility_offsets_.reserve(legal_moves);
+    auto& rng = Random::Get();
+    for (int i = 0; i < legal_moves; i++) {
+      float offset = std::clamp(dist(rng), min_offset, max_offset);
+      root_utility_offsets_.push_back(offset);
     }
   }
 }
@@ -620,7 +689,13 @@ std::vector<std::string> Search::GetVerboseStats(
                edge.GetNInFlight(), edge.GetP());
     print_stats(&oss, edge.node());
     print(&oss, "(U: ", edge.GetU(U_coeff), ") ", 6, 5);
-    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M, ") ", 8, 5);
+    float O = 0;
+    if (node == root_node_ && !root_utility_offsets_.empty()) {
+      unsigned index = edge.edge() - node->GetLowNode()->GetEdges();
+      O = root_utility_offsets_[index];
+      print(&oss, "(O: ", O, ") ", 8, 5);
+    }
+    print(&oss, "(S: ", Q + edge.GetU(U_coeff) + M + O, ") ", 8, 5);
     print_tail(&oss, edge.node(), true);
     infos.emplace_back(oss.str());
   }
@@ -694,6 +769,10 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
       !bestmove_is_sent_) {
     SendUciInfo(stats);
     EnsureBestMoveKnown();
+    auto bestmove = final_bestmove_;
+    if (played_history_.IsBlackToMove()) bestmove.Flip();
+    state_.temperature_offset_decay_ += UpdateTemperatureOffsetDecay(
+        root_node_, bestmove, GetDrawScore(played_history_.IsBlackToMove()));
     SendMovesStats();
     BestMoveInfo info(final_bestmove_, final_pondermove_);
     uci_responder_->OutputBestMove(&info);
@@ -750,26 +829,9 @@ void Search::EnsureBestMoveKnown() REQUIRES(nodes_mutex_)
   if (!root_node_->HasChildren()) return;
 
   float temperature = params_.GetTemperature();
-  const int cutoff_move = params_.GetTemperatureCutoffMove();
-  const int decay_delay_moves = params_.GetTempDecayDelayMoves();
-  const int decay_moves = params_.GetTempDecayMoves();
-  const int moves = played_history_.Last().GetGamePly() / 2;
-
-  if (cutoff_move && (moves + 1) >= cutoff_move) {
-    temperature = params_.GetTemperatureEndgame();
-  } else if (temperature && decay_moves) {
-    if (moves >= decay_delay_moves + decay_moves) {
-      temperature = 0.0;
-    } else if (moves >= decay_delay_moves) {
-      temperature *=
-          static_cast<float>(decay_delay_moves + decay_moves - moves) /
-          decay_moves;
-    }
-    // don't allow temperature to decay below endgame temperature
-    if (temperature < params_.GetTemperatureEndgame()) {
-      temperature = params_.GetTemperatureEndgame();
-    }
-  }
+  float endgame = params_.GetTemperatureEndgame();
+  temperature =
+      TemperatureDecay(temperature, endgame, played_history_, params_);
 
   auto bestmove_edge = temperature
                            ? GetBestRootChildWithTemperature(temperature)
@@ -1779,6 +1841,8 @@ void SearchWorker::PickNodesToExtendTask(
       // Cache all constant UCT parameters.
 
       int max_needed = node->GetNumEdges();
+      const bool use_utility_offset =
+          is_root_node && !search_->root_utility_offsets_.empty();
       for (int i = 0; i < max_needed; i++) {
         current_util[i] = std::numeric_limits<float>::lowest();
       }
@@ -1792,7 +1856,9 @@ void SearchWorker::PickNodesToExtendTask(
         int index = child->Index();
         visited_pol += child->GetP();
         float q = child->GetQ(draw_score);
-        current_util[index] = q + m_evaluator.GetMUtility(child, q);
+        float o =
+            use_utility_offset ? search_->root_utility_offsets_[index] : 0.0f;
+        current_util[index] = q + m_evaluator.GetMUtility(child, q) + o;
       }
       const float fpu =
           GetFpu(params_, node, is_root_node, draw_score, visited_pol);
@@ -2471,6 +2537,10 @@ void SearchWorker::UpdateCounters() {
   if (!work_done) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+}
+
+void SearchCachedState::UciNewGame() {
+  temperature_offset_decay_ = 0;
 }
 
 }  // namespace dag_classic
