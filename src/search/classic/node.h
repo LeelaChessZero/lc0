@@ -171,6 +171,11 @@ class Node {
   float GetWL() const { return wl_; }
   float GetD() const { return d_; }
   float GetM() const { return m_; }
+  float GetX() const { return x_; }
+  void SetX(float x) { x_ = x; }
+  // Updates minimax x_ given child's old and new x values.
+  // Returns true if x_ changed.
+  bool UpdateX(float child_old_x, float child_new_x);
 
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
@@ -305,6 +310,8 @@ class Node {
   float d_ = 0.0f;
   // Estimated remaining plies.
   float m_ = 0.0f;
+  // Minimax value of the node.
+  float x_ = 0.0f;
   // How many completed visits this node had.
   uint32_t n_ = 0;
   // (AKA virtual loss.) How many threads currently process this node (started

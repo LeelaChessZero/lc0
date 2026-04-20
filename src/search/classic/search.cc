@@ -507,9 +507,11 @@ std::vector<std::string> Search::GetVerboseStats(const Node* node) const {
       print(oss, "(D: ", d, ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
       print(oss, "(Q: ", wl + draw_score * d, ") ", 8, 5);
+      print(oss, "(X: ", sign * n->GetX(), ") ", 8, 5);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
       print(oss, "(Q: ", fpu, ") ", 8, 5);
+      *oss << "(X:  -.-----) ";
     }
   };
   auto print_tail = [&](auto* oss, const auto* n) {
@@ -2236,8 +2238,22 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float m_delta = 0.0f;
   uint32_t solid_threshold =
       static_cast<uint32_t>(params_.GetSolidTreeThreshold());
+  float prev_old_x = 0, prev_new_x = 0;
+  bool x_changed = false;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
+
+    // Update minimax x.
+    float old_x = n->GetX();
+    if (n == node) {
+      n->SetX(v);
+      x_changed = (old_x != v);
+    } else if (x_changed) {
+      x_changed = n->IsTerminal() ? false
+                                   : n->UpdateX(prev_old_x, prev_new_x);
+    }
+    prev_old_x = old_x;
+    prev_new_x = n->GetX();
 
     // Current node might have become terminal from some other descendant, so
     // backup the rest of the way with more accurate values.
