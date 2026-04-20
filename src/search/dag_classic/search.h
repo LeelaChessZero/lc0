@@ -398,7 +398,7 @@ class SearchWorker {
   };
 
   // Combine visits to perform, index, and node state flags into a packed
-  // variable. Packed value stores required visit infromation which can be
+  // variable. Packed value stores required visit information which can be
   // pushed into the current_path stack.
   struct CurrentPath {
     uint32_t visits_ : 20;       // <= collision limit
