@@ -470,8 +470,8 @@ if get_option('build_backends')
         includes += include_directories(d, is_system: true)
       endif
     endforeach
-    nvcc_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@',
-                      '-I', meson.current_source_dir() + '/src']
+    nvcc_io_arguments = ['-c', '@INPUT@', '-o', '@OUTPUT@']
+    nvcc_arguments = ['-I', meson.current_source_dir() + '/src']
     nvcc_help = run_command(nvcc, '-h', check : false).stdout()
     if host_machine.system() == 'windows'
       if get_option('b_vscrt') == 'mt'
@@ -484,7 +484,7 @@ if get_option('build_backends')
         nvcc_arguments += ['-Xcompiler', '-MD']
       endif
     else
-      nvcc_arguments += ['--std=c++17', '-Xcompiler', '-fPIC']
+      nvcc_arguments += ['-Xcompiler', '-fPIC']
       if get_option('debug')
         nvcc_arguments += ['-g']
       endif
@@ -525,16 +525,42 @@ if get_option('build_backends')
     endif
     nvcc_ok = true
 
+    nvcc_stdversion_list = [20, 17, 14]
+    flag_not_supported = 'flag is not supported with the configured host compiler'
+    nvcc_stdversion = 14
+    foreach v : nvcc_stdversion_list
+      s = '--std=c++' + v.to_string()
+      nvcc_status = run_command(nvcc, '--dryrun', s, nvcc_extra_args, nvcc_arguments, 'foo.cu', check : false)
+      if host_machine.system() == 'windows'
+        nvcc_dryrun = nvcc_status.stdout()
+      else
+        nvcc_dryrun = nvcc_status.stderr()
+      endif
+      if nvcc_status.returncode() != 0 or nvcc_dryrun.contains(flag_not_supported)
+        continue
+      endif
+      nvcc_arguments += [s]
+      nvcc_stdversion = v
+      break
+    endforeach
+    message('Detected NVCC C++ standard support: ' + nvcc_stdversion.to_string())
+
     max_cuda = 0
-    nvcc_dryrun = run_command(nvcc, '--dryrun', nvcc_extra_args, 'foo.cu', check : false).stderr()
+    nvcc_status = run_command(nvcc, '--dryrun', nvcc_extra_args, nvcc_arguments, 'foo.cu', check : false)
+    if host_machine.system() == 'windows'
+      nvcc_dryrun = nvcc_status.stdout()
+    else
+      nvcc_dryrun = nvcc_status.stderr()
+    endif
     foreach x : nvcc_dryrun.split()
-      if x.contains('-D__CUDA_ARCH__=')
-        arch = x.substring(16).to_int()
+      if x.contains('__CUDA_ARCH__=')
+        arch = x.split('=')[1].to_int()
         if arch > max_cuda
           max_cuda = arch
         endif
       endif
     endforeach
+    message('Detected maximum CUDA architecture: ' + max_cuda.to_string())
   endif
   if (get_option('cudnn') or get_option('plain_cuda')) and cu_dart.found() and cu_blas.found() and nvcc_ok
     deps += [cu_blas, cu_dart]
@@ -550,7 +576,8 @@ if get_option('build_backends')
     includes += include_directories('src/neural/backends/cuda/')
 	 files += cuda_files
 
-    if get_option('cutlass') and max_cuda >= 800
+    if get_option('cutlass') and max_cuda >= 800 and nvcc_stdversion >= 17
+      message('Building with CUTLASS support')
       add_project_arguments('-DUSE_CUTLASS', language : 'cpp')
       nvcc_arguments += ['-DUSE_CUTLASS']
       if get_option('cutlass_include') != ''
@@ -562,7 +589,7 @@ if get_option('build_backends')
       files += custom_target('cuda cutlass code',
         input : 'src/neural/backends/cuda/cutlass_kernels.cu',
         output : outputname,
-        command : [nvcc, nvcc_extra_args, nvcc_arguments]
+        command : [nvcc, nvcc_extra_args, nvcc_arguments, nvcc_io_arguments]
       )
     endif
 
@@ -570,14 +597,14 @@ if get_option('build_backends')
       input : 'src/neural/backends/cuda/common_kernels.cu',
       output : outputname,
       depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
-      command : [nvcc, nvcc_extra_args, nvcc_arguments]
+      command : [nvcc, nvcc_extra_args, nvcc_arguments, nvcc_io_arguments]
     )
 
     files += custom_target('cuda fp16 code',
       input : 'src/neural/backends/cuda/fp16_kernels.cu',
       output : outputname,
       depend_files: 'src/neural/backends/cuda/winograd_helper.inc',
-      command : [nvcc, nvcc_extra_args, nvcc_arguments]
+      command : [nvcc, nvcc_extra_args, nvcc_arguments, nvcc_io_arguments]
     )
     has_backends = true
   endif
@@ -652,7 +679,7 @@ if get_option('build_backends')
       files += custom_target('cuda onnx code',
         input : 'src/neural/backends/onnx/onnx_kernels.cu',
         output : outputname,
-        command : [nvcc, nvcc_extra_args, nvcc_arguments]
+        command : [nvcc, nvcc_extra_args, nvcc_arguments, nvcc_io_arguments]
         )
     else
       warning('No CUDA support available. Using compatibility implementation for onnx-trt and onnx-cuda.')
