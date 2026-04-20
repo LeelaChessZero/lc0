@@ -2003,9 +2003,9 @@ void SearchWorker::PickNodesToExtendTask(
                    });
       // Fall through to select the first child.
     }
-    // Prepare state for the next node to be processed. The paren node
+    // Prepare state for the next node to be processed. The parent node
     // information is the last element in full_path. The visit information is
-    // the last element in the curren_path stack.
+    // the last element in the current_path stack.
     if (current_path.size() > 0) {
       assert(!full_path.empty());
       unsigned index = current_path.back().index_;
