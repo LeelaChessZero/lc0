@@ -1992,15 +1992,14 @@ void SearchWorker::PickNodesToExtendTask(
       }
       auto rend = visits_to_perform.rend();
       auto rbegin = rend - std::distance(visits_to_perform.begin(), end);
-      bool first = true;
+      size_t size = current_path.size();
       std::copy_if(rbegin, rend, std::back_inserter(current_path),
-                   [&first](CurrentPath& v) {
-                     if (!!v && first) {
-                       first = false;
-                       v.last_child_ = true;
-                     }
+                   [](CurrentPath& v) {
                      return !!v;
                    });
+      if (current_path.size() != size) {
+        current_path[size].last_child_ = true;
+      }
       // Fall through to select the first child.
     }
     // Prepare state for the next node to be processed. The parent node
