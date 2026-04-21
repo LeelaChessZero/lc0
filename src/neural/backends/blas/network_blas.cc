@@ -122,7 +122,8 @@ class BlasComputation : public NetworkComputation {
       std::vector<float>& encoder_buffer3, std::vector<float>& encoder_buffer4,
       size_t batch_size, const MultiHeadWeights::EncoderLayer& layer,
       int embedding_size, int heads, ActivationFunction smolgen_activation,
-      ActivationFunction ffn_activation, float alpha, float default_eps);
+      ActivationFunction ffn_activation, float alpha, float default_eps,
+      bool pre_norm, std::vector<float>& normed_buf);
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
@@ -274,7 +275,8 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
     std::vector<float>& encoder_buffer3, std::vector<float>& encoder_buffer4,
     size_t batch_size, const MultiHeadWeights::EncoderLayer& layer,
     int embedding_size, int heads, ActivationFunction smolgen_activation,
-    ActivationFunction ffn_activation, float alpha, float default_eps) {
+    ActivationFunction ffn_activation, float alpha, float default_eps,
+    bool pre_norm, std::vector<float>& normed_buf) {
   const int d_model = layer.mha.q_b.size();
   const int dff_size = layer.ffn.dense1_b.size();
   const int hidden_channels =
@@ -297,14 +299,26 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
   vec_adjust(encoder_buffer4,
              batch_size * kSquares * std::max(kSquares * heads, dff_size));
 
+  const size_t embed_count = batch_size * kSquares * embedding_size;
+
+  // For pre-norm: normalize input into normed_buf, keep original for skip.
+  const float* mha_input = encoder_buffer.data();
+  if (pre_norm) {
+    std::copy_n(encoder_buffer.data(), embed_count, normed_buf.data());
+    RMSNorm2DWithSkipConnection(
+        batch_size * kSquares, embedding_size, normed_buf.data(), 1.0f,
+        static_cast<const float*>(nullptr), layer.ln1_gammas.data(),
+        default_eps);
+    mha_input = normed_buf.data();
+  }
+
   // Smolgen.
   if (layer.mha.has_smolgen) {
-    const float* input = &encoder_buffer[0];
     float* QK = &encoder_buffer4[0];
 
     // Compress.
     FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size * kSquares, embedding_size, hidden_channels, input,
+        batch_size * kSquares, embedding_size, hidden_channels, mha_input,
         layer.mha.smolgen.compress.data(), (const float*)nullptr,
         ACTIVATION_NONE, encoder_buffer2.data());
 
@@ -314,22 +328,34 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
         encoder_buffer2.data(), layer.mha.smolgen.dense1_w.data(),
         layer.mha.smolgen.dense1_b.data(), smolgen_activation,
         encoder_buffer3.data());
-    // Layer Norm.
-    LayerNorm2DWithSkipConnection(batch_size, hidden_sz, encoder_buffer3.data(),
-                                  1.0f, (const float*)nullptr,
-                                  layer.mha.smolgen.ln1_gammas.data(),
-                                  layer.mha.smolgen.ln1_betas.data(), 1e-3);
+    if (pre_norm) {
+      RMSNorm2DWithSkipConnection(
+          batch_size, hidden_sz, encoder_buffer3.data(), 1.0f,
+          static_cast<const float*>(nullptr),
+          layer.mha.smolgen.ln1_gammas.data(), 1e-3);
+    } else {
+      LayerNorm2DWithSkipConnection(
+          batch_size, hidden_sz, encoder_buffer3.data(), 1.0f,
+          (const float*)nullptr, layer.mha.smolgen.ln1_gammas.data(),
+          layer.mha.smolgen.ln1_betas.data(), 1e-3);
+    }
 
     // Dense 2.
     FullyConnectedLayer<use_eigen>::Forward1D(
         batch_size, hidden_sz, gen_sz_outputs, encoder_buffer3.data(),
         layer.mha.smolgen.dense2_w.data(), layer.mha.smolgen.dense2_b.data(),
         smolgen_activation, encoder_buffer2.data());
-    // Layer Norm.
-    LayerNorm2DWithSkipConnection(
-        batch_size, gen_sz_outputs, encoder_buffer2.data(), 1.0f,
-        (const float*)nullptr, layer.mha.smolgen.ln2_gammas.data(),
-        layer.mha.smolgen.ln2_betas.data(), 1e-3);
+    if (pre_norm) {
+      RMSNorm2DWithSkipConnection(
+          batch_size, gen_sz_outputs, encoder_buffer2.data(), 1.0f,
+          static_cast<const float*>(nullptr),
+          layer.mha.smolgen.ln2_gammas.data(), 1e-3);
+    } else {
+      LayerNorm2DWithSkipConnection(
+          batch_size, gen_sz_outputs, encoder_buffer2.data(), 1.0f,
+          (const float*)nullptr, layer.mha.smolgen.ln2_gammas.data(),
+          layer.mha.smolgen.ln2_betas.data(), 1e-3);
+    }
 
     // Global smolgen weights.
     FullyConnectedLayer<use_eigen>::Forward1D(
@@ -340,12 +366,12 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
 
   // Q
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, d_model, encoder_buffer.data(),
+      batch_size * kSquares, embedding_size, d_model, mha_input,
       layer.mha.q_w.data(), layer.mha.q_b.data(), ACTIVATION_NONE,
       encoder_buffer2.data());
   // K
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, d_model, encoder_buffer.data(),
+      batch_size * kSquares, embedding_size, d_model, mha_input,
       layer.mha.k_w.data(), layer.mha.k_b.data(), ACTIVATION_NONE,
       encoder_buffer3.data());
 
@@ -353,7 +379,6 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
   const int depth = d_model / heads;
   const float scaling = 1.0f / sqrtf(depth);
 
-  // MHA is done per batch since there's a fourth dimension introduced.
   for (auto batch = size_t{0}; batch < batch_size; batch++) {
     auto batchStart = batch * kSquares * d_model;
 
@@ -361,8 +386,6 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
 
     const float* Q = &encoder_buffer2[batchStart];
     const float* K = &encoder_buffer3[batchStart];
-
-    // matmul(Q, K) for all heads per batch.
 
     for (auto h = 0; h < heads; h++) {
       const float* A = &Q[h * depth];
@@ -385,7 +408,6 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
                     depth, scaling, A, heads * depth, B, heads * depth, beta, C,
                     kSquares);
 #else
-        // Should never get here.
         throw Exception("Blas backend internal error");
 #endif
       }
@@ -405,15 +427,14 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
     SoftmaxActivation(kSquares, QK + h, QK + h);
   }
 
-  // V
+  // V (from normed input in pre-norm, original in post-norm).
   FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, d_model, encoder_buffer.data(),
+      batch_size * kSquares, embedding_size, d_model, mha_input,
       layer.mha.v_w.data(), layer.mha.v_b.data(), ACTIVATION_NONE,
       encoder_buffer3.data());
 
   for (auto batch = size_t{0}; batch < batch_size; batch++) {
     auto batchStart = batch * kSquares * d_model;
-    // matmul(softmax(QK), V) for all heads per batch.
     float* attn = &encoder_buffer2[batchStart];
     const float* V = &encoder_buffer3[batchStart];
     const float* QK = &encoder_buffer4[batch * kSquares * kSquares * heads];
@@ -444,30 +465,60 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
       layer.mha.dense_w.data(), layer.mha.dense_b.data(), ACTIVATION_NONE,
       encoder_buffer3.data());
 
-  // Layer Norm + skip connection.
-  LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                encoder_buffer3.data(), alpha,
-                                encoder_buffer.data(), layer.ln1_gammas.data(),
-                                layer.ln1_betas.data(), default_eps);
-  std::swap(encoder_buffer3, encoder_buffer);
+  if (pre_norm) {
+    // Pre-norm: skip connection only (output + original input).
+    for (size_t i = 0; i < embed_count; i++) {
+      encoder_buffer3[i] += encoder_buffer[i];
+    }
+    std::swap(encoder_buffer3, encoder_buffer);
 
-  // FFN.
-  FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, embedding_size, dff_size, encoder_buffer.data(),
-      layer.ffn.dense1_w.data(), layer.ffn.dense1_b.data(), ffn_activation,
-      encoder_buffer4.data());
+    // Pre-norm for FFN: normalize, then FFN, then skip.
+    std::copy_n(encoder_buffer.data(), embed_count, normed_buf.data());
+    RMSNorm2DWithSkipConnection(
+        batch_size * kSquares, embedding_size, normed_buf.data(), 1.0f,
+        static_cast<const float*>(nullptr), layer.ln2_gammas.data(),
+        default_eps);
 
-  FullyConnectedLayer<use_eigen>::Forward1D(
-      batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
-      encoder_buffer4.data(), layer.ffn.dense2_w.data(),
-      layer.ffn.dense2_b.data(), ACTIVATION_NONE, encoder_buffer3.data());
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size * kSquares, embedding_size, dff_size, normed_buf.data(),
+        layer.ffn.dense1_w.data(), layer.ffn.dense1_b.data(), ffn_activation,
+        encoder_buffer4.data());
 
-  // Layer Norm + skip connection.
-  LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
-                                encoder_buffer3.data(), alpha,
-                                encoder_buffer.data(), layer.ln2_gammas.data(),
-                                layer.ln2_betas.data(), default_eps);
-  std::swap(encoder_buffer3, encoder_buffer);
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
+        encoder_buffer4.data(), layer.ffn.dense2_w.data(),
+        layer.ffn.dense2_b.data(), ACTIVATION_NONE, encoder_buffer3.data());
+
+    for (size_t i = 0; i < embed_count; i++) {
+      encoder_buffer3[i] += encoder_buffer[i];
+    }
+    std::swap(encoder_buffer3, encoder_buffer);
+  } else {
+    // Post-norm: LayerNorm(mha_output + skip) then FFN then LayerNorm again.
+    LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
+                                  encoder_buffer3.data(), alpha,
+                                  encoder_buffer.data(),
+                                  layer.ln1_gammas.data(),
+                                  layer.ln1_betas.data(), default_eps);
+    std::swap(encoder_buffer3, encoder_buffer);
+
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size * kSquares, embedding_size, dff_size, encoder_buffer.data(),
+        layer.ffn.dense1_w.data(), layer.ffn.dense1_b.data(), ffn_activation,
+        encoder_buffer4.data());
+
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size * kSquares, dff_size, layer.ffn.dense2_b.size(),
+        encoder_buffer4.data(), layer.ffn.dense2_w.data(),
+        layer.ffn.dense2_b.data(), ACTIVATION_NONE, encoder_buffer3.data());
+
+    LayerNorm2DWithSkipConnection(batch_size * kSquares, embedding_size,
+                                  encoder_buffer3.data(), alpha,
+                                  encoder_buffer.data(),
+                                  layer.ln2_gammas.data(),
+                                  layer.ln2_betas.data(), default_eps);
+    std::swap(encoder_buffer3, encoder_buffer);
+  }
 }
 
 template <bool use_eigen>
@@ -546,6 +597,16 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
                           std::max(max_channels * kSquares, max_fc_channels));
   std::vector<float>& head_buffer = buffers->buffer4;
   vec_adjust(head_buffer, largest_batch_size * max_head_planes * kSquares);
+
+  const bool has_pyramid = !weights_.ip_enc_pyramid_w.empty();
+  std::vector<float> pyramid_buf;
+  std::vector<float> encoder_normed_buf;
+  if (has_pyramid && attn_body_) {
+    const size_t emb = weights_.ip_emb_b.size();
+    const size_t num_groups = weights_.encoder.size() / 4;
+    pyramid_buf.resize(largest_batch_size * kSquares * emb * num_groups);
+    encoder_normed_buf.resize(largest_batch_size * kSquares * emb);
+  }
 
   // Output values.
   q_values_.reserve(wdl_ ? 3 * total_batches : total_batches);
@@ -658,12 +719,19 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
           weights_.ip_emb_w.data(), weights_.ip_emb_b.data(),
           default_activation_, buffer1.data());
 
-      // Layer norm for new encoding.
+      // Norm after embedding (gate norm).
       if (is_pe_dense_embedding_) {
-        LayerNorm2DWithSkipConnection(
-            batch_size * kSquares, embedding_size, buffer1.data(), 1.0f,
-            (const float*)nullptr, weights_.ip_emb_ln_gammas.data(),
-            weights_.ip_emb_ln_betas.data(), 1e-3);
+        if (has_pyramid) {
+          RMSNorm2DWithSkipConnection(
+              batch_size * kSquares, embedding_size, buffer1.data(), 1.0f,
+              static_cast<const float*>(nullptr),
+              weights_.ip_emb_ln_gammas.data(), 1e-3);
+        } else {
+          LayerNorm2DWithSkipConnection(
+              batch_size * kSquares, embedding_size, buffer1.data(), 1.0f,
+              (const float*)nullptr, weights_.ip_emb_ln_gammas.data(),
+              weights_.ip_emb_ln_betas.data(), 1e-3);
+        }
       }
 
       // Input gating
@@ -686,37 +754,96 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
       // FFN in embedding for new encoding.
       if (is_pe_dense_embedding_) {
         const auto dff_size = weights_.ip_emb_ffn.dense1_b.size();
-        // FFN dense 1.
-        FullyConnectedLayer<use_eigen>::Forward1D(
-            batch_size * kSquares, embedding_size, dff_size, buffer1.data(),
-            weights_.ip_emb_ffn.dense1_w.data(),
-            weights_.ip_emb_ffn.dense1_b.data(), ffn_activation_,
-            buffer3.data());
 
-        // FFN dense 2.
-        FullyConnectedLayer<use_eigen>::Forward1D(
-            batch_size * kSquares, dff_size,
-            weights_.ip_emb_ffn.dense2_b.size(), buffer3.data(),
-            weights_.ip_emb_ffn.dense2_w.data(),
-            weights_.ip_emb_ffn.dense2_b.data(), ACTIVATION_NONE,
-            buffer2.data());
+        if (has_pyramid) {
+          // Pre-norm: RMSNorm before FFN, simple residual add after.
+          const size_t emb_count = batch_size * kSquares * embedding_size;
+          std::copy_n(buffer1.data(), emb_count, encoder_normed_buf.data());
+          RMSNorm2DWithSkipConnection(
+              batch_size * kSquares, embedding_size,
+              encoder_normed_buf.data(), 1.0f,
+              static_cast<const float*>(nullptr),
+              weights_.ip_emb_ffn_ln_gammas.data(), 1e-3);
 
-        // Layer Norm.
-        LayerNorm2DWithSkipConnection(
-            batch_size * kSquares, weights_.ip_emb_ffn.dense2_b.size(),
-            buffer2.data(), alpha, buffer1.data(),
-            weights_.ip_emb_ffn_ln_gammas.data(),
-            weights_.ip_emb_ffn_ln_betas.data(), 1e-3);
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, embedding_size, dff_size,
+              encoder_normed_buf.data(),
+              weights_.ip_emb_ffn.dense1_w.data(),
+              weights_.ip_emb_ffn.dense1_b.data(), ffn_activation_,
+              buffer3.data());
 
-        std::swap(buffer1, buffer2);
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, dff_size,
+              weights_.ip_emb_ffn.dense2_b.size(), buffer3.data(),
+              weights_.ip_emb_ffn.dense2_w.data(),
+              weights_.ip_emb_ffn.dense2_b.data(), ACTIVATION_NONE,
+              buffer2.data());
+
+          for (size_t i = 0; i < emb_count; i++) {
+            buffer1[i] += buffer2[i];
+          }
+        } else {
+          // Post-norm: FFN then LayerNorm with skip.
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, embedding_size, dff_size, buffer1.data(),
+              weights_.ip_emb_ffn.dense1_w.data(),
+              weights_.ip_emb_ffn.dense1_b.data(), ffn_activation_,
+              buffer3.data());
+
+          FullyConnectedLayer<use_eigen>::Forward1D(
+              batch_size * kSquares, dff_size,
+              weights_.ip_emb_ffn.dense2_b.size(), buffer3.data(),
+              weights_.ip_emb_ffn.dense2_w.data(),
+              weights_.ip_emb_ffn.dense2_b.data(), ACTIVATION_NONE,
+              buffer2.data());
+
+          LayerNorm2DWithSkipConnection(
+              batch_size * kSquares, weights_.ip_emb_ffn.dense2_b.size(),
+              buffer2.data(), alpha, buffer1.data(),
+              weights_.ip_emb_ffn_ln_gammas.data(),
+              weights_.ip_emb_ffn_ln_betas.data(), 1e-3);
+
+          std::swap(buffer1, buffer2);
+        }
       }
 
       // Attention body encoders.
-      for (auto& layer : weights_.encoder) {
+      const size_t num_encoder_blocks = weights_.encoder.size();
+      const size_t num_groups = has_pyramid ? num_encoder_blocks / 4 : 0;
+      const size_t pyramid_feat = embedding_size * num_groups;
+      size_t group_idx = 0;
+      for (size_t ei = 0; ei < num_encoder_blocks; ei++) {
         ForwardEncoderLayer(buffer1, buffer2, buffer3, head_buffer, batch_size,
-                            layer, embedding_size, weights_.encoder_head_count,
+                            weights_.encoder[ei], embedding_size,
+                            weights_.encoder_head_count,
                             smolgen_activation_, ffn_activation_, alpha,
-                            is_pe_dense_embedding_ ? 1e-3 : 1e-6);
+                            is_pe_dense_embedding_ ? 1e-3 : 1e-6,
+                            has_pyramid, encoder_normed_buf);
+        if (has_pyramid && (ei + 1) % 4 == 0) {
+          for (size_t b = 0; b < batch_size; b++) {
+            for (size_t s = 0; s < kSquares; s++) {
+              std::copy_n(
+                  &buffer1[(b * kSquares + s) * embedding_size],
+                  embedding_size,
+                  &pyramid_buf[(b * kSquares + s) * pyramid_feat +
+                               group_idx * embedding_size]);
+            }
+          }
+          group_idx++;
+        }
+      }
+      if (has_pyramid) {
+        // Pyramid projection: concat of every-4th-block outputs -> embedding.
+        FullyConnectedLayer<use_eigen>::Forward1D(
+            batch_size * kSquares, pyramid_feat, embedding_size,
+            pyramid_buf.data(), weights_.ip_enc_pyramid_w.data(),
+            weights_.ip_enc_pyramid_b.data(), ACTIVATION_NONE,
+            buffer1.data());
+        // Final RMSNorm after pyramid projection (no skip connection).
+        RMSNorm2DWithSkipConnection(
+            batch_size * kSquares, embedding_size, buffer1.data(), 1.0f,
+            static_cast<const float*>(nullptr),
+            weights_.ip_enc_final_norm_gammas.data(), 1e-3);
       }
     }
 

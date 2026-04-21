@@ -77,4 +77,40 @@ void LayerNorm2DWithSkipConnection(const size_t batch_size,
   }
 }
 
+// RMSNorm: x / sqrt(mean(x^2) + eps) * gamma, with optional skip connection.
+void RMSNorm2DWithSkipConnection(const size_t batch_size,
+                                 const size_t channels, float* data,
+                                 const float alpha, const float* skip,
+                                 const float* gammas, float epsilon) {
+  for (size_t i = 0; i < batch_size; i++) {
+#ifndef USE_ISPC
+    float sum_sq = 0;
+    if (skip != nullptr) {
+      for (size_t c = 0; c < channels; ++c) {
+        data[i * channels + c] =
+            data[i * channels + c] * alpha + skip[i * channels + c];
+        sum_sq += data[i * channels + c] * data[i * channels + c];
+      }
+    } else {
+      for (size_t c = 0; c < channels; ++c) {
+        data[i * channels + c] *= alpha;
+        sum_sq += data[i * channels + c] * data[i * channels + c];
+      }
+    }
+    float den = 1.0f / std::sqrt(sum_sq / channels + epsilon);
+    for (size_t c = 0; c < channels; ++c) {
+      data[i * channels + c] = gammas[c] * data[i * channels + c] * den;
+    }
+#else
+    if (skip != nullptr) {
+      ispc::RMSNorm2DWithSkipConnection(channels, data + i * channels, alpha,
+                                        skip + i * channels, gammas, epsilon);
+    } else {
+      ispc::RMSNorm2DWithSkipConnection(channels, data + i * channels, alpha,
+                                        nullptr, gammas, epsilon);
+    }
+#endif
+  }
+}
+
 }  // namespace lczero

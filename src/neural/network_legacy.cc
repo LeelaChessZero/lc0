@@ -61,6 +61,14 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
   for (const auto& enc : weights.encoder()) {
     encoder.emplace_back(enc);
   }
+  ip_enc_pyramid_w =
+      LayerAdapter(weights.ip_enc_pyramid_w()).as_vector();
+  ip_enc_pyramid_b =
+      LayerAdapter(weights.ip_enc_pyramid_b()).as_vector();
+  ip_enc_final_norm_gammas =
+      LayerAdapter(weights.ip_enc_final_norm_gammas()).as_vector();
+  ip_enc_final_norm_betas =
+      LayerAdapter(weights.ip_enc_final_norm_betas()).as_vector();
 }
 
 BaseWeights::SEunit::SEunit(const pblczero::Weights::SEunit& se)

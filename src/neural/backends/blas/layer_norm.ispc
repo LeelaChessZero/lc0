@@ -80,3 +80,27 @@ export void LayerNorm2DWithSkipConnection(uniform const size_t channels,
     data[c] = betas[c] + gammas[c] * (data[c] - mean) * den;
   }
 }
+
+export void RMSNorm2DWithSkipConnection(uniform const size_t channels,
+                                        uniform float data[],
+                                        const uniform float alpha,
+                                        const uniform float skip[],
+                                        const uniform float gammas[],
+                                        uniform const float epsilon) {
+  float isum_sq = 0;
+  if (skip != NULL) {
+    foreach (c = 0 ... channels) {
+      data[c] = data[c] * alpha + skip[c];
+      isum_sq += data[c] * data[c];
+    }
+  } else {
+    foreach (c = 0 ... channels) {
+      data[c] *= alpha;
+      isum_sq += data[c] * data[c];
+    }
+  }
+  float den = rsqrt(reduce_add(isum_sq) / channels + epsilon);
+  foreach (c = 0 ... channels) {
+    data[c] = gammas[c] * data[c] * den;
+  }
+}

@@ -217,12 +217,6 @@ message Weights {
   repeated EncoderLayer encoder = 27;
   optional uint32 headcount = 28;
 
-  // Pyramid projection after encoder tower.
-  optional Layer ip_enc_pyramid_w = 46;
-  optional Layer ip_enc_pyramid_b = 47;
-  optional Layer ip_enc_final_norm_gammas = 48;
-  optional Layer ip_enc_final_norm_betas = 49;
-
   // Policy encoder stack
   // The ffn activation up to and including NETWORK_SE_WITH_HEADFORMAT is SELU,
   // otherwise it follows the ffn activation setting.

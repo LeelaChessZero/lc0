@@ -130,6 +130,14 @@ struct BaseWeights {
   std::vector<EncoderLayer> encoder;
   int encoder_head_count;
 
+  // Pyramid fusion (every-4th-block concat + projection).
+  Vec ip_enc_pyramid_w;
+  Vec ip_enc_pyramid_b;
+
+  // Final norm after pyramid projection.
+  Vec ip_enc_final_norm_gammas;
+  Vec ip_enc_final_norm_betas;
+
   // Residual tower.
   std::vector<Residual> residual;
 

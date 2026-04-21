@@ -1,0 +1,450 @@
+/*
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2024 The LCZero Authors
+
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
+*/
+
+syntax = "proto2";
+
+package pblczero;
+
+message XlaLayoutProto {
+  // Sequence of dimension numbers, from minor (fastest varying index) to major
+  // (slowest varying index). This field is required.
+  repeated int64 minor_to_major = 1;
+}
+
+message XlaShapeProto {
+  enum Type {
+    PRIMITIVE_TYPE_INVALID = 0;
+
+    // Predicates are two-state booleans.
+    PRED = 1;
+
+    // Signed integral values of fixed width.
+    S4 = 21;
+    S8 = 2;
+    S16 = 3;
+    S32 = 4;
+    S64 = 5;
+
+    // Unsigned integral values of fixed width.
+    U4 = 22;
+    U8 = 6;
+    U16 = 7;
+    U32 = 8;
+    U64 = 9;
+
+    // Floating-point values of fixed width.
+    //
+    // Note: if f16s are not natively supported on the device, they will be
+    // converted to f16 from f32 at arbirary points in the computation.
+    F16 = 10;
+    F32 = 11;
+
+    // Truncated 16 bit floating-point format. This is similar to IEEE's 16 bit
+    // floating-point format, but uses 1 bit for the sign, 8 bits for the
+    // exponent and 7 bits for the mantissa.
+    BF16 = 16;
+
+    F64 = 12;
+
+    // FP8 dtypes, as described in this paper: https://arxiv.org/abs/2209.05433
+    //
+    // F8E5M2 has 5 exponent bits and 2 mantissa bits, and is similar to the
+    // existing IEEE types.
+    //
+    // F8E4M3FN has 4 exponent bits and 3 mantissa bits. The "FN" means only
+    // Finite and NaN values are supported. Unlike IEEE types, infinities are
+    // not supported.  NaN is represented when the exponent and mantissa bits
+    // are all 1s. All other values are finite.
+    //
+    // F8E4M3B11FNUZ has 4 exponent bits and 3 mantissa bits and a bias of 11.
+    // The "FNUZ" means only Finite and NaN values are supported; zero is
+    // unsigned. Unlike IEEE types, infinities are not supported.  NaN is
+    // represented when the exponent and mantissa bits are all 0s with a sign
+    // bit of 1. All other values are finite.
+
+    F8E5M2 = 19;
+    F8E4M3FN = 20;
+    F8E4M3B11FNUZ = 23;
+
+    // FP8 dtypes, as described in this paper: https://arxiv.org/abs/2206.02915
+    //
+    // F8E5M2FNUZ has 5 exponent bits and 2 mantissa bits.
+    // F8E4M3FNUZ has 4 exponent bits and 3 mantissa bits.
+    //
+    // The "FNUZ" means only Finite and NaN values are supported; zero is
+    // unsigned. Unlike IEEE types, infinities are not supported.  NaN is
+    // represented when the exponent and mantissa bits are all 0s with a sign
+    // bit of 1. All other values are finite.
+    //
+    // These differences mean there's an additional exponent value available. To
+    // keep the same dynamic range as an IEEE-like FP8 type, the exponent is
+    // biased one more than would be expected given the number of exponent bits
+    // (8 for Float8E4M3FNUZ and 16 for Float8E5M2FNUZ).
+    F8E5M2FNUZ = 24;
+    F8E4M3FNUZ = 25;
+
+    // Complex values of fixed width.
+    C64 = 15;  // Paired F32 (real, imag), as in std::complex<float>.
+    C128 = 18; // Paired F64 (real, imag), as in std::complex<double>.
+
+    // A tuple is a polymorphic sequence; e.g. a shape that holds different
+    // sub-shapes. They are used for things like returning multiple values from
+    // a computation; e.g. a computation that returns weights and biases may
+    // have a signature that results in a tuple like (f32[784x2000], f32[2000])
+    //
+    // If a shape proto has the tuple element type, it may not have any entries
+    // in the dimensions field.
+    TUPLE = 13;
+
+    // An opaque type used for passing context-specific data to a custom
+    // operation. Shapes of this primitive type will have empty dimensions and
+    // tuple_shapes fields.
+    //
+    // (OPAQUE would be a better name for this identifier, but that conflicts
+    // with a macro defined in windows.h.)
+    OPAQUE_TYPE = 14;
+
+    // A token type threaded between side-effecting operations. Shapes of this
+    // primitive type will have empty dimensions and tuple_shapes fields.
+    TOKEN = 17;
+  }
+
+  // The element type for this shape.
+  required Type element_type = 2;
+
+  // The size (number of elements) for each dimension, or an upper bound on the
+  // size if the dimension is dynamic.  In XLA, dimensions are numbered from 0
+  // to N-1 for an N-dimensional array. The first element of 'dimensions' is the
+  // size of dimension 0, the second element is the size of dimension 1, and so
+  // forth.  Empty list indicates a scalar.
+  //
+  // If the respective element in 'is_dimension_dynamic' is true then the value
+  // in this field represents an upper bound on the size of the dimension.
+  repeated int64 dimensions = 3;
+
+  // For tuples only, the shapes of constituent shapes in the tuple sequence.
+  repeated XlaShapeProto tuple_shapes = 4;
+
+  // The layout used to back this shape.
+  required XlaLayoutProto layout = 5;
+
+  // For arrays, this indicates whether or not each dimension is
+  // dynamically-sized. The number of elements in this repeated field should be
+  // zero (indicating that no dimensions are dynamic) or equal to the number of
+  // elements in the 'dimensions' field.
+  repeated bool is_dynamic_dimension = 6;
+}
+
+// Shape of the parameters and output of a computation (like a traditional
+// function signature).
+message XlaProgramShapeProto {
+  repeated XlaShapeProto parameters = 1;
+  required XlaShapeProto result = 2;
+  repeated string parameter_names = 3;
+}
+
+// Symbolization metadata for HLO Instructions.
+//
+// This metadata is used for debugging XLA code generation, as well as
+// performance profiling of XLA-generated executables.
+message XlaOpMetadata {
+  // The framework op name that generated this XLA op.
+  //
+  // Frameworks that build on top of XLA should mirror the names of their ops
+  // back to users by specifying the op_type. In this way, even if the
+  // framework's "ops" are implemented as multiple XLA HLO Ops, they can be
+  // grouped appropriately. (e.g. if a SoftMax layer is emitted into XLA as
+  // multiple ops, then each op should have the op_type be "SoftMax".)
+  optional string op_type = 1;
+  // The user-specified name of the op.
+  //
+  // This name is often unique within a computation. Note: some frameworks
+  // add auto-generated names if the user does not provide one.
+  optional string op_name = 2;
+  // Indicate a file and line that this op is associated to in a user's program.
+  //
+  // e.g. it could be the file and line of user code that generated the op.
+  optional string source_file = 3;
+  optional int32 source_line = 4;
+}
+
+message XlaLiteralProto {
+  required XlaShapeProto shape = 1;
+  repeated bool preds = 2;
+  optional bytes s4s = 21;
+  optional bytes u4s = 22;
+  optional bytes s8s = 15;
+  optional bytes u8s = 3;
+  repeated int32 s32s = 4;
+  repeated int64 s64s = 5;
+  repeated uint32 u32s = 6;
+  repeated uint64 u64s = 7;
+  repeated float f32s = 8;
+  repeated double f64s = 9;
+  repeated float c64s = 12;   // Stored as interleaved real, imag floats.
+  repeated double c128s = 18; // Stored as interleaved real, imag doubles.
+  repeated XlaLiteralProto tuple_literals = 10;
+  // The F16s, BF16s, U16s and S16s are encoded in little endian byte order
+  optional bytes f16s = 11;
+  optional bytes bf16s = 13;
+  optional bytes u16s = 16;
+  optional bytes s16s = 17;
+  optional bytes f8e5m2s = 19;
+  optional bytes f8e4m3fns = 20;
+  optional bytes f8e4m3b11fnuzs = 23;
+  optional bytes f8e5m2fnuzs = 24;
+  optional bytes f8e4m3fnuzs = 25;
+  repeated int64 sparse_indices = 14;
+  // Next = 26
+}
+
+message XlaWindowDimension {
+  optional int64 size = 1;
+  optional int64 stride = 2;
+  optional int64 padding_low = 3;
+  optional int64 padding_high = 4;
+  optional int64 window_dilation = 5;
+  optional int64 base_dilation = 6;
+  optional bool window_reversal = 7;
+}
+
+message XlaWindow { repeated XlaWindowDimension dimensions = 1; }
+
+message XlaConvolutionDimensionNumbers {
+  optional int64 input_batch_dimension = 7;
+  optional int64 input_feature_dimension = 8;
+  repeated int64 input_spatial_dimensions = 11;
+  optional int64 kernel_input_feature_dimension = 3;
+  optional int64 kernel_output_feature_dimension = 4;
+  repeated int64 kernel_spatial_dimensions = 6;
+  optional int64 output_batch_dimension = 9;
+  optional int64 output_feature_dimension = 10;
+  repeated int64 output_spatial_dimensions = 12;
+}
+
+message XlaDotDimensionNumbers {
+  repeated int64 lhs_contracting_dimensions = 1;
+  repeated int64 rhs_contracting_dimensions = 2;
+  repeated int64 lhs_batch_dimensions = 3;
+  repeated int64 rhs_batch_dimensions = 4;
+}
+
+message XlaGatherDimensionNumbers {
+  repeated int64 offset_dims = 1;
+  repeated int64 collapsed_slice_dims = 2;
+  repeated int64 start_index_map = 3;
+  optional int64 index_vector_dim = 4;
+}
+
+message HloInstructionProto {
+  required string name = 1;
+  required string opcode = 2;
+  required XlaShapeProto shape = 3;
+
+  optional XlaOpMetadata metadata = 7;
+
+  // Literal, only present for kConstant.
+  optional XlaLiteralProto literal = 8;
+
+  // Parameter number is only present for kParameter.
+  optional int64 parameter_number = 9;
+
+  // Index for kGetTupleElement.
+  optional int64 tuple_index = 13;
+
+  // Describes the window in a windowed operation such as convolution.
+  optional XlaWindow window = 15;
+
+  // Describes the dimension numbers used for a convolution.
+  optional XlaConvolutionDimensionNumbers convolution_dimension_numbers = 16;
+
+  // Describes the [begin, end) index range and stride for slices.
+  message SliceDimensions {
+    optional int64 start = 1;
+    optional int64 limit = 2;
+    optional int64 stride = 3;
+  }
+  repeated SliceDimensions slice_dimensions = 17;
+
+  optional XlaDotDimensionNumbers dot_dimension_numbers = 30;
+
+  // Dimensions present for some operations that require reshaping or
+  // broadcasting, including Reshape, Reduce, ReduceWindow, and Reverse.
+  repeated int64 dimensions = 14;
+
+  // Gather dimension numbers.
+  optional XlaGatherDimensionNumbers gather_dimension_numbers = 33;
+  repeated int64 gather_slice_sizes = 34;
+  optional bool indices_are_sorted = 67;
+  optional bool unique_indices = 69;
+
+  // The id of this instruction.
+  required int64 id = 35;
+
+  repeated int64 operand_ids = 36;
+  repeated int64 called_computation_ids = 38;
+
+  optional string comparison_direction = 63;
+}
+
+message HloComputationProto {
+  required string name = 1;
+
+  // The array of instructions is always in a valid dependency order, where
+  // operands appear before their users.
+  repeated HloInstructionProto instructions = 2;
+  required XlaProgramShapeProto program_shape = 4;
+
+  // The id of this computation.
+  required int64 id = 5;
+
+  // The id of the root of the computation.
+  required int64 root_id = 6;
+}
+
+message HloModuleProto {
+  required string name = 1;
+  required string entry_computation_name = 2;
+  required int64 entry_computation_id = 6;
+
+  // The array of computations is always in a valid dependency order, where
+  // callees appear before their callers.
+  repeated HloComputationProto computations = 3;
+
+  // The host program shape (with layout) of the entry computation.
+  required XlaProgramShapeProto host_program_shape = 4;
+
+  // The id of this module.
+  required int64 id = 5;
+}
+
+message OptionOverrideProto {
+  optional string string_field = 1;
+  optional bool bool_field = 2;
+  optional int64 int_field = 3;
+  optional double double_field = 4;
+}
+
+message CompileEnvOptionProto {
+  required string key = 1;
+  required OptionOverrideProto value = 2;
+}
+
+message XlaDeviceAssignmentProto {
+  optional int32 replica_count = 1;
+  optional int32 computation_count = 2;
+  message ComputationDevice {
+    repeated int64 replica_device_ids = 1;
+  }
+  repeated ComputationDevice computation_devices = 3;
+}
+
+message ExecutableBuildOptionsProto {
+  // If set, this is the device to build the computation for. Valid
+  // device_ordinal values are: 0 to # of devices - 1. These values are
+  // identical to the device ordinal values used by StreamExecutor. The built
+  // executable will be executable on any device equivalent to the specified
+  // device as determined by Backend::devices_equivalent(). A value of -1
+  // indicates this option has not been set.
+  optional int64 device_ordinal = 1;
+
+  // If set, this specifies the layout of the result of the computation. If not
+  // set, the service will chose the layout of the result. A Shape is used to
+  // store the layout to accommodate tuple result shapes. A value of nullptr
+  // indicates the option has not been set.
+  optional XlaShapeProto result_layout = 2;
+
+  // The number of replicas of this computation that are to be executed.
+  // Defaults to 1.
+  optional int64 num_replicas = 4;
+
+  // The number of partitions in this computation. Defaults to 1.
+  optional int64 num_partitions = 5;
+
+  // Indicates whether to use SPMD (true) or MPMD (false) partitioning when
+  // num_partitions > 1 and XLA is requested to partition the input program.
+  optional bool use_spmd_partitioning = 6;
+
+  // Whether to automatically generate XLA shardings for SPMD partitioner.
+  optional bool use_auto_spmd_partitioning = 7;
+
+  // Whether HLOs should be deduplicated.
+  optional bool deduplicate_hlo = 8;
+
+  // If set, this specifies a static device assignment for the computation.
+  // Otherwise, the computation will be compiled generically and can be run with
+  // any device assignment compatible with the computation's replica and
+  // partition counts.
+  optional XlaDeviceAssignmentProto device_assignment = 9;
+
+  // Whether input and output buffers are aliased if the associated parameter is
+  // passed-through XLA modules without being changed.
+  optional bool alias_passthrough_params = 10;
+
+  // By default, XLA builds an executable by invoking standard compilation, i.e.
+  // running Compiler::Compile, or both Compiler::RunHloPasses and
+  // Compiler::RunBackend. When run_backend_only is set to true, XLA builds an
+  // executable by invoking only RunBackend and skip invoking RunHloPasses,
+  // which can be used to compile post-optimizations HLO modules.
+  optional bool run_backend_only = 11;
+
+  // Allows sharding propagation to propagate to the outputs. This changes the
+  // output shape of the computation (which is undesirable), but it can be used
+  // to allow to run partial compilation to determine what would be the output
+  // sharding of a computation if XLA would be allowed to propagate the sharding
+  // which can be used by higher level framework as a way to query intermediate
+  // sharding of operations when multiple computation would be chained and
+  // merged together.
+  // This is a vector of bool, because the user can control (if the output of
+  // the computation is a tuple) which elements of the tuple can have the
+  // sharding substituted and which don't. If only one boolean value is passed
+  // in the vector that's interpreted as the value to be applied for every
+  // single element of the output tuple. One value per element of the tuple
+  // means that each value is attached to one of the output elements.
+  repeated bool allow_spmd_sharding_propagation_to_output = 12;
+
+  // Opaque profile data for any feedback directed optimizations.
+  optional bytes fdo_profile = 14;
+
+  optional int64 device_memory_size = 15;
+
+  // Mesh shape in auto sharding options.
+  repeated int64 auto_spmd_partitioning_mesh_shape = 16;
+
+  // Mesh ids in auto sharding options.
+  repeated int64 auto_spmd_partitioning_mesh_ids = 17;
+}
+
+message CompileOptionsProto {
+  repeated XlaShapeProto argument_layouts = 1;
+  optional bool parameter_is_tupled_arguments = 2;
+  optional ExecutableBuildOptionsProto executable_build_options = 3;
+  optional bool compile_portable_executable = 4;
+  optional int64 profile_version = 5;
+  optional bytes serialized_multi_slice_config = 6;
+  repeated CompileEnvOptionProto env_options = 7;
+}
