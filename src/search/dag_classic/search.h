@@ -216,6 +216,7 @@ class Search {
 // within one thread, have to split into stages.
 class SearchWorker {
  public:
+  static constexpr int kMaxMovesInPosition = 218;
   static constexpr int kTaskCountDigits = std::numeric_limits<int>::digits + 1;
   static constexpr int kTasksTakenShift = kTaskCountDigits/2;
   static constexpr int kTasksTakenOne = 1 << kTasksTakenShift;
@@ -396,18 +397,55 @@ class SearchWorker {
           repetitions(std::get<1>(path.back())) {}
   };
 
+  // Combine visits to perform, index, and node state flags into a packed
+  // variable. Packed value stores required visit information which can be
+  // pushed into the current_path stack.
+  struct CurrentPath {
+    uint32_t visits_ : 20;       // <= collision limit
+    uint32_t large_branch_ : 1;  // bool
+    uint32_t last_child_ : 1;    // bool
+    uint32_t visit_child_ : 1;   // bool
+    uint32_t stop_picking_ : 1;  // bool
+    uint32_t index_ : 8;         // < 218
+    CurrentPath(unsigned visits, bool last, bool visit, bool stop,
+                unsigned index)
+        : visits_(visits),
+          large_branch_(0),
+          last_child_(last),
+          visit_child_(visit),
+          stop_picking_(stop),
+          index_(index) {}
+    // Implicit conversion from int to allow comparing to a visit integer.
+    CurrentPath(int visits) : visits_(visits) {}
+    CurrentPath() {}
+
+    auto operator<=>(CurrentPath b) const {
+      return (uint32_t)visits_ <=> (uint32_t)b.visits_;
+    }
+    bool operator==(CurrentPath b) const {
+      return (uint32_t)visits_ == (uint32_t)b.visits_;
+    }
+    explicit operator bool() const { return !!visits_; }
+
+    CurrentPath& operator+=(unsigned visits) {
+      visits_ += visits;
+      return *this;
+    }
+    CurrentPath& operator-=(unsigned visits) {
+      visits_ -= visits;
+      return *this;
+    }
+  };
+
+  static_assert(sizeof(CurrentPath) == sizeof(uint32_t),
+                "CurrentPath must be packed into 32 bits");
+
   // Holds per task worker scratch data
   struct TaskWorkspace {
     std::array<Node::Iterator, 256> cur_iters;
-    std::vector<std::unique_ptr<std::array<int, 256>>> vtp_buffer;
-    std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
-    std::vector<int> vtp_last_filled;
-    std::vector<int> current_path;
+    std::vector<CurrentPath> current_path;
     BackupPath full_path;
     TaskWorkspace() {
-      vtp_buffer.reserve(30);
-      visits_to_perform.reserve(30);
-      vtp_last_filled.reserve(30);
       current_path.reserve(30);
       full_path.reserve(30);
     }

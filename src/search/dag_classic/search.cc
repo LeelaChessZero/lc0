@@ -1517,6 +1517,7 @@ void SearchWorker::GatherMinibatch() {
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx)
     REQUIRES(search_->nodes_mutex_) {
+  LCTRACE_FUNCTION_SCOPE;
   for (int i = start_idx; i < end_idx; i++) {
     auto& picked_node = minibatch_[i];
     if (picked_node.IsCollision()) continue;
@@ -1669,15 +1670,6 @@ void SearchWorker::PickNodesToExtendTask(
   assert(path.size() == (size_t)history.GetLength() -
                             search_->played_history_.GetLength() + 1);
 
-  // TODO: Bring back pre-cached nodes created outside locks in a way that works
-  // with tasks.
-  // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
-  // width. Maybe even do so outside of lock scope.
-  auto& vtp_buffer = workspace->vtp_buffer;
-  auto& visits_to_perform = workspace->visits_to_perform;
-  visits_to_perform.clear();
-  auto& vtp_last_filled = workspace->vtp_last_filled;
-  vtp_last_filled.clear();
   auto& current_path = workspace->current_path;
   current_path.clear();
   auto& full_path = workspace->full_path;
@@ -1702,65 +1694,59 @@ void SearchWorker::PickNodesToExtendTask(
   // Fetch the current best root node visits for possible smart pruning.
   const int64_t best_node_n = search_->current_best_edge_.GetN();
 
-  int passed_off = 0;
-  int completed_visits = 0;
-
   bool is_root_node = node == search_->root_node_;
+  [[maybe_unused]] const bool starting_from_root = is_root_node;
   const float even_draw_score = search_->GetDrawScore(false);
   const float odd_draw_score = search_->GetDrawScore(true);
   const auto& root_move_filter = search_->root_move_filter_;
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
 
   int max_limit = std::numeric_limits<int>::max();
+  // Root node is special - since its not reached from anywhere else, so
+  // it needs its own logic.
+  const bool stop_root =
+      is_root_node && ShouldStopPickingHere(node, true, repetitions);
+  const bool visit_root = stop_root && node->TryStartScoreUpdate();
+  current_path.emplace_back(collision_limit, true, visit_root, stop_root, 0);
+  // take base sqrt(2) logarithm of root node for large subbranch N limit. It is
+  // used to split tasks.
+  const unsigned large_branch_limit =
+      std::bit_width(search_->root_node_->GetN()) * 2;
 
-  current_path.push_back(-1);
   while (current_path.size() > 0) {
     assert(full_path.size() >= path.size());
     // First prepare visits_to_perform.
-    if (current_path.back() == -1) {
-      // Need to do n visits, where n is either collision_limit, or comes from
-      // visits_to_perform for the current path.
-      int cur_limit = collision_limit;
-      if (current_path.size() > 1) {
-        cur_limit =
-            (*visits_to_perform.back())[current_path[current_path.size() - 2]];
+    int cur_limit = current_path.back().visits_;
+    // First prepare visits_to_perform.
+    // First check if node is terminal or not-expanded.  If either than create
+    // a collision of appropriate size and pop current_path.
+    if (current_path.back().stop_picking_) {
+      if (current_path.back().visit_child_) {
+        cur_limit -= 1;
+        receiver->push_back(NodeToProcess::Visit(full_path, history));
       }
-      // First check if node is terminal or not-expanded.  If either than create
-      // a collision of appropriate size and pop current_path.
-      if (ShouldStopPickingHere(node, is_root_node, repetitions)) {
-        if (is_root_node) {
-          // Root node is special - since its not reached from anywhere else, so
-          // it needs its own logic. Still need to create the collision to
-          // ensure the outer gather loop gives up.
-          if (node->TryStartScoreUpdate()) {
-            cur_limit -= 1;
-            minibatch_.push_back(
-                NodeToProcess::Visit(full_path, search_->played_history_));
-            completed_visits++;
-          }
+      // Create collisions here.
+      if (cur_limit > 0) {
+        int max_count = 0;
+        if (cur_limit == collision_limit && path.size() == 1 &&
+            max_limit > cur_limit) {
+          max_count = max_limit;
         }
-        // Visits are created elsewhere, just need the collisions here.
-        if (cur_limit > 0) {
-          int max_count = 0;
-          if (cur_limit == collision_limit && path.size() == 1 &&
-              max_limit > cur_limit) {
-            max_count = max_limit;
-          }
-          receiver->push_back(
-              NodeToProcess::Collision(full_path, cur_limit, max_count));
-          completed_visits += cur_limit;
-        }
+        receiver->push_back(
+            NodeToProcess::Collision(full_path, cur_limit, max_count));
+      }
+      bool saved_is_last_child;
+      do {
+        saved_is_last_child = current_path.back().last_child_;
+        current_path.pop_back();
+        if (current_path.size() == 0) break;
         history.Pop();
         full_path.pop_back();
-        if (full_path.size() > 0) {
-          std::tie(node, repetitions, moves_left) = full_path.back();
-        } else {
-          node = nullptr;
-          repetitions = 0;
-        }
-        current_path.pop_back();
-        continue;
-      }
+      } while (saved_is_last_child);
+      assert(!full_path.empty());
+      std::tie(node, repetitions, moves_left) = full_path.back();
+    } else {
+      std::array<CurrentPath, kMaxMovesInPosition> visits_to_perform;
       if (is_root_node) {
         // Root node is again special - needs its n in flight updated separately
         // as its not handled on the path to it, since there isn't one.
@@ -1768,13 +1754,7 @@ void SearchWorker::PickNodesToExtendTask(
       }
 
       // Create visits_to_perform new back entry for this level.
-      if (vtp_buffer.size() > 0) {
-        visits_to_perform.push_back(std::move(vtp_buffer.back()));
-        vtp_buffer.pop_back();
-      } else {
-        visits_to_perform.push_back(std::make_unique<std::array<int, 256>>());
-      }
-      vtp_last_filled.push_back(-1);
+      int vtp_last_filled = -1;
 
       // Cache all constant UCT parameters.
 
@@ -1807,6 +1787,8 @@ void SearchWorker::PickNodesToExtendTask(
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       int cache_filled_idx = -1;
+      int parent_max_limit = max_limit;
+      int collision_left = cur_limit;
       while (cur_limit > 0) {
         // Perform UCT for current node.
         float best = std::numeric_limits<float>::lowest();
@@ -1824,6 +1806,7 @@ void SearchWorker::PickNodesToExtendTask(
               ++cur_iters[idx];
             }
             current_nstarted[idx] = cur_iters[idx].GetNStarted();
+            visits_to_perform[idx] = CurrentPath(0, 0, 0, 0, idx);
           }
           int nstarted = current_nstarted[idx];
           const float util = current_util[idx];
@@ -1889,28 +1872,42 @@ void SearchWorker::PickNodesToExtendTask(
           // No second best - only one edge, so everything goes in here.
           new_visits = cur_limit;
         }
-        if (best_idx >= vtp_last_filled.back()) {
-          auto* vtp_array = visits_to_perform.back().get()->data();
-          std::fill(vtp_array + (vtp_last_filled.back() + 1),
-                    vtp_array + best_idx + 1, 0);
-        }
-        (*visits_to_perform.back())[best_idx] += new_visits;
+        bool already_visited = !!visits_to_perform[best_idx];
+        visits_to_perform[best_idx] += new_visits;
         cur_limit -= new_visits;
+        // We have already checked this child. We can use simplified process to
+        // add more visits to the node.
+        if (already_visited) {
+          if (visits_to_perform[best_idx].stop_picking_) {
+            // We found a collision. All remaining visits go here.
+            visits_to_perform[best_idx] += cur_limit;
+            cur_limit = 0;
+            continue;
+          }
+
+          // Add more visits to the branch.
+          Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
+          child_node->IncrementNInFlight(new_visits);
+          current_nstarted[best_idx] += new_visits;
+          current_score[best_idx] = cur_iters[best_idx].GetP() * puct_mult /
+                                        (1 + current_nstarted[best_idx]) +
+                                    current_util[best_idx];
+          continue;
+        }
 
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
         history.Append(best_edge.GetMove());
         auto [child_repetitions, child_moves_left] =
             GetRepetitions(full_path.size(), history.Last());
         full_path.push_back({child_node, child_repetitions, child_moves_left});
+        visits_to_perform[best_idx].large_branch_ =
+            child_node->GetN() > large_branch_limit;
         if (child_node->TryStartScoreUpdate()) {
           current_nstarted[best_idx]++;
           new_visits -= 1;
           if (ShouldStopPickingHere(child_node, false, child_repetitions)) {
-            // Reduce 1 for the visits_to_perform to ensure the collision
-            // created doesn't include this visit.
-            (*visits_to_perform.back())[best_idx] -= 1;
-            receiver->push_back(NodeToProcess::Visit(full_path, history));
-            completed_visits++;
+            visits_to_perform[best_idx].visit_child_ = 1;
+            visits_to_perform[best_idx].stop_picking_ = 1;
           } else {
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
@@ -1918,34 +1915,54 @@ void SearchWorker::PickNodesToExtendTask(
           current_score[best_idx] = cur_iters[best_idx].GetP() * puct_mult /
                                         (1 + current_nstarted[best_idx]) +
                                     current_util[best_idx];
+        } else {
+          // We found a collision. Remaining visits go here.
+          visits_to_perform[best_idx] += cur_limit;
+          visits_to_perform[best_idx].stop_picking_ = 1;
+          cur_limit = 0;
+          // Collision will take all future visits. The collision can expand
+          // based on the parent limit.
+          if (visits_to_perform[best_idx] == collision_left) {
+            max_limit = parent_max_limit;
+          }
         }
-        if (best_idx > vtp_last_filled.back() &&
-            (*visits_to_perform.back())[best_idx] > 0) {
-          vtp_last_filled.back() = best_idx;
+        if (best_idx > vtp_last_filled) {
+          vtp_last_filled = best_idx;
         }
         history.Pop();
         full_path.pop_back();
       }
       is_root_node = false;
+      vtp_last_filled++;
+      // We want to handle the most visited children first.
+      std::sort(visits_to_perform.begin(),
+                visits_to_perform.begin() + vtp_last_filled,
+                std::greater<CurrentPath>());
+      // Find the last visited children.
+      auto end = std::find(visits_to_perform.begin(),
+                           visits_to_perform.begin() + vtp_last_filled, 0);
+      // There should be at least one child to visit.
+      assert(end != visits_to_perform.begin());
       // Actively do any splits now rather than waiting for potentially long
       // tree walk to get there.
-      for (int i = 0; i <= vtp_last_filled.back(); i++) {
-        int child_limit = (*visits_to_perform.back())[i];
+      bool is_large_main_branch = visits_to_perform[0].large_branch_;
+      for (int i = 1; i < std::distance(visits_to_perform.begin(), end); i++) {
+        int child_limit = visits_to_perform[i].visits_;
+        bool is_large_branch = visits_to_perform[i].large_branch_;
         if (task_workers_ > 0 &&
-            child_limit > params_.GetMinimumWorkSizeForPicking() &&
-            child_limit <
-                ((collision_limit - passed_off - completed_visits) * 2 / 3) &&
-            child_limit + passed_off + completed_visits <
-                collision_limit -
-                    params_.GetMinimumRemainingWorkSizeForPicking()) {
-          Node* child_node = cur_iters[i].GetOrSpawnNode(/* parent */ node);
-          history.Append(cur_iters[i].GetMove());
+            ((is_large_main_branch && is_large_branch) ||
+             ((is_large_main_branch || is_large_branch) &&
+              child_limit > params_.GetMinimumWorkSizeForPicking()) ||
+             child_limit >= params_.GetMinimumRemainingWorkSizeForPicking())) {
+          int idx = visits_to_perform[i].index_;
+          Node* child_node = cur_iters[idx].GetOrSpawnNode(/* parent */ node);
+          history.Append(cur_iters[idx].GetMove());
           auto [child_repetitions, child_moves_left] =
               GetRepetitions(full_path.size(), history.Last());
           full_path.push_back(
               {child_node, child_repetitions, child_moves_left});
           // Don't split if not expanded or terminal.
-          if (!ShouldStopPickingHere(child_node, false, child_repetitions)) {
+          if (!visits_to_perform[i].stop_picking_) {
             bool passed = false;
             {
               // Multiple writers, so need mutex here.
@@ -1956,54 +1973,47 @@ void SearchWorker::PickNodesToExtendTask(
                 task_count_.fetch_add(1, std::memory_order_acq_rel);
                 task_added_.notify_all();
                 passed = true;
-                passed_off += child_limit;
               }
             }
             if (passed) {
-              (*visits_to_perform.back())[i] = 0;
+              visits_to_perform[i] = 0;
             }
           }
           history.Pop();
           full_path.pop_back();
         }
       }
+      auto rend = visits_to_perform.rend();
+      auto rbegin = rend - std::distance(visits_to_perform.begin(), end);
+      size_t size = current_path.size();
+      std::copy_if(rbegin, rend, std::back_inserter(current_path),
+                   [](CurrentPath& v) {
+                     return !!v;
+                   });
+      if (current_path.size() != size) {
+        current_path[size].last_child_ = true;
+      }
       // Fall through to select the first child.
     }
-    int min_idx = current_path.back();
-    bool found_child = false;
-    if (vtp_last_filled.back() > min_idx) {
-      int idx = -1;
-      for (auto& child : node->Edges()) {
-        idx++;
-        if (idx > min_idx && (*visits_to_perform.back())[idx] > 0) {
-          current_path.back() = idx;
-          current_path.push_back(-1);
-          node = child.GetOrSpawnNode(/* parent */ node);
-          history.Append(child.GetMove());
-          std::tie(repetitions, moves_left) =
-              GetRepetitions(full_path.size(), history.Last());
-          full_path.push_back({node, repetitions, moves_left});
-          found_child = true;
-          break;
-        }
-        if (idx >= vtp_last_filled.back()) break;
-      }
-    }
-    if (!found_child) {
-      history.Pop();
-      full_path.pop_back();
-      if (full_path.size() > 0) {
-        std::tie(node, repetitions, moves_left) = full_path.back();
-      } else {
-        node = nullptr;
-        repetitions = 0;
-      }
-      current_path.pop_back();
-      vtp_buffer.push_back(std::move(visits_to_perform.back()));
-      visits_to_perform.pop_back();
-      vtp_last_filled.pop_back();
+    // Prepare state for the next node to be processed. The parent node
+    // information is the last element in full_path. The visit information is
+    // the last element in the current_path stack.
+    if (current_path.size() > 0) {
+      assert(!full_path.empty());
+      unsigned index = current_path.back().index_;
+      assert(index < node->GetNumEdges());
+      auto child = node->Edges();
+      std::advance(child, index);
+      node = child.GetOrSpawnNode(/* parent */ node);
+      history.Append(child.GetMove());
+      std::tie(repetitions, moves_left) =
+          GetRepetitions(full_path.size(), history.Last());
+      full_path.push_back({node, repetitions, moves_left});
     }
   }
+  assert(!starting_from_root ||
+         history.GetLength() == search_->played_history_.GetLength());
+  assert(!full_path.empty());
 }
 
 void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
@@ -2234,6 +2244,7 @@ void SearchWorker::DoBackupUpdateSingleNode(
   if (node_to_process.IsCollision()) {
     return;
   }
+  LCTRACE_FUNCTION_SCOPE;
 
   auto path = node_to_process.path;
 
