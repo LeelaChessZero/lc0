@@ -75,7 +75,6 @@ class Engine : public EngineControllerBase {
 
   // UCI parameters cache to be consistent between `position` and `go`.
   // Defaults ensure corect operation even if `go` comes first.
-  bool ponder_enabled_ = false;
   bool strict_uci_timing_ = true;
   bool isready_seen_ = true;
   // Last position set for the search. Used to:
