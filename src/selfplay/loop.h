@@ -32,6 +32,7 @@
 #include "chess/uciloop.h"
 #include "selfplay/tournament.h"
 #include "utils/optionsparser.h"
+#include "utils/numa.h"
 
 namespace lczero {
 

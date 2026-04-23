@@ -41,6 +41,7 @@
 
 #include "search/dag_classic/node.h"
 #include "utils/fastmath.h"
+#include "utils/numa.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
 #include "utils/trace.h"
@@ -958,14 +959,20 @@ void Search::StartThreads(size_t how_many) {
     how_many = backend_attributes_.suggested_num_search_threads +
                !backend_attributes_.runs_on_cpu;
   }
+  Numa::ReserveSearchWorkers(how_many);
+
   thread_count_.store(how_many, std::memory_order_release);
   // First thread is a watchdog thread.
   if (threads_.size() == 0) {
-    threads_.emplace_back([this]() { WatchdogThread(); });
+    threads_.emplace_back([this]() {
+      Numa::BindTaskWorkersToSocket();
+      WatchdogThread();
+    });
   }
   // Start working threads.
   for (size_t i = 0; i < how_many; i++) {
-    threads_.emplace_back([this]() {
+    threads_.emplace_back([this, i]() {
+      Numa::BindThread(i);
       SearchWorker worker(this, params_);
       worker.RunBlocking();
     });
@@ -1203,6 +1210,7 @@ void SearchWorker::ProcessTask(PickTask* task, int id,
 }
 
 void SearchWorker::RunTasks(int tid) {
+  Numa::BindTaskWorkersToSocket();
   while (true) {
     PickTask* task = nullptr;
     int id = 0;
