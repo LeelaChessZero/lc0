@@ -192,7 +192,7 @@ __global__ void filterTransform_kernel(int K, int C, int elements,
 // every thread transforms an entire board/plane (8x8 elements)
 // - producing 4 x 6x6 elements
 template <typename T, bool nhcw>
-__global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
+__device__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
   int c = threadIdx.x;
   int n = blockIdx.x;
 
@@ -301,7 +301,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
 // every thread generates an entire board/plane (8x8 elements)
 template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
           bool use_skip, bool skipInput_nhcw, bool output_nhcw>
-__global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
+__device__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
                                        const T* bias, const T* w1, const T* b1,
                                        const T* w2, const T* b2) {
@@ -857,14 +857,91 @@ void FilterTransform(int N, int C, T* transformedFilter, const T* filter,
 }
 
 template <typename T, bool nhcw>
+__global__ __launch_bounds__(512) void InputTransform_kernel_512(int N, int C,
+                                                                 const T* input,
+                                                                 T* output) {
+  InputTransform_kernel<T, nhcw>(N, C, input, output);
+}
+template <typename T, bool nhcw>
+__global__ __launch_bounds__(384) void InputTransform_kernel_384(int N, int C,
+                                                                 const T* input,
+                                                                 T* output) {
+  InputTransform_kernel<T, nhcw>(N, C, input, output);
+}
+template <typename T, bool nhcw>
+__global__ __launch_bounds__(256) void InputTransform_kernel_256(int N, int C,
+                                                                 const T* input,
+                                                                 T* output) {
+  InputTransform_kernel<T, nhcw>(N, C, input, output);
+}
+template <typename T, bool nhcw>
+__global__ __launch_bounds__(192) void InputTransform_kernel_192(int N, int C,
+                                                                 const T* input,
+                                                                 T* output) {
+  InputTransform_kernel<T, nhcw>(N, C, input, output);
+}
+
+template <typename T, bool nhcw>
 void InputTransform(int N, int C, T* transformed_input, const T* input,
                     cudaStream_t stream) {
   // Each thread processes entire chess board (input 8x8 elements -> outputs
   // 2x2, 6x6 elements)
-  InputTransform_kernel<T, nhcw>
-      <<<N, C, 0, stream>>>(N, C, input, transformed_input);
+  if (C > 512) {
+    throw Exception("InputTransform does not support more than 512 channels.");
+  } else if (C > 384) {
+    InputTransform_kernel_512<T, nhcw>
+        <<<N, C, 0, stream>>>(N, C, input, transformed_input);
+  } else if (C > 256) {
+    // Optimize smaller networks for Jetson which has lower register limits than
+    // rest of GPUs.
+    InputTransform_kernel_384<T, nhcw>
+        <<<N, C, 0, stream>>>(N, C, input, transformed_input);
+  } else if (C > 192) {
+    InputTransform_kernel_256<T, nhcw>
+        <<<N, C, 0, stream>>>(N, C, input, transformed_input);
+  } else {
+    InputTransform_kernel_192<T, nhcw>
+        <<<N, C, 0, stream>>>(N, C, input, transformed_input);
+  }
 
   ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
+__global__ __launch_bounds__(512) void OutputTransform_kernel_512(
+    int N, int C, int se_K, T* output, const T* input, const T* skip,
+    const T* bias, const T* w1, const T* b1, const T* w2, const T* b2) {
+  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip,
+                         skipInput_nhcw, output_nhcw>(
+      N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
+}
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
+__global__ __launch_bounds__(384) void OutputTransform_kernel_384(
+    int N, int C, int se_K, T* output, const T* input, const T* skip,
+    const T* bias, const T* w1, const T* b1, const T* w2, const T* b2) {
+  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip,
+                         skipInput_nhcw, output_nhcw>(
+      N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
+}
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
+__global__ __launch_bounds__(256) void OutputTransform_kernel_256(
+    int N, int C, int se_K, T* output, const T* input, const T* skip,
+    const T* bias, const T* w1, const T* b1, const T* w2, const T* b2) {
+  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip,
+                         skipInput_nhcw, output_nhcw>(
+      N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
+}
+template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
+          bool use_skip, bool skipInput_nhcw, bool output_nhcw>
+__global__ __launch_bounds__(192) void OutputTransform_kernel_192(
+    int N, int C, int se_K, T* output, const T* input, const T* skip,
+    const T* bias, const T* w1, const T* b1, const T* w2, const T* b2) {
+  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip,
+                         skipInput_nhcw, output_nhcw>(
+      N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
 }
 
 template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
@@ -873,9 +950,31 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
                      const T* skip, const T* bias, const T* w1, const T* b1,
                      const T* w2, const T* b2, cudaStream_t stream) {
   // Each thread processes entire chess board
-  OutputTransform_kernel<T, use_se, activation, use_bias, use_skip,
-                         skipInput_nhcw, output_nhcw><<<N, C, 0, stream>>>(
-      N, C, se_K, output, input, skip, bias, w1, b1, w2, b2);
+  if (C > 512) {
+    throw Exception("OutputTransform does not support more than 512 channels.");
+  } else if (C > 384) {
+    OutputTransform_kernel_512<T, use_se, activation, use_bias, use_skip,
+                               skipInput_nhcw, output_nhcw>
+        <<<N, C, 0, stream>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2,
+                              b2);
+  } else if (C > 256) {
+    OutputTransform_kernel_384<T, use_se, activation, use_bias, use_skip,
+                               skipInput_nhcw, output_nhcw>
+        <<<N, C, 0, stream>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2,
+                              b2);
+  } else if (C > 192) {
+    // Optimize smaller networks for Jetson which has lower register limits than
+    // rest of GPUs.
+    OutputTransform_kernel_256<T, use_se, activation, use_bias, use_skip,
+                               skipInput_nhcw, output_nhcw>
+        <<<N, C, 0, stream>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2,
+                              b2);
+  } else {
+    OutputTransform_kernel_192<T, use_se, activation, use_bias, use_skip,
+                               skipInput_nhcw, output_nhcw>
+        <<<N, C, 0, stream>>>(N, C, se_K, output, input, skip, bias, w1, b1, w2,
+                              b2);
+  }
   ReportCUDAErrors(cudaGetLastError());
 }
 
