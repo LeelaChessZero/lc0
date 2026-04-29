@@ -70,6 +70,9 @@ class BaseSearchParams {
   float GetTemperatureEndgameUtilityDeviation() const {
     return options_.Get<float>(kTempEndgameUtilityDeviationId);
   }
+  float GetTemperatureUtilityMaximumOffset() const {
+    return options_.Get<float>(kTemperatureUtilityMaximumOffsetId);
+  }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
     return options_.Get<float>(kTemperatureVisitOffsetId);
@@ -181,6 +184,7 @@ class BaseSearchParams {
   static const OptionId kTwoFoldDrawsId;
   static const OptionId kTempUtilityDeviationId;
   static const OptionId kTempEndgameUtilityDeviationId;
+  static const OptionId kTemperatureUtilityMaximumOffsetId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTempDecayDelayMovesId;

@@ -521,6 +521,8 @@ class SearchCachedState {
 
     void UciNewGame();
 
+    float GetTemperatureOffsetDecay() const { return temperature_offset_decay_; }
+
     friend class Search;
     friend class SearchWorker;
   private:

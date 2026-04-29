@@ -227,12 +227,18 @@ const OptionId BaseSearchParams::kTempUtilityDeviationId{
     "temp-utility-deviation", "TempUtilityDeviation",
     "Add a random offset to the winning probability. It uses a normal "
     "distribution with mean 0 and the specified standard deviation. The "
-    "maximum evaluation difference is capped at 6 times the standard "
-    "deviation."};
+    "deviation is scaled down if evaluations claims advantage for either "
+    "side."};
 const OptionId BaseSearchParams::kTempEndgameUtilityDeviationId{
     "temp-endgame-utility-deviation", "TempEndgameUtilityDeviation",
     "Temperature utility offset standard deviation used during endgame "
-    "(starting from cutoff move). There is no decay."};
+    "(starting from cutoff move). ."};
+const OptionId BaseSearchParams::kTemperatureUtilityMaximumOffsetId{
+    "temp-utility-maximum-offset", "TempUtilityMaximumOffset",
+    "Sets the maximum multiple of standard deviation for the random offset. It "
+    "prevents extreme evaluation differences causing clear blunders when "
+    "randomizing move selection. Temperature decay affects standard deviation "
+    "which affects multiplicative maximum offset."};
 const OptionId BaseSearchParams::kTemperatureId{
     {.long_flag = "temperature",
      .uci_option = "Temperature",
@@ -565,6 +571,8 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kTempUtilityDeviationId, 0.0f, 100.0f) = 0.0f;
   options->Add<FloatOption>(kTempEndgameUtilityDeviationId, 0.0f, 100.0f) =
       0.0f;
+  options->Add<FloatOption>(kTemperatureUtilityMaximumOffsetId, 0.0f, 100.0f) =
+      2.5f;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
   options->Add<IntOption>(kTempDecayDelayMovesId, 0, 100) = 0;

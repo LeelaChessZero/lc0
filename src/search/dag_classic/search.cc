@@ -211,12 +211,12 @@ float TemperatureDecay(float temp, float endgame,
   return temp;
 }
 
-constexpr float kTemperatureOffsetDecayCuttoff = 3.0f;
-
-float UpdateTemperatureOffsetDecay(const Node* root, Move bestmove,
-                                   float draw_score) {
+float UpdateTemperatureOffsetDecay(const Node* root, const SearchParams& params,
+                                   Move bestmove, float draw_score) {
   float best_q = -1.0f;
   float selected_q = -1.0f;
+  const float kTemperatureOffsetDecayCuttoff =
+      params.GetTemperatureUtilityMaximumOffset();
   if (root->GetN() <= 1) return 0.0f;
   for (const auto& edge : root->Edges()) {
     if (!edge.HasNode()) continue;
@@ -226,8 +226,40 @@ float UpdateTemperatureOffsetDecay(const Node* root, Move bestmove,
       selected_q = q;
     }
   }
-  float div = 50.0f * 0.5f / kTemperatureOffsetDecayCuttoff;
+  float div = 50.0f * 0.5f /
+              std::max(kTemperatureOffsetDecayCuttoff *
+                           (1.0f - std::abs(root->GetWL())),
+                       0.00001f);
   return (best_q - selected_q) * div;
+}
+
+void GenerateRootUtilityOffsets(const Node* root, const SearchParams& params,
+                                const SearchCachedState& state,
+                                const PositionHistory& history,
+                                std::vector<float>& offsets) {
+  if (!offsets.empty() || root->GetN() == 0) return;
+
+  float root_deviation = params.GetTemperatureUtilityDeviation();
+  float root_endgame_deviation = params.GetTemperatureEndgameUtilityDeviation();
+  root_deviation =
+      std::max(0.0f, root_deviation - state.GetTemperatureOffsetDecay());
+  root_deviation =
+      TemperatureDecay(root_deviation, root_endgame_deviation, history, params);
+
+  if (!root_deviation) return;
+  root_deviation /= 50.0f;
+  const float kTemperatureOffsetDecayCuttoff =
+      params.GetTemperatureUtilityMaximumOffset();
+  const float max_offset = root_deviation * kTemperatureOffsetDecayCuttoff;
+  const float min_offset = -max_offset;
+  std::normal_distribution<float> dist(0.0f, root_deviation);
+  const int legal_moves = root->GetNumEdges();
+  offsets.reserve(legal_moves);
+  auto& rng = Random::Get();
+  for (int i = 0; i < legal_moves; i++) {
+    float offset = std::clamp(dist(rng), min_offset, max_offset);
+    offsets.push_back(offset * (1.0f - std::abs(root->GetWL())));
+  }
 }
 
 }  // namespace
@@ -288,31 +320,8 @@ Search::Search(SearchCachedState& state, const NodeTree& tree, Backend* backend,
                            : ContemptMode::WHITE;
     }
   }
-
-  float root_deviation = params_.GetTemperatureUtilityDeviation();
-  float root_endgame_deviation =
-      params_.GetTemperatureEndgameUtilityDeviation();
-  root_deviation =
-      std::max(0.0f, root_deviation - state_.temperature_offset_decay_);
-  root_deviation = TemperatureDecay(root_deviation, root_endgame_deviation,
-                                    played_history_, params_);
-
-  if (root_deviation) {
-    root_deviation /= 50.0f;
-    const float max_offset = root_deviation * kTemperatureOffsetDecayCuttoff;
-    const float min_offset = -max_offset;
-    std::normal_distribution<float> dist(0.0f, root_deviation);
-    const int legal_moves =
-        root_node_->GetN() > 0
-            ? root_node_->GetNumEdges()
-            : played_history_.Last().GetBoard().GenerateLegalMoves().size();
-    root_utility_offsets_.reserve(legal_moves);
-    auto& rng = Random::Get();
-    for (int i = 0; i < legal_moves; i++) {
-      float offset = std::clamp(dist(rng), min_offset, max_offset);
-      root_utility_offsets_.push_back(offset);
-    }
-  }
+  GenerateRootUtilityOffsets(root_node_, params_, state_, played_history_,
+                             root_utility_offsets_);
 }
 
 namespace {
@@ -772,7 +781,8 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
     auto bestmove = final_bestmove_;
     if (played_history_.IsBlackToMove()) bestmove.Flip();
     state_.temperature_offset_decay_ += UpdateTemperatureOffsetDecay(
-        root_node_, bestmove, GetDrawScore(played_history_.IsBlackToMove()));
+        root_node_, params_, bestmove,
+        GetDrawScore(played_history_.IsBlackToMove()));
     SendMovesStats();
     BestMoveInfo info(final_bestmove_, final_pondermove_);
     uci_responder_->OutputBestMove(&info);
@@ -2242,6 +2252,9 @@ void SearchWorker::DoBackupUpdate() {
       work_done = true;
     }
   }
+  GenerateRootUtilityOffsets(search_->root_node_, params_, search_->state_,
+                             search_->played_history_,
+                             search_->root_utility_offsets_);
   if (!work_done) return;
   search_->total_batches_ += 1;
 }
@@ -2546,9 +2559,7 @@ void SearchWorker::UpdateCounters() {
   }
 }
 
-void SearchCachedState::UciNewGame() {
-  temperature_offset_decay_ = 0;
-}
+void SearchCachedState::UciNewGame() { temperature_offset_decay_ = 0; }
 
 }  // namespace dag_classic
 }  // namespace lczero
