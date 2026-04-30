@@ -56,8 +56,8 @@ const OptionId kPonderId{
     {.long_flag = "",
      .uci_option = "Ponder",
      .help_text =
-         "Indicates to the engine that it will be requested to ponder. This "
-         "postpones resetting the search tree until the search is started.",
+         "Indicates to the engine that it will be requested to ponder. Not "
+         "currently used.",
      .visibility = OptionId::kAlwaysVisible}};
 
 const OptionId kPreload{"preload", "",
@@ -98,9 +98,9 @@ class Engine::UciPonderForwarder : public UciResponder {
   }
   void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {
     if (!wrapped_) return;
-    if (engine_->last_go_params_ && engine_->last_go_params_->ponder) {
-      assert(engine_->last_position_ &&
-             !engine_->last_position_->moves.empty());
+    assert(!engine_->last_go_params_ || engine_->last_position_);
+    if (engine_->last_go_params_ && engine_->last_go_params_->ponder &&
+        !engine_->last_position_->moves.empty()) {
       const Move ponder_move_ = engine_->last_position_->moves.back();
       // Output all stats from main variation (not necessary the ponder move)
       // but PV only from ponder move.
@@ -202,12 +202,9 @@ void Engine::EnsureSyzygyTablebasesLoaded() {
 void Engine::InitializeSearchPosition(bool for_ponder) {
   LOGFILE << "Setting a new search position.";
   assert(last_position_);
-  if (!for_ponder) {
+  if (!for_ponder || last_position_->moves.empty()) {
     search_->SetPosition(*last_position_);
     return;
-  }
-  if (last_position_->moves.empty()) {
-    throw Exception("Ponder search requires at least one move.");
   }
   GameState position = *last_position_;
   position.moves.pop_back();
@@ -218,14 +215,12 @@ void Engine::InitializeSearchPosition(bool for_ponder) {
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
   EnsureSearchStopped();
-  ponder_enabled_ = options_.Get<bool>(kPonderId);
   strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
   isready_seen_ = false;
   search_->StartClock();
   UpdateBackendConfig();
   EnsureSyzygyTablebasesLoaded();
   last_position_ = MakeGameState(fen, moves);
-  if (!ponder_enabled_) InitializeSearchPosition(/*for_ponder=*/false);
 }
 
 void Engine::NewGame() {
@@ -235,16 +230,12 @@ void Engine::NewGame() {
 }
 
 void Engine::Go(const GoParams& params) {
-  if (!ponder_enabled_ && params.ponder) {
-    throw Exception(
-        "Ponder is not enabled, but the ponder search is requested.");
-  }
   if ((strict_uci_timing_ && isready_seen_) ||
       !(params.wtime || params.btime)) {
     search_->StartClock();
   }
   if (!last_position_) NewGame();
-  if (ponder_enabled_) InitializeSearchPosition(params.ponder);
+  InitializeSearchPosition(params.ponder);
   last_go_params_ = params;
   search_->StartSearch(params);
 }
@@ -256,9 +247,7 @@ void Engine::Wait() { search_->WaitSearch(); }
 void Engine::Stop() { search_->StopSearch(); }
 
 void Engine::PonderHit() {
-  if (!last_go_params_ || !last_go_params_->ponder) {
-    throw Exception("ponderhit while not pondering");
-  }
+  if (!last_go_params_ || !last_go_params_->ponder) return;
   EnsureSearchStopped();
   search_->StartClock();
   last_go_params_->ponder = false;
