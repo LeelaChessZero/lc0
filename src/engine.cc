@@ -98,9 +98,9 @@ class Engine::UciPonderForwarder : public UciResponder {
   }
   void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {
     if (!wrapped_) return;
+    assert(!engine_->last_go_params_ || engine_->last_position_);
     if (engine_->last_go_params_ && engine_->last_go_params_->ponder &&
         !engine_->last_position_->moves.empty()) {
-      assert(engine_->last_position_);
       const Move ponder_move_ = engine_->last_position_->moves.back();
       // Output all stats from main variation (not necessary the ponder move)
       // but PV only from ponder move.
