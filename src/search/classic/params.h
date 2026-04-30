@@ -64,6 +64,15 @@ class BaseSearchParams {
     return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
   }
   bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
+  float GetTemperatureUtilityDeviation() const {
+    return options_.Get<float>(kTempUtilityDeviationId);
+  }
+  float GetTemperatureEndgameUtilityDeviation() const {
+    return options_.Get<float>(kTempEndgameUtilityDeviationId);
+  }
+  float GetTemperatureUtilityMaximumOffset() const {
+    return options_.Get<float>(kTemperatureUtilityMaximumOffsetId);
+  }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
   float GetTemperatureVisitOffset() const {
     return options_.Get<float>(kTemperatureVisitOffsetId);
@@ -173,6 +182,9 @@ class BaseSearchParams {
   static const OptionId kCpuctFactorAtRootId;
   static const OptionId kRootHasOwnCpuctParamsId;
   static const OptionId kTwoFoldDrawsId;
+  static const OptionId kTempUtilityDeviationId;
+  static const OptionId kTempEndgameUtilityDeviationId;
+  static const OptionId kTemperatureUtilityMaximumOffsetId;
   static const OptionId kTemperatureId;
   static const OptionId kTempDecayMovesId;
   static const OptionId kTempDecayDelayMovesId;
