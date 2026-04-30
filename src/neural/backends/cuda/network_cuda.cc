@@ -344,7 +344,9 @@ class CudaNetwork : public Network {
 
     bool use_fused_mha = false;
     if (deviceProp.major >= 8 && fp16) {
-      use_fused_mha = options.GetOrDefault<bool>("fused_mha", true);
+      use_fused_mha = options.GetOrDefault<bool>(
+          "fused_mha", file.format().network_format().ffn_activation() !=
+                           pblczero::NetworkFormat::ACTIVATION_RELU_2);
     }
 
     const bool use_gemm_ex = deviceProp.major >= 5;
@@ -1243,7 +1245,7 @@ void CudaNetworkComputation<DataType>::CaptureGraph(
 template <typename DataType>
 void CudaNetworkComputation<DataType>::ComputeBlocking() {
   LCTRACE_FUNCTION_SCOPE;
-  assert(GetBatchSize() >= 1);
+  if (GetBatchSize() == 0) return;
   if (inputs_outputs_->cuda_graphs_[GetBatchSize() - 1]) {
     std::unique_lock<std::mutex> lock = network_->LockEval();
     network_->GraphLaunch(inputs_outputs_.get(), GetBatchSize());

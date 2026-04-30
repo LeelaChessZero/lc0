@@ -1438,14 +1438,7 @@ void SearchWorker::GatherMinibatch() {
   int cur_n = 0;
 
   // Collision use atomic operations. We can cancel them outside the lock.
-  struct CollisionsManager {
-    SearchWorker& worker;
-    CollisionsManager(SearchWorker& worker) : worker(worker) {
-    }
-    ~CollisionsManager() {
-      worker.CancelCollisions();
-    }
-  } cancel_collisions_object(*this);
+  absl::Cleanup cancel_collisions = [this] { CancelCollisions(); };
   // We take the nodes_mutex_ only once to avoid bouncing between this thread
   // and a thread returning from RunNNComputation.
   SharedMutex::Lock lock(search_->nodes_mutex_);
