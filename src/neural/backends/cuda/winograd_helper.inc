@@ -192,7 +192,7 @@ __global__ void filterTransform_kernel(int K, int C, int elements,
 // every thread transforms an entire board/plane (8x8 elements)
 // - producing 4 x 6x6 elements
 template <typename T, bool nhcw>
-__global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
+__global__ __launch_bounds__(1024) void InputTransform_kernel(int N, int C, const T* input, T* output) {
   int c = threadIdx.x;
   int n = blockIdx.x;
 
@@ -301,7 +301,7 @@ __global__ void InputTransform_kernel(int N, int C, const T* input, T* output) {
 // every thread generates an entire board/plane (8x8 elements)
 template <typename T, bool use_se, ActivationFunction activation, bool use_bias,
           bool use_skip, bool skipInput_nhcw, bool output_nhcw>
-__global__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
+__global__ __launch_bounds__(1024) void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
                                        const T* bias, const T* w1, const T* b1,
                                        const T* w2, const T* b2) {
