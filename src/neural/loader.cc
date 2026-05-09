@@ -32,10 +32,13 @@
 #include <algorithm>
 #include <cassert>
 #include <cctype>
+#include <charconv>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <absl/strings/numbers.h>
+#include <absl/strings/str_split.h>
 
 #include "neural/shared_params.h"
 #include "proto/net.pb.h"
@@ -193,29 +196,21 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
 using FloatVector = std::vector<float>;
 using FloatVectors = std::vector<FloatVector>;
 
-FloatVectors LoadFloatsFromFile(std::string* buffer) {
-  // Parse buffer.
+FloatVectors LoadFloatsFromFile(absl::string_view buffer) {
   FloatVectors result;
-  FloatVector line;
-  (*buffer) += "\n";
-  size_t start = 0;
-  for (size_t i = 0; i < buffer->size(); ++i) {
-    char& c = (*buffer)[i];
-    const bool is_newline = (c == '\n' || c == '\r');
-    if (!std::isspace(c)) continue;
-    if (start < i) {
-      // If previous character was not space too.
-      c = '\0';
-      line.push_back(std::atof(&(*buffer)[start]));
-    }
-    if (is_newline && !line.empty()) {
-      result.emplace_back();
-      result.back().swap(line);
-    }
-    start = i + 1;
-  }
 
-  result.erase(result.begin());
+  for (absl::string_view line :
+       absl::StrSplit(buffer, absl::ByAnyChar("\n\r"), absl::SkipEmpty())) {
+    FloatVector row;
+    float val;
+
+    for (absl::string_view token :
+         absl::StrSplit(line, absl::ByAnyChar(" \t"), absl::SkipEmpty())) {
+      if (!absl::SimpleAtof(token, &val)) throw Exception("Bad file.");
+      row.push_back(val);
+    }
+    if (!row.empty()) result.push_back(std::move(row));
+  }
   return result;
 }
 
@@ -239,7 +234,7 @@ WeightsFile ParseWeightsTxt(std::string& buffer) {
   WeightsFile net;
 
   FloatVectors vecs;
-  vecs = LoadFloatsFromFile(&buffer);
+  vecs = LoadFloatsFromFile(buffer);
 
   auto result = net.mutable_weights();
 
@@ -254,8 +249,8 @@ WeightsFile ParseWeightsTxt(std::string& buffer) {
   PopulateLastIntoVector(&vecs, result->mutable_ip_pol_w());
   PopulateConvBlockWeights(&vecs, result->mutable_policy());
 
-  // Input + all the residual should be left.
-  if ((vecs.size() - 4) % 8 != 0)
+  // Header + input + all the residual should be left.
+  if ((vecs.size() - 5) % 8 != 0)
     throw Exception("Invalid weight file: parse error.");
 
   const int num_residual = (vecs.size() - 4) / 8;
