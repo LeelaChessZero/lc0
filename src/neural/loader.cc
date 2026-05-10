@@ -113,6 +113,11 @@ void FixOlderWeightsFile(WeightsFile* file) {
   auto network_format = file->format().network_format().network();
   const auto has_network_format = file->format().has_network_format();
 
+  // The version should be more fine grained, for now use latest.
+  file->mutable_min_version()->set_major(LC0_VERSION_MAJOR);
+  file->mutable_min_version()->set_minor(LC0_VERSION_MINOR);
+  file->mutable_min_version()->set_patch(LC0_VERSION_PATCH);
+
   auto* net = file->mutable_format()->mutable_network_format();
   if (!has_network_format) {
     // Older protobufs don't have format definition.
@@ -206,7 +211,9 @@ FloatVectors LoadFloatsFromFile(absl::string_view buffer) {
 
     for (absl::string_view token :
          absl::StrSplit(line, absl::ByAnyChar(" \t"), absl::SkipEmpty())) {
-      if (!absl::SimpleAtof(token, &val)) throw Exception("Bad file.");
+      if (!absl::SimpleAtof(token, &val)) {
+        throw Exception("Invalid weight file: malformed entry.");
+      }
       row.push_back(val);
     }
     if (!row.empty()) result.push_back(std::move(row));
@@ -215,6 +222,7 @@ FloatVectors LoadFloatsFromFile(absl::string_view buffer) {
 }
 
 void PopulateLastIntoVector(FloatVectors* vecs, pblczero::Weights::Layer* out) {
+  if (vecs->empty()) throw Exception("Invalid weight file: too few entries.");
   out->set_params(
       std::string_view(reinterpret_cast<const char*>(vecs->back().data()),
                        vecs->back().size() * sizeof(float)));
@@ -232,9 +240,13 @@ void PopulateConvBlockWeights(FloatVectors* vecs,
 
 WeightsFile ParseWeightsTxt(std::string& buffer) {
   WeightsFile net;
+  net.set_magic(kWeightMagic);
 
   FloatVectors vecs;
   vecs = LoadFloatsFromFile(buffer);
+
+  // Header + input + heads are the absolute minimum.
+  if (vecs.size() < 13) throw Exception("Invalid weight file: too small.");
 
   auto result = net.mutable_weights();
 
@@ -250,10 +262,11 @@ WeightsFile ParseWeightsTxt(std::string& buffer) {
   PopulateConvBlockWeights(&vecs, result->mutable_policy());
 
   // Header + input + all the residual should be left.
-  if ((vecs.size() - 5) % 8 != 0)
-    throw Exception("Invalid weight file: parse error.");
+  if ((vecs.size() - 5) % 8 != 0) {
+    throw Exception("Invalid weight file: too small.");
+  }
 
-  const int num_residual = (vecs.size() - 4) / 8;
+  const int num_residual = (vecs.size() - 5) / 8;
 
   for (int i = 0; i < num_residual; i++) result->add_residual();
 
