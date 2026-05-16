@@ -263,7 +263,7 @@ WeightsFile ParseWeightsTxt(std::string& buffer) {
 
   // Header + input + all the residual should be left.
   if ((vecs.size() - 5) % 8 != 0) {
-    throw Exception("Invalid weight file: too small.");
+    throw Exception("Invalid weight file: bad size.");
   }
 
   const int num_residual = (vecs.size() - 5) / 8;
