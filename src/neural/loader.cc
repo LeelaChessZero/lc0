@@ -27,18 +27,17 @@
 
 #include "neural/loader.h"
 
+#include <absl/strings/numbers.h>
+#include <absl/strings/str_split.h>
 #include <zlib.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cctype>
-#include <charconv>
 #include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <absl/strings/numbers.h>
-#include <absl/strings/str_split.h>
 
 #include "neural/shared_params.h"
 #include "proto/net.pb.h"
@@ -112,11 +111,6 @@ void FixOlderWeightsFile(WeightsFile* file) {
   using nf = pblczero::NetworkFormat;
   auto network_format = file->format().network_format().network();
   const auto has_network_format = file->format().has_network_format();
-
-  // The version should be more fine grained, for now use latest.
-  file->mutable_min_version()->set_major(LC0_VERSION_MAJOR);
-  file->mutable_min_version()->set_minor(LC0_VERSION_MINOR);
-  file->mutable_min_version()->set_patch(LC0_VERSION_PATCH);
 
   auto* net = file->mutable_format()->mutable_network_format();
   if (!has_network_format) {
@@ -241,6 +235,10 @@ void PopulateConvBlockWeights(FloatVectors* vecs,
 WeightsFile ParseWeightsTxt(std::string& buffer) {
   WeightsFile net;
   net.set_magic(kWeightMagic);
+
+  net.mutable_min_version()->set_major(0);
+  net.mutable_min_version()->set_minor(17);
+  net.mutable_min_version()->set_patch(0);
 
   FloatVectors vecs;
   vecs = LoadFloatsFromFile(buffer);
