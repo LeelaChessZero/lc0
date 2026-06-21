@@ -1083,6 +1083,25 @@ void ConvertInputFormat(FileData<FrameType>& data, int newInputFormat) {
   }
 }
 
+Move CorrectMoveForNnue(const ChessBoard& board, Move m) {
+  const Square from = m.from();
+  const Square to = m.to();
+  const BitBoard us = board.ours();
+
+  // Castling is encoded as KxR.
+  if ((us & board.kings()).get(from) && (us & board.rooks()).get(to)) {
+    return Move::WhiteCastling(from.file(), to.file());
+  }
+
+  // Knight promotion piece is missing
+  if (!m.is_promotion() && to.rank() == kRank8 &&
+      (us & board.pawns()).get(from)) {
+    return Move::WhitePromotion(from, to, kKnight);
+  }
+
+  return m;
+}
+
 template <typename FrameType>
 void WriteNnueOutput(const FileData<FrameType>& data, const std::string& nnue_plain_file,
                      ProcessFileFlags flags) {
@@ -1109,6 +1128,7 @@ void WriteNnueOutput(const FileData<FrameType>& data, const std::string& nnue_pl
         Move m = MoveFromNNIndex(
             flags.nnue_best_move ? chunk.best_idx : chunk.played_idx,
             TransformForPosition(data.input_format, history));
+        m = CorrectMoveForNnue(p.GetBoard(), m);
         float q = flags.nnue_best_score ? chunk.best_q : chunk.played_q;
         out << AsNnueString(p, m, q, round(chunk.result_q));
       } else if (i < data.moves.size()) {
