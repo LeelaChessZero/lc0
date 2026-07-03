@@ -1176,10 +1176,15 @@ class CudaNetwork : public Network {
     int minor = (version - major * 1000) / 10;
     int pl = version - major * 1000 - minor * 10;
     CERR << BACKEND_NAME " Runtime version: " << major << "." << minor << "." << pl;
-    if (version != CUDART_VERSION) {
-      major = CUDART_VERSION / 1000;
-      minor = (CUDART_VERSION - major * 1000) / 10;
-      pl = CUDART_VERSION - major * 1000 - minor * 10;
+#ifdef USE_HIP
+    const size_t build_version = HIP_VERSION;
+#else
+    const size_t build_version = CUDART_VERSION;
+#endif
+    if (version != build_version) {
+      major = build_version / 1000;
+      minor = (build_version - major * 1000) / 10;
+      pl = build_version - major * 1000 - minor * 10;
       // After cuda 11, newer version with same major is OK.
       if (major < 11 || (major != version / 1000) || version < CUDART_VERSION) {
         CERR << "WARNING: " BACKEND_NAME " Runtime version mismatch, was "
