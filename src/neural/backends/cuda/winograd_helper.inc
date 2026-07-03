@@ -26,7 +26,7 @@
 */
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 __device__ __forceinline__ float mishActivate(float el) {
   auto e = __expf(el);

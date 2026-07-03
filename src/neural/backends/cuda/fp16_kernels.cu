@@ -37,7 +37,7 @@
 #include "winograd_helper.inc"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 /////////////////////////////////////////////////////////////////////////////
 //          fp16-specific kernels used by certain layers                   //

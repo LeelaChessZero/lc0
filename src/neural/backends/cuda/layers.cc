@@ -94,7 +94,7 @@ void dumpTensor(T* memory, int elements, const char* message, bool only_summary 
 }
 #endif
 
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 // Use Single kernel for entire SE operation.
 // Right now supported only for fp16 with nhwc and it's quite a bit faster

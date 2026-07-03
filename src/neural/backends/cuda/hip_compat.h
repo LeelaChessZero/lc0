@@ -172,8 +172,9 @@
 #define cublasSgemmStridedBatched hipblasSgemmStridedBatched
 #define cublasSgemmBatched hipblasSgemmBatched
 
+#define NS_BACKEND hip_backend
 namespace lczero {
-namespace cudnn_backend {
+namespace hip_backend {
 
 // CUDA's cublasHgemm / cublasHgemmBatched take __half*, but hipBLAS types its
 // fp16 GEMMs on hipblasHalf (uint16_t). The bit layouts are identical; these
@@ -237,12 +238,12 @@ inline hipblasStatus_t lc0HipGemmStridedBatchedEx(
       hipblasComputeFromDataType(computeType), algo);
 }
 
-}  // namespace cudnn_backend
+}  // namespace hip_backend
 }  // namespace lczero
 
 #define cublasGemmStridedBatchedEx \
-  ::lczero::cudnn_backend::lc0HipGemmStridedBatchedEx
-#define cublasHgemm ::lczero::cudnn_backend::lc0HipHgemm
-#define cublasHgemmBatched ::lczero::cudnn_backend::lc0HipHgemmBatched
+  ::lczero::hip_backend::lc0HipGemmStridedBatchedEx
+#define cublasHgemm ::lczero::hip_backend::lc0HipHgemm
+#define cublasHgemmBatched ::lczero::hip_backend::lc0HipHgemmBatched
 
 #endif  // USE_HIP

@@ -44,7 +44,7 @@ typedef void* cudnnHandle_t;
 #endif
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 // The Layer objects only hold memory for weights, biases, etc
 // memory for input and output tensors is provided by caller of Eval.

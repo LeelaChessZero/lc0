@@ -43,7 +43,7 @@
 #include "winograd_helper.inc"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 namespace {
 constexpr int kInputPlanes = 112;
 }  // namespace

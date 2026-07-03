@@ -52,7 +52,8 @@
 #endif
 
 namespace lczero {
-using namespace cudnn_backend;
+using namespace NS_BACKEND;
+namespace {
 
 template <typename DataType>
 class CudaNetwork;
@@ -1364,6 +1365,7 @@ std::unique_ptr<Network> MakeCudaNetworkAuto(
   }
   CERR << "Switching to [cuda]...";
   return MakeCudaNetwork<float>(weights, options);
+}
 }
 
 #if defined(USE_HIP)

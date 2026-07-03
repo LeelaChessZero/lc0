@@ -35,7 +35,7 @@
 #include "utils/bit.h"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 inline void ToType(float& dst, float src) { dst = src; }
 inline void ToType(half& dst, float src) {

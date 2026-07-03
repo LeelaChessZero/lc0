@@ -32,6 +32,7 @@
 #include <cublas_v2.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#define NS_BACKEND cudnn_backend
 #endif
 
 #include "utils/fp16_utils.h"
@@ -47,7 +48,7 @@ typedef void* cudnnHandle_t;
 #endif
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 static constexpr int kNumOutputPolicy = 1858;
 
