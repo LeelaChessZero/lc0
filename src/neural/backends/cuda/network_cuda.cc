@@ -1166,24 +1166,24 @@ class CudaNetwork : public Network {
     int ret = cudaRuntimeGetVersion(&version);
     switch (ret) {
       case cudaErrorInitializationError:
-        throw Exception("CUDA driver and/or runtime could not be initialized");
+        throw Exception(BACKEND_NAME " driver and/or runtime could not be initialized");
       case cudaErrorInsufficientDriver:
-        throw Exception("No CUDA driver, or one older than the CUDA library");
+        throw Exception("No " BACKEND_NAME " driver, or one older than the " BACKEND_NAME " library");
       case cudaErrorNoDevice:
-        throw Exception("No CUDA-capable devices detected");
+        throw Exception("No " BACKEND_NAME "-capable devices detected");
     }
     int major = version / 1000;
     int minor = (version - major * 1000) / 10;
     int pl = version - major * 1000 - minor * 10;
-    CERR << "CUDA Runtime version: " << major << "." << minor << "." << pl;
+    CERR << BACKEND_NAME " Runtime version: " << major << "." << minor << "." << pl;
     if (version != CUDART_VERSION) {
       major = CUDART_VERSION / 1000;
       minor = (CUDART_VERSION - major * 1000) / 10;
       pl = CUDART_VERSION - major * 1000 - minor * 10;
       // After cuda 11, newer version with same major is OK.
       if (major < 11 || (major != version / 1000) || version < CUDART_VERSION) {
-        CERR << "WARNING: CUDA Runtime version mismatch, was compiled with "
-                "version "
+        CERR << "WARNING: " BACKEND_NAME " Runtime version mismatch, was "
+                "compiled with version "
              << major << "." << minor << "." << pl;
       }
     }
@@ -1191,10 +1191,10 @@ class CudaNetwork : public Network {
     major = version / 1000;
     minor = (version - major * 1000) / 10;
     pl = version - major * 1000 - minor * 10;
-    CERR << "Latest version of CUDA supported by the driver: " << major << "."
-         << minor << "." << pl;
+    CERR << "Latest version of " BACKEND_NAME " supported by the driver: "
+         << major << "." << minor << "." << pl;
     if (version < CUDART_VERSION) {
-      CERR << "WARNING: code was compiled with unsupported CUDA version.";
+      CERR << "WARNING: code was compiled with unsupported " BACKEND_NAME " version.";
     }
   }
 
@@ -1224,7 +1224,7 @@ class CudaNetwork : public Network {
     CERR << "L2 cache capacity: " << deviceProp.l2CacheSize;
     if (std::is_same<float, DataType>::value && deviceProp.major >= 7) {
       CERR << "WARNING: you will probably get better performance from the "
-              "cuda-fp16 backend.";
+              BACKEND_NAME_LC "-fp16 backend.";
     }
   }
 };
@@ -1249,7 +1249,7 @@ void CudaNetworkComputation<DataType>::CaptureGraph(
   if (!CudaGraphCapture<DataType>::EnsureEnoughFreeMemory()) {
     static std::once_flag flag;
     std::call_once(flag, []() {
-      CERR << "WARNING: Not enough GPU memory to capture CUDA graphs.";
+      CERR << "WARNING: Not enough GPU memory to capture " BACKEND_NAME " graphs.";
     });
     return;
   }
@@ -1283,7 +1283,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& options) {
   if (!w) {
     throw Exception(
-        "The cuda" +
+        "The " BACKEND_NAME_LC +
         std::string(std::is_same<half, DataType>::value ? "-fp16" : "") +
         " backend requires a network file.");
   }
@@ -1299,7 +1299,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
     default:
       throw Exception("Network format " +
                       NF::NetworkStructure_Name(nf.network()) +
-                      " is not supported by the CUDA backend.");
+                      " is not supported by the " BACKEND_NAME " backend.");
   }
   switch (nf.policy()) {
     case NF::POLICY_CLASSICAL:
@@ -1308,7 +1308,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
       break;
     default:
       throw Exception("Policy format " + NF::PolicyFormat_Name(nf.policy()) +
-                      " is not supported by the CUDA backend.");
+                      " is not supported by the " BACKEND_NAME " backend.");
   }
   switch (nf.value()) {
     case NF::VALUE_CLASSICAL:
@@ -1316,7 +1316,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
       break;
     default:
       throw Exception("Value format " + NF::ValueFormat_Name(nf.value()) +
-                      " is not supported by the CUDA backend.");
+                      " is not supported by the " BACKEND_NAME " backend.");
   }
   switch (nf.moves_left()) {
     case NF::MOVES_LEFT_NONE:
@@ -1325,7 +1325,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
     default:
       throw Exception("Moves left head format " +
                       NF::MovesLeftFormat_Name(nf.moves_left()) +
-                      " is not supported by the CUDA backend.");
+                      " is not supported by the " BACKEND_NAME " backend.");
   }
   switch (nf.default_activation()) {
     case NF::DEFAULT_ACTIVATION_RELU:
@@ -1334,7 +1334,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
     default:
       throw Exception("Default activation " +
                       NF::DefaultActivation_Name(nf.default_activation()) +
-                      " is not supported by the CUDA backend.");
+                      " is not supported by the " BACKEND_NAME " backend.");
   }
   switch (nf.input_embedding()) {
     case NF::INPUT_EMBEDDING_NONE:
@@ -1344,7 +1344,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
     default:
       throw Exception("Input embedding " +
                       NF::InputEmbeddingFormat_Name(nf.input_embedding()) +
-                      " is not supported by the CUDA backend.");
+                      " is not supported by the " BACKEND_NAME " backend.");
   }
   return std::make_unique<CudaNetwork<DataType>>(weights, options);
 }
@@ -1360,24 +1360,16 @@ std::unique_ptr<Network> MakeCudaNetworkAuto(
   if (deviceProp.major >= 7 ||
       (deviceProp.major == 6 && deviceProp.minor != 1) ||
       (deviceProp.major == 5 && deviceProp.minor == 3)) {
-    CERR << "Switching to [cuda-fp16]...";
+    CERR << "Switching to [" BACKEND_NAME_LC "-fp16]...";
     return MakeCudaNetwork<half>(weights, options);
   }
-  CERR << "Switching to [cuda]...";
+  CERR << "Switching to [" BACKEND_NAME_LC "]...";
   return MakeCudaNetwork<float>(weights, options);
 }
 }
 
-#if defined(USE_HIP)
-// Register the ROCm/HIP build under distinct names so it never collides with a
-// real CUDA backend on a dual-stack box. lc0's own CUDA kernels run via hipcc.
-REGISTER_NETWORK("hip-auto", MakeCudaNetworkAuto, 104)
-REGISTER_NETWORK("hip", MakeCudaNetwork<float>, 103)
-REGISTER_NETWORK("hip-fp16", MakeCudaNetwork<half>, 102)
-#else
-REGISTER_NETWORK("cuda-auto", MakeCudaNetworkAuto, 104)
-REGISTER_NETWORK("cuda", MakeCudaNetwork<float>, 103)
-REGISTER_NETWORK("cuda-fp16", MakeCudaNetwork<half>, 102)
-#endif
+REGISTER_NETWORK(BACKEND_NAME_LC "-auto", MakeCudaNetworkAuto, 104)
+REGISTER_NETWORK(BACKEND_NAME_LC, MakeCudaNetwork<float>, 103)
+REGISTER_NETWORK(BACKEND_NAME_LC "-fp16", MakeCudaNetwork<half>, 102)
 
 }  // namespace lczero

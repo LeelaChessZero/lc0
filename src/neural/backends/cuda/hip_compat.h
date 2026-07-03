@@ -173,6 +173,8 @@
 #define cublasSgemmBatched hipblasSgemmBatched
 
 #define NS_BACKEND hip_backend
+#define BACKEND_NAME "HIP"
+#define BACKEND_NAME_LC "hip"
 namespace lczero {
 namespace hip_backend {
 

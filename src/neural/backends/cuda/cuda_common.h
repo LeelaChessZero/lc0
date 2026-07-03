@@ -33,6 +33,8 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #define NS_BACKEND cudnn_backend
+#define BACKEND_NAME "CUDA"
+#define BACKEND_NAME_LC "cuda"
 #endif
 
 #include "utils/fp16_utils.h"

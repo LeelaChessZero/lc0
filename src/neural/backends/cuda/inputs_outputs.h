@@ -292,7 +292,7 @@ inline CudaGraphExec<DataType>& CudaGraphExec<DataType>::operator=(
     const CudaGraphCapture<DataType>& graph) {
   assert(graph_exec_ == nullptr);
   if (graph.graph_ == nullptr) {
-    throw Exception("Trying to instantiate an nullptr cuda graph");
+    throw Exception("Trying to instantiate an nullptr " BACKEND_NAME " graph");
   }
   ReportCUDAErrors(
       cudaGraphInstantiate(&graph_exec_, graph.graph_, nullptr, nullptr, 0));

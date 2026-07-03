@@ -2504,7 +2504,7 @@ void CublasError(cublasStatus_t status, const char* file, const int& line) {
 void CudaError(cudaError_t status, const char* file, const int& line) {
   if (status != cudaSuccess) {
     char message[128];
-    sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
+    sprintf(message, BACKEND_NAME " error: %s (%s:%d) ", cudaGetErrorString(status),
             file, line);
     CERR << message;
     throw Exception(message);
