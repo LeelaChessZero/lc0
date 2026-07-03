@@ -1024,7 +1024,8 @@ if is_variable('cuda_files')
   cudasl = static_library('cuda_backend', cuda_files + pb_files,
                           cpp_args: cuda_cxxargs,
                           include_directories: cuda_includes + includes,
-                          dependencies: cuda_deps, install: false)
+                          dependencies: cuda_deps, install: false,
+                          build_by_default: false)
   backend_objects += cudasl.extract_objects(cuda_files)
   deps += cuda_deps
 endif
@@ -1033,7 +1034,8 @@ if is_variable('hip_files')
   hipsl = static_library('hip_backend', hip_files + pb_files,
                          cpp_args: hip_cxxargs,
                          include_directories: hip_includes + includes,
-                         dependencies: hip_deps, install: false)
+                         dependencies: hip_deps, install: false,
+                         build_by_default: false)
   backend_objects += hipsl.extract_objects(hip_files)
   deps += hip_deps
 endif
@@ -1041,7 +1043,8 @@ endif
 if is_variable('onnx_files')
   onnxsl = static_library('onnx_backend', onnx_files + pb_files + onnx_pb,
                           include_directories: onnx_includes + includes,
-                          dependencies: onnx_deps, install: false)
+                          dependencies: onnx_deps, install: false,
+                          build_by_default: false)
   backend_objects += onnxsl.extract_objects(onnx_files)
   deps += onnx_deps
 endif
