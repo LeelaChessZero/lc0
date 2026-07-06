@@ -872,13 +872,13 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
     maxval = x;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // Get max across warp first, and then update across C dimension
   float warpmax = warpMax(x);
   if ((c & 0x1F) == 0) atomicMaxFloat(&maxval, warpmax);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float ex = exp(x - maxval);
 
@@ -888,7 +888,7 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
   // update shared memory sum across C dimension
   if ((c & 0x1F) == 0) atomicAdd(&sum, val);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float op = ex / sum;
 
@@ -924,14 +924,14 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 
   // compute sum across C dimension using the warp wide partial sums
   if (threadIdx.x == 0) sum[threadIdx.z][threadIdx.y] = s;
-  __syncthreads();
+  lc0SyncThreads();
 
   if (threadIdx.x == 0 && threadIdx.y == 0) {
     float cSum = 0;
     for (int j = 0; j < blockDim.y; j++) cSum += sum[threadIdx.z][j];
     sum[threadIdx.z][0] = cSum;
   }
-  __syncthreads();
+  lc0SyncThreads();
 
   // s now contains the sum across C dimension
   return sum[threadIdx.z][0];
@@ -948,7 +948,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   int n = blockIdx.x * blockDim.z + threadIdx.z;
   int c = (threadIdx.y * 32 + threadIdx.x) * 16;
   // An out-of-range row (n >= N) must NOT early-return: shared_sum_for_layer_norm
-  // calls __syncthreads(), and on a 64-lane wavefront two threadIdx.z rows share
+  // calls lc0SyncThreads(), and on a 64-lane wavefront two threadIdx.z rows share
   // one wavefront, so returning the padding row while its partner survives is a
   // partial-wavefront barrier -> GPU fault on AMD (it is benign on NVIDIA only
   // because whole 32-lane warps exit). Instead fold it into oobThread so the
@@ -1173,7 +1173,7 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
     promotion_offsets[x][y] = S;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // phase 2: add the last "row" to the other 3
   // #knight offset is added to the other three
@@ -1188,7 +1188,7 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
     }
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // phase 3: add 8x8 chunk of policy_attn_logits matrix to promotion offsets
   //          the output is 3x8x8 (written as 8 * 24)

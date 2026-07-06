@@ -28,6 +28,35 @@
 namespace lczero {
 namespace NS_BACKEND {
 
+// Debug guard against a divergent block barrier. Several of lc0's kernels launch
+// blocks whose logical rows are narrower than an AMD wavefront (e.g.
+// blockDim = (32, 1, z) packs two 32-lane rows into one 64-lane wave), so a
+// per-row early exit ahead of a __syncthreads() can leave part of a wave waiting
+// on a barrier the rest of the wave never reaches. On AMD hardware that wave
+// deadlocks or faults rather than dropping the missing lanes (the layer_norm
+// crash this port fixed was exactly this). In release builds this is a plain
+// __syncthreads(); in a HIP debug build it first checks that every lane the
+// block placed in this wave is still active at the barrier and asserts at the
+// offending site, turning a silent hang into a caught error. It is a no-op
+// wrapper on the CUDA build.
+__device__ __forceinline__ void lc0SyncThreads() {
+#if defined(USE_HIP) && !defined(NDEBUG) && defined(__HIP_DEVICE_COMPILE__)
+  const unsigned tid =
+      (threadIdx.z * blockDim.y + threadIdx.y) * blockDim.x + threadIdx.x;
+  const unsigned nthreads = blockDim.x * blockDim.y * blockDim.z;
+  const unsigned wave_base = (tid / warpSize) * warpSize;
+  const unsigned remaining = nthreads - wave_base;
+  const unsigned lanes =
+      remaining < static_cast<unsigned>(warpSize) ? remaining : warpSize;
+  const unsigned long long expected =
+      lanes >= 64u ? ~0ull : ((1ull << lanes) - 1ull);
+  assert(__ballot(1) == expected &&
+         "divergent __syncthreads(): a lane exited before this block barrier; "
+         "on AMD wavefronts this deadlocks or faults the wave");
+#endif
+  __syncthreads();
+}
+
 __device__ __forceinline__ float mishActivate(float el) {
   auto e = __expf(el);
   auto n = e * e + 2.0f * e;
@@ -353,7 +382,7 @@ __device__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     __shared__ float shared_data[1024];
     float avg = S / 64;
     shared_data[k] = avg;
-    __syncthreads();
+    lc0SyncThreads();
 
     // First fully-connected layer for SE
     if (k < se_K) {
@@ -364,11 +393,11 @@ __device__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
       S += (float)b1[k];
       S = activate(S, activation);
     }
-    __syncthreads();
+    lc0SyncThreads();
     if (k < se_K) {
       shared_data[k] = S;
     }
-    __syncthreads();
+    lc0SyncThreads();
 
     // Second fully-connected layer for SE
     S = 0;
@@ -562,7 +591,7 @@ __global__ __launch_bounds__(
 
     int lane = k & 0x1F;
     int warp = k >> 5;
-    __syncthreads();
+    lc0SyncThreads();
 
     // First fully-connected layer for SE
 
@@ -577,7 +606,7 @@ __global__ __launch_bounds__(
       val = warpReduce(val);
       if (lane == 0) shared_sums[warp][i] = val;
     }
-    __syncthreads();
+    lc0SyncThreads();
     if (k < se_K) {
       S = 0;
       for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
@@ -587,7 +616,7 @@ __global__ __launch_bounds__(
       shared_data[k] = S;
     }
 
-    __syncthreads();
+    lc0SyncThreads();
 
     // Second fully-connected layer for SE
     S = 0;

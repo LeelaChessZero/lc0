@@ -25,6 +25,8 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <cassert>
+
 #include "cuda_common.h"
 #include "neural/tables/activation_function.h"
 #include "utils/exception.h"
@@ -87,7 +89,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   half avg = S / (half)elementsPerThread;
   sharedData[c] = avg;
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // 2. First fully connected layer.
   if (c < K) {
@@ -104,7 +106,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
     sharedData[c] = S;
   }
-  __syncthreads();
+  lc0SyncThreads();
 
   // 3. Second fully connected layer.
   S = 0;
@@ -282,7 +284,7 @@ __global__ __launch_bounds__(
 
   int lane = k & 0x1F;
   int warp = k >> 5;
-  __syncthreads();
+  lc0SyncThreads();
 
   // First fully-connected layer for SE
 
@@ -297,7 +299,7 @@ __global__ __launch_bounds__(
     val = warpReduce(val);
     if (lane == 0) shared_sums[warp][i] = val;
   }
-  __syncthreads();
+  lc0SyncThreads();
   if (k < se_K) {
     S = 0;
     for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
@@ -307,7 +309,7 @@ __global__ __launch_bounds__(
     shared_data[k] = S;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // Second fully-connected layer for SE
   S = 0;

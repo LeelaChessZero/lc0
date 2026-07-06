@@ -669,6 +669,13 @@ if get_option('build_backends')
                   '-I', meson.current_source_dir() + '/third_party',
                   '-include', hipcc_compat]
     hipcc_args += hip_args
+    # The hipcc custom_targets below build with an explicit command line, so they
+    # do not inherit meson's automatic NDEBUG handling. Mirror it here so a
+    # release build disables device-side asserts (e.g. the debug barrier guard in
+    # winograd_helper.inc).
+    if get_option('b_ndebug') == 'true' or (get_option('b_ndebug') == 'if-release' and get_option('buildtype') in ['release', 'minsize'])
+      hipcc_args += '-DNDEBUG'
+    endif
     hipcc_io_args = ['-c', '@INPUT@', '-o', '@OUTPUT@']
 
     hip_files = ['src/neural/backends/cuda/layers.cc',
