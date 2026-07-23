@@ -23,7 +23,7 @@ cat > dist/package.json << END
 		}
 	},
 	"dependencies": {
-		"onnxruntime-web": "1.20.1"
+		"onnxruntime-web": "^1.27.0"
 	}
 }
 END

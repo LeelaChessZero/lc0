@@ -896,7 +896,7 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
 void Search::StartThreads(size_t how_many) {
 #ifdef __EMSCRIPTEN__
   (void) how_many;
-  SearchWorker worker(this, params_, 0);
+  SearchWorker worker(this, params_);
   worker.RunBlocking();
 #else
   Mutex::Lock lock(threads_mutex_);

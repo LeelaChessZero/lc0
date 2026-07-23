@@ -3,8 +3,7 @@
 		"build": "npm install && ./build.sh",
 		"pack": "npm run build && tar cf lc0.tar dist"
 	},
-	"dependencies": {
-		"esbuild": "0.24.2"
+	"devDependencies": {
+		"esbuild": "^0.28.1"
 	}
 }
-

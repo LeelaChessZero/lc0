@@ -84,13 +84,17 @@ function lc0web_remove(id)
 
 function lc0web_q_val(id, _sample)
 {
-	const [w, _d, l] = map.get(id).output["/output/wdl"].cpuData
+	const wdl = map.get(id).output["/output/wdl"]
+	if (!wdl) return map.get(id).output["/output/value"].cpuData[_sample]
+	const [w, _d, l] = wdl.cpuData
 	return w - l
 }
 
 function lc0web_d_val(id, _sample)
 {
-	const [_w, d] = map.get(id).output["/output/wdl"].cpuData
+	const wdl = map.get(id).output["/output/wdl"]
+	if (!wdl) return 0
+	const [_w, d] = wdl.cpuData
 	return d
 }
 
@@ -101,7 +105,9 @@ function lc0web_p_val(id, sample, moveID)
 
 function lc0web_m_val(id, sample)
 {
-	return map.get(id).output["/output/mlh"].cpuData[sample]
+	const mlh = map.get(id).output["/output/mlh"]
+	if (!mlh) return 0
+	return mlh.cpuData[sample]
 }
 
 function lc0web_add_input(id)

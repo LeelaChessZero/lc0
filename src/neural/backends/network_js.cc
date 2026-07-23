@@ -40,10 +40,10 @@ extern "C" {
 
 EM_JS(int, lc0web_is_cpu, (int id), { return globalThis.lc0web_is_cpu(id) });
 EM_JS(int, lc0web_computation, (int id), { return globalThis.lc0web_computation(id) });
-EM_JS(int, lc0web_q_val, (int id, int sample), { return globalThis.lc0web_q_val(id, sample) });
-EM_JS(int, lc0web_d_val, (int id, int sample), { return globalThis.lc0web_d_val(id, sample) });
-EM_JS(int, lc0web_p_val, (int id, int sample, int move_id), { return globalThis.lc0web_p_val(id, sample, move_id) });
-EM_JS(int, lc0web_m_val, (int id, int sample), { return globalThis.lc0web_m_val(id, sample) });
+EM_JS(float, lc0web_q_val, (int id, int sample), { return globalThis.lc0web_q_val(id, sample) });
+EM_JS(float, lc0web_d_val, (int id, int sample), { return globalThis.lc0web_d_val(id, sample) });
+EM_JS(float, lc0web_p_val, (int id, int sample, int move_id), { return globalThis.lc0web_p_val(id, sample, move_id) });
+EM_JS(float, lc0web_m_val, (int id, int sample), { return globalThis.lc0web_m_val(id, sample) });
 EM_JS(int, lc0web_remove, (int id), { return globalThis.lc0web_remove(id) });
 EM_JS(void, lc0web_add_input, (int id), { return globalThis.lc0web_add_input(id) });
 EM_JS(void, lc0web_add_plane, (int id, int index, uint64_t mask, float value), { return globalThis.lc0web_add_plane(id, index,  mask, value) });
@@ -70,7 +70,7 @@ class JSComputation : public NetworkComputation {
 
 class JSNetwork : public Network {
  public:
-  JSNetwork(std::string_view bytes);
+  JSNetwork(const WeightsFile& file);
   ~JSNetwork() override;
   const NetworkCapabilities& GetCapabilities() const override {
     return capabilities;
@@ -79,11 +79,7 @@ class JSNetwork : public Network {
   bool IsCpu() const override;
  private:
   int id;
-  const NetworkCapabilities capabilities = {
-    pblczero::NetworkFormat_InputFormat_INPUT_CLASSICAL_112_PLANE,
-    pblczero::NetworkFormat_OutputFormat_OUTPUT_WDL,
-    pblczero::NetworkFormat_MovesLeftFormat_MOVES_LEFT_V1,
-  };
+  const NetworkCapabilities capabilities;
 };
 
 std::unique_ptr<Network> MakeJSNetwork(
@@ -100,8 +96,7 @@ std::unique_ptr<Network> MakeJSNetwork(
     onnx_options.alt_selu = true;
     weights = ConvertWeightsToOnnx(weights, onnx_options);
   }
-  const auto& onnx = weights.onnx_model();
-  return std::make_unique<JSNetwork>(onnx.model());
+  return std::make_unique<JSNetwork>(weights);
 }
 
 bool JSNetwork::IsCpu() const {
@@ -151,7 +146,11 @@ JSComputation::~JSComputation() {
   lc0web_remove(id);
 }
 
-JSNetwork::JSNetwork(std::string_view bytes) {
+JSNetwork::JSNetwork(const WeightsFile& file)
+    : capabilities{file.format().network_format().input(),
+                   file.format().network_format().output(),
+                   file.format().network_format().moves_left()} {
+  const auto& bytes = file.onnx_model().model();
   id = lc0web_network(bytes.data(), bytes.length());
 }
 

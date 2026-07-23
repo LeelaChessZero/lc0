@@ -11,16 +11,16 @@ ar = 'emar'
 strip = 'emstrip'
 
 [built-in options]
-cpp_args = ['--use-port=zlib', '-fexceptions', '-msse', '-msse2', '-msse3', '-msimd128']
+cpp_args = ['--use-port=zlib', '-fexceptions', '-msimd128']
 cpp_link_args = [
 		'--use-port=zlib',
 		'-fexceptions',
 		'-sASYNCIFY', '-sASYNCIFY_STACK_SIZE=65536',
-		'-STACK_SIZE=1048576',
+		'-sSTACK_SIZE=1048576',
 		'-sMODULARIZE', '-sEXPORT_ES6',
 		'-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=$stringToNewUTF8',
 		'-sALLOW_MEMORY_GROWTH',
 		'-sWASM_BIGINT',
-		'-sENVIRONMENT=worker',
-		'-sEXTRA_EXPORTED_RUNTIME_METHODS=["FS"]',
+		'-sENVIRONMENT=web,worker,node',
+		'-sEXPORTED_RUNTIME_METHODS=["FS"]',
 	]
