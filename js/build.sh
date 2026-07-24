@@ -2,8 +2,7 @@
 set -ex
 meson setup --buildtype=release -Ddefault_library=static --prefer-static --cross-file=../cross-files/wasm32-emscripten -Dblas=false build .. || :
 meson compile -C build lc0
-esbuild --minify --outdir=dist --format=esm main.js worker.js build/lc0.js build/lc0.worker.mjs
-mv dist/build/lc0.worker.js dist/build/lc0.worker.mjs
+esbuild --minify --outdir=dist --format=esm main.js worker.js build/lc0.js 
 cp build/lc0.wasm dist/build
 cat > dist/package.json << END
 {
