@@ -1,14 +1,15 @@
 #!/usr/bin/env sh
 set -ex
-meson setup --buildtype=release -Ddefault_library=static --prefer-static --cross-file=../cross-files/wasm32-emscripten -Dblas=false build .. || :
+meson setup --buildtype=release -Ddefault_library=static --prefer-static --cross-file=../cross-files/wasm32-emscripten -Dblas=false -Dgtest=false build .. || :
 meson compile -C build lc0
-esbuild --minify --outdir=dist --format=esm main.js worker.js build/lc0.js 
+npx esbuild --minify --outdir=dist --format=esm main.js worker.js build/lc0.js 
 cp build/lc0.wasm dist/build
 cat > dist/package.json << END
 {
 	"name": "lc0",
 	"description": "Leela Chess Zero",
 	"version": "0.0.0.1",
+	"type": "module",
 	"license": "GPL",
 	"homepage": "https://lczero.org",
 	"repository": {
