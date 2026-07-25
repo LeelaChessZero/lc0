@@ -1,9 +1,11 @@
 {
 	"scripts": {
 		"build": "npm install && ./build.sh",
-		"pack": "npm run build && tar cf lc0.tar dist"
+		"pack": "npm run build && tar cf lc0.tar dist",
+		"test": "node test-engine.mjs"
 	},
 	"devDependencies": {
-		"esbuild": "^0.28.1"
+		"esbuild": "^0.28.1",
+		"onnxruntime-web": "^1.27.0"
 	}
 }
