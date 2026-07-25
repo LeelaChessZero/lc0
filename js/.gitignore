@@ -4,3 +4,6 @@ dist
 build
 lc0.tar
 emsdk
+*.pb
+*.pb.gz
+
