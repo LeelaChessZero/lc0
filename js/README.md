@@ -69,7 +69,15 @@ node test-engine.mjs ~/nets/maia-1100.pb.gz 64
 Exits 0 on a successful `bestmove`, non-zero on failure or a 120s timeout.
 Useful both as a fast local sanity check after a build and for CI.
 
-
+```sh
+mkdir nets
+cp ~/downloads/11248.pb.gz ~/downloads/T30.pb.gz ~/downloads/744204.pb.gz nets/
+node test-nets-dir.mjs ./nets 64
+```
+ 
+It picks up every `.pb`/`.pb.gz` file in the given folder, tests each one
+the same way `test-nets.mjs` does (own subprocess, WDL/MLH detection,
+pass/fail summary), and exits 0 only if every net in the folder passes.
 Usage
 ---
 
