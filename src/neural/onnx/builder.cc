@@ -149,6 +149,7 @@ std::string OnnxBuilder::Conv(const std::string& name,
   node->add_input(AddInitializer(name + "/w/bias", bias_weights));
   AddIntsAttribute(node, "pads", {pads, pads, pads, pads});
   AddIntsAttribute(node, "kernel_shape", {shape, shape});
+  AddIntsAttribute(node, "dilations", {1, 1});
   return out;
 }
 
