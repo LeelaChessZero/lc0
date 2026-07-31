@@ -1001,6 +1001,13 @@ if get_option('gtest')
                'src/neural/memcache.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
+
+  test('InstamoveTest',
+    executable('instamove_test', 'src/search/instamove/instamove_test.cc',
+               'src/search/instamove/instamove.cc', 'src/search/register.cc',
+               pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest),
+    args: '--gtest_output=xml:instamove_test.xml', timeout: 90)
 endif
 
 
