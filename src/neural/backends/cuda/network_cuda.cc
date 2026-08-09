@@ -429,10 +429,11 @@ class CudaNetwork : public Network {
       if (blend_w_extra_[i] > 0.0f) blend_active_ = true;
     }
     if (blend_active_) {
-      if (!attn_policy_) {
+      if (!attn_policy_ || !attn_body_) {
         throw Exception(
-            "The policy blend needs the extra policy heads, which only "
-            "attention policy networks have.");
+            "The policy blend needs an attention policy network with an "
+            "attention body (multihead format)."
+            );
       }
       if (policy_head != "vanilla") {
         // A selected head is never built a second time as an extra head, so
