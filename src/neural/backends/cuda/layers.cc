@@ -1422,9 +1422,10 @@ template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(
     BaseLayer<DataType>* ip, const MultiHeadWeights::PolicyHead& weights,
     void* scratch, bool attention_body, ActivationFunction act,
-    int max_batch_size, bool use_gemm_ex)
+    int max_batch_size, bool use_gemm_ex, bool shared_embedding)
     : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
       attention_body_(attention_body),
+      shared_embedding_(shared_embedding),
       // Old networks without attention body (e.g. T79) use hardcoded SELU
       // activations.
       act_(attention_body ? act : ACTIVATION_SELU) {
@@ -1435,8 +1436,15 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
   encoder_heads_ = weights.pol_encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
-  allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
-  allocAndUpload<DataType>(&ip_pol_b_, weights.ip_pol_b, scratch);
+  if (shared_embedding_) {
+    // Another head owns the embedding weights and computes the embedding.
+    assert(weights.pol_encoder.empty());
+    ip_pol_w_ = nullptr;
+    ip_pol_b_ = nullptr;
+  } else {
+    allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
+    allocAndUpload<DataType>(&ip_pol_b_, weights.ip_pol_b, scratch);
+  }
 
   allocAndUpload<DataType>(&ip2_pol_w_, weights.ip2_pol_w, scratch);
   allocAndUpload<DataType>(&ip2_pol_b_, weights.ip2_pol_b, scratch);
@@ -1904,33 +1912,39 @@ void AttentionPolicyHead<DataType>::Eval(
   DataType* buffer1 = output + scratch_size / (2 * sizeof(DataType));
   DataType* buffer2 = input2_tensor + scratch_size / (2 * sizeof(DataType));
 
-  int inputC = this->input_->GetC();
-  bool input_nhwc = attention_body_ || this->input_->isNHWC();
-  if (!input_nhwc)
-    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8,
-                      stream);
+  // Steps 1 and 2 produce the policy embedding in input2_tensor. A head
+  // sharing the embedding finds it already there and starts at step 3; note
+  // that steps 3 onwards only read input2_tensor, so several such heads can
+  // run off the same embedding.
+  if (!shared_embedding_) {
+    int inputC = this->input_->GetC();
+    bool input_nhwc = attention_body_ || this->input_->isNHWC();
+    if (!input_nhwc)
+      convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8,
+                        stream);
 
-  // 1. Policy embedding (fully connected layer)
-  // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
-  DataType* pol_embedding = input2_tensor;
-  {
-    const int num_outputs = embedding_op_size_;
-    const int num_inputs = inputC;
-    const int batch = N * 64;
-    cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                          num_inputs, 1.0f, (const DataType*)ip_pol_w_,
-                          num_inputs,
-                          input_nhwc ? input : (DataType*)scratch,
-                          num_inputs, 0.0f, pol_embedding, num_outputs);
-    addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
-                   num_outputs, act_, stream);
+    // 1. Policy embedding (fully connected layer)
+    // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
+    DataType* pol_embedding = input2_tensor;
+    {
+      const int num_outputs = embedding_op_size_;
+      const int num_inputs = inputC;
+      const int batch = N * 64;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f,
+                            (const DataType*)ip_pol_w_, num_inputs,
+                            input_nhwc ? input : (DataType*)scratch, num_inputs,
+                            0.0f, pol_embedding, num_outputs);
+      addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
+                     num_outputs, act_, stream);
+    }
+
+    // 2. Encoder layers
+    for (const auto pEnc : encoder_weights_) {
+      pEnc->Eval(N, input2_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
+                 stream, offset_pointers);
+    }  // End of encoder blocks
   }
-
-  // 2. Encoder layers
-  for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, input2_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
-               stream, offset_pointers);
-  }  // End of encoder blocks
 
   DataType* wq;
   DataType* wk;
