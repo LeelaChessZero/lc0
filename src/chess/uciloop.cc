@@ -27,7 +27,6 @@
 
 #include "uciloop.h"
 
-#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -302,14 +301,17 @@ void StringUciResponder::OutputThinkingInfo(std::vector<ThinkingInfo>* infos) {
     if (info.game_id != -1) res += " gameid " + std::to_string(info.game_id);
     if (info.is_black)
       res += " side " + std::string(*info.is_black ? "black" : "white");
-    if (info.depth >= 0)
-      res += " depth " + std::to_string(std::max(info.depth, 1));
+    if (info.depth >= 0) res += " depth " + std::to_string(info.depth);
     if (info.seldepth >= 0) res += " seldepth " + std::to_string(info.seldepth);
     if (info.time >= 0) res += " time " + std::to_string(info.time);
     if (info.nodes >= 0) res += " nodes " + std::to_string(info.nodes);
     if (info.mate) res += " score mate " + std::to_string(*info.mate);
     if (info.score) res += " score cp " + std::to_string(*info.score);
-    if (info.wdl && options_ && options_->Get<bool>(kShowWDL)) {
+    // A depth-zero search is a static network evaluation. Always expose its
+    // WDL result so callers can use `go depth 0` without enabling search or a
+    // separate reporting option.
+    if (info.wdl && options_ &&
+        (info.depth == 0 || options_->Get<bool>(kShowWDL))) {
       res += " wdl " + std::to_string(info.wdl->w) + " " +
              std::to_string(info.wdl->d) + " " + std::to_string(info.wdl->l);
     }

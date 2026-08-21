@@ -50,6 +50,17 @@ const OptionId kClearTree{
      .help_text = "Clear the tree before the next search.",
      .visibility = OptionId::kProOnly}};
 
+class DepthZeroUciResponder : public TransformingUciResponder {
+ public:
+  using TransformingUciResponder::TransformingUciResponder;
+
+  void TransformThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    for (auto& info : *infos) {
+      if (info.depth >= 0) info.depth = 0;
+    }
+  }
+};
+
 class ClassicSearch : public SearchBase {
  public:
   ClassicSearch(UciResponder* responder, const OptionsDict* options)
@@ -113,8 +124,12 @@ void ClassicSearch::SetPosition(const GameState& pos) {
 
 void ClassicSearch::StartSearch(const GoParams& params) {
   LCTRACE_FUNCTION_SCOPE;
-  auto forwarder =
+  std::unique_ptr<UciResponder> responder =
       std::make_unique<NonOwningUciRespondForwarder>(uci_responder_);
+  if (params.depth == 0) {
+    responder =
+        std::make_unique<DepthZeroUciResponder>(std::move(responder));
+  }
   if (options_->Get<Button>(kClearTree).TestAndReset()) tree_->TrimTreeAtHead();
 
   const auto cache_size =
@@ -130,7 +145,7 @@ void ClassicSearch::StartSearch(const GoParams& params) {
       params, tree_.get()->HeadPosition(), total_memory, kAvgNodeSize,
       tree_.get()->GetCurrentHead()->GetN());
   search_ = std::make_unique<Search>(
-      *tree_, backend_, std::move(forwarder),
+      *tree_, backend_, std::move(responder),
       StringsToMovelist(params.searchmoves, tree_->HeadPosition().GetBoard()),
       *move_start_time_, std::move(stopper), params.infinite, params.ponder,
       *options_, syzygy_tb_);
