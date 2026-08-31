@@ -461,6 +461,10 @@ if get_option('build_backends')
   cu_blas = cc.find_library('cublas', dirs: cudnn_libdirs, required: false)
   cu_dnn = cc.find_library('cudnn', dirs: cudnn_libdirs, required: false)
   cu_dart = cc.find_library('cudart', dirs: cudnn_libdirs, required: false)
+  if get_option('corex') and get_option('nvcc')
+    error('The corex (Iluvatar CoreX) and nvcc CUDA backends are mutually ' +
+          'exclusive; build the CoreX backend with -Dcorex=true -Dnvcc=false.')
+  endif
   nvcc = find_program(nvcc_paths,
                       required: false)
   nvcc_ok = false
@@ -607,6 +611,58 @@ if get_option('build_backends')
       command : [nvcc, nvcc_extra_args, nvcc_arguments, nvcc_io_arguments]
     )
     has_backends = true
+  endif
+
+  ## ~~~~~~~~~~~~~~~~~
+  ## CoreX (ivcore11)
+  ## ~~~~~~~~~~~~~~~~~
+  # Iluvatar CoreX ships no nvcc; its CUDA frontend is clang++ (-x ivcore).
+  # A single fixed target needs no arch/std probing, so this block is
+  # self-contained and independent of the nvcc logic above.
+  if get_option('corex')
+    corex_root = get_option('corex_root')
+    corex_clang = find_program(corex_root / 'bin' / 'clang++', required : true)
+    corex_lib = corex_root / 'lib64'
+
+    cx_blas = cc.find_library('cublas', dirs : corex_lib, required : true)
+    cx_dart = cc.find_library('cudart', dirs : corex_lib, required : true)
+    cx_dnn = cc.find_library('cudnn', dirs : corex_lib, required : false)
+
+    corex_args = ['-x', 'ivcore', '--cuda-path=' + corex_root,
+                  '--cuda-gpu-arch=ivcore11', '-Wno-unknown-cuda-version',
+                  '-fPIC', '-std=c++20',
+                  '-I', meson.current_source_dir() / 'src',
+                  '-I', corex_root / 'include']
+    corex_cmd = [corex_clang, corex_args, '-c', '@INPUT@', '-o', '@OUTPUT@']
+
+    deps += [cx_blas, cx_dart]
+    cuda_files = ['src/neural/backends/cuda/layers.cc']
+    if get_option('cudnn') and cx_dnn.found()
+      deps += cx_dnn
+      cuda_files += 'src/neural/backends/cuda/network_cudnn.cc'
+      cuda_files += 'src/neural/backends/cuda/network_cuda.cc'
+      add_project_arguments('-DUSE_CUDNN', language : 'cpp')
+    else
+      cuda_files += 'src/neural/backends/cuda/network_cuda.cc'
+    endif
+    includes += include_directories('src/neural/backends/cuda/')
+    includes += include_directories(corex_root / 'include', is_system : true)
+    files += cuda_files
+
+    files += custom_target('corex fp32 code',
+      input : 'src/neural/backends/cuda/common_kernels.cu',
+      output : '@BASENAME@.o',
+      depend_files : 'src/neural/backends/cuda/winograd_helper.inc',
+      command : corex_cmd)
+
+    files += custom_target('corex fp16 code',
+      input : 'src/neural/backends/cuda/fp16_kernels.cu',
+      output : '@BASENAME@.o',
+      depend_files : 'src/neural/backends/cuda/winograd_helper.inc',
+      command : corex_cmd)
+
+    has_backends = true
+    message('CoreX (ivcore11): building CUDA backend with clang++ -x ivcore')
   endif
 
   ## ~~~~~~~~
