@@ -344,7 +344,7 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
 template <typename dT, typename sT>
 __device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
                        int Nin, int Cin, int H, int W) {
-  if (n >= Nin || c >= Cin) return 0;
+  if (n >= Nin || c >= Cin) return static_cast<dT>(0.0f);
 
   int index;
   index = n;
@@ -462,7 +462,7 @@ __global__ void expandPlanes_kernel_NHWC(T* output, const uint64_t* masks,
 
   uint64_t mask = masks[boardIndex * kInputPlanes + planeIndex];
 
-  T op = 0;
+  T op = static_cast<T>(0.0f);
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
     op = values[boardIndex * kInputPlanes + planeIndex];
@@ -494,7 +494,7 @@ __global__ void expandPlanes_kernel_NCHW(T* output, const uint64_t* masks,
   uint64_t mask = masks[planeIndex];
 
   int sqIndex = index & 0x3F;
-  T op[2] = {0, 0};
+  T op[2] = {static_cast<T>(0.0f), static_cast<T>(0.0f)};
 
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {

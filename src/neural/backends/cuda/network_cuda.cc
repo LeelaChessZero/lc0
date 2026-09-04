@@ -428,7 +428,7 @@ class CudaNetwork : public Network {
     // Input conv only used if there are residual blocks in the network
     if (numBlocks_ > 0) {
 #if LC0_CUDA_BF16_SUPPORTED
-      if constexpr (std::is_same_v<__nv_bfloat16, DataType>) {
+      if constexpr (std::is_same<__nv_bfloat16, DataType>::value) {
         throw Exception(
             "CNN residual networks are not supported on cuda-bf16 backend. "
             "Please use cuda-fp16.");
@@ -541,7 +541,7 @@ class CudaNetwork : public Network {
 
       } else {
 #if LC0_CUDA_BF16_SUPPORTED
-        if constexpr (std::is_same_v<__nv_bfloat16, DataType>) {
+        if constexpr (std::is_same<__nv_bfloat16, DataType>::value) {
           throw Exception(
               "Non-attention policy heads are not supported on cuda-bf16 backend. "
               "Please use cuda-fp16.");
