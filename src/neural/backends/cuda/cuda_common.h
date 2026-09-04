@@ -30,6 +30,13 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
+#if defined(CUDART_VERSION) && CUDART_VERSION >= 11000
+#include <cuda_bf16.h>
+#define LC0_CUDA_BF16_SUPPORTED 1
+#else
+#define LC0_CUDA_BF16_SUPPORTED 0
+#endif
+
 #include "utils/fp16_utils.h"
 
 #ifdef USE_CUDNN

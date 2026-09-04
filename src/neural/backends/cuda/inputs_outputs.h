@@ -49,6 +49,16 @@ inline float FromType(half src) {
   return FP16toFP32(temp);
 }
 
+#if LC0_CUDA_BF16_SUPPORTED
+inline void ToType(__nv_bfloat16& dst, float src) {
+  dst = __float2bfloat16(src);
+}
+
+inline float FromType(__nv_bfloat16 src) {
+  return __bfloat162float(src);
+}
+#endif
+
 template <typename DataType>
 struct CudaGraphCapture;
 

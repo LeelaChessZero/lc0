@@ -256,8 +256,20 @@ class CudaNetwork : public Network {
     // layout used by cuda backend is nchw.
     has_tensor_cores_ = false;
     constexpr bool fp16 = std::is_same<half, DataType>::value;
+#if LC0_CUDA_BF16_SUPPORTED
+    constexpr bool is_bf16 = std::is_same<__nv_bfloat16, DataType>::value;
+#else
+    constexpr bool is_bf16 = false;
+#endif
 
-    if (fp16) {
+    if (is_bf16) {
+      if (deviceProp.major >= 8) {
+        has_tensor_cores_ = true;
+      } else {
+        throw Exception(
+            "Your GPU doesn't support BF16 (requires Compute Capability >= 8.0)");
+      }
+    } else if (fp16) {
       // Check if the GPU support FP16.
 
       if ((deviceProp.major == 6 && deviceProp.minor != 1) ||
@@ -292,7 +304,7 @@ class CudaNetwork : public Network {
         ReportCUBLASErrors(cublasSetMathMode(
             cublas_,
             CUBLAS_TENSOR_OP_MATH));  // Deprecated on CUDA 11.0 and later
-      else if (fp16)
+      else if (fp16 || is_bf16)
         ReportCUBLASErrors(cublasSetMathMode(
             cublas_,
             CUBLAS_PEDANTIC_MATH));  // Explicitly set PEDANTIC_MATH mode to
@@ -343,7 +355,7 @@ class CudaNetwork : public Network {
     }
 
     bool use_fused_mha = false;
-    if (deviceProp.major >= 8 && fp16) {
+    if (deviceProp.major >= 8 && (fp16 || is_bf16)) {
       use_fused_mha = options.GetOrDefault<bool>(
           "fused_mha", file.format().network_format().ffn_activation() !=
                            pblczero::NetworkFormat::ACTIVATION_RELU_2);
@@ -415,6 +427,13 @@ class CudaNetwork : public Network {
 
     // Input conv only used if there are residual blocks in the network
     if (numBlocks_ > 0) {
+#if LC0_CUDA_BF16_SUPPORTED
+      if constexpr (std::is_same_v<__nv_bfloat16, DataType>) {
+        throw Exception(
+            "CNN residual networks are not supported on cuda-bf16 backend. "
+            "Please use cuda-fp16.");
+      } else {
+#endif
       // Input.
       {
         auto inputConv = std::make_unique<FusedWinogradConvSELayer<DataType>>(
@@ -473,6 +492,9 @@ class CudaNetwork : public Network {
         }
       }
       resi_last_ = getLastLayer();
+#if LC0_CUDA_BF16_SUPPORTED
+      }
+#endif
     }
 
     if (attn_body_) {
@@ -518,6 +540,13 @@ class CudaNetwork : public Network {
         network_.emplace_back(std::move(policymap));
 
       } else {
+#if LC0_CUDA_BF16_SUPPORTED
+        if constexpr (std::is_same_v<__nv_bfloat16, DataType>) {
+          throw Exception(
+              "Non-attention policy heads are not supported on cuda-bf16 backend. "
+              "Please use cuda-fp16.");
+        } else {
+#endif
         if (conv_policy_) {
           assert(!attn_body_);  // not supported with attention body
           auto conv1 = std::make_unique<FusedWinogradConvSELayer<DataType>>(
@@ -558,6 +587,9 @@ class CudaNetwork : public Network {
                              scratch_mem_);
           network_.emplace_back(std::move(FCPol));
         }
+#if LC0_CUDA_BF16_SUPPORTED
+        }
+#endif
       }
     }
 
@@ -1066,9 +1098,15 @@ class CudaNetwork : public Network {
   std::unique_ptr<InputsOutputs<DataType>> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
     if (free_inputs_outputs_.empty()) {
+#if LC0_CUDA_BF16_SUPPORTED
+      constexpr bool is_16bit = std::is_same<half, DataType>::value ||
+                                std::is_same<__nv_bfloat16, DataType>::value;
+#else
+      constexpr bool is_16bit = std::is_same<half, DataType>::value;
+#endif
       return std::make_unique<InputsOutputs<DataType>>(
           max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
-          !has_tensor_cores_ && std::is_same<half, DataType>::value);
+          !has_tensor_cores_ && is_16bit);
     } else {
       std::unique_ptr<InputsOutputs<DataType>> resource =
           std::move(free_inputs_outputs_.front());
@@ -1264,14 +1302,42 @@ template <typename DataType>
 std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& options) {
   if (!w) {
-    throw Exception(
-        "The cuda" +
-        std::string(std::is_same<half, DataType>::value ? "-fp16" : "") +
-        " backend requires a network file.");
+    std::string backend_name = "cuda";
+    if constexpr (std::is_same<half, DataType>::value) {
+      backend_name = "cuda-fp16";
+    }
+#if LC0_CUDA_BF16_SUPPORTED
+    else if constexpr (std::is_same<__nv_bfloat16, DataType>::value) {
+      backend_name = "cuda-bf16";
+    }
+#endif
+    throw Exception("The " + backend_name + " backend requires a network file.");
   }
   const WeightsFile& weights = *w;
   auto nf = weights.format().network_format();
   using NF = pblczero::NetworkFormat;
+
+#if LC0_CUDA_BF16_SUPPORTED
+  if constexpr (std::is_same<__nv_bfloat16, DataType>::value) {
+    int gpu_id = options.GetOrDefault<int>("gpu", 0);
+    cudaDeviceProp deviceProp = {};
+    ReportCUDAErrors(cudaGetDeviceProperties(&deviceProp, gpu_id));
+    if (deviceProp.major < 8) {
+      throw Exception(
+          "cuda-bf16 backend requires NVIDIA GPU with Compute Capability >= 8.0 (Ampere or newer). "
+          "Selected GPU has Compute Capability " +
+          std::to_string(deviceProp.major) + "." + std::to_string(deviceProp.minor) +
+          ". Please use cuda-fp16 instead.");
+    }
+    if (nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT &&
+        nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT) {
+      throw Exception(
+          "The cuda-bf16 backend currently only supports transformer networks (BT2/BT3/BT4). "
+          "For legacy convolutional networks, please use cuda-fp16.");
+    }
+  }
+#endif
+
   switch (nf.network()) {
     case NF::NETWORK_CLASSICAL_WITH_HEADFORMAT:
     case NF::NETWORK_SE_WITH_HEADFORMAT:
@@ -1352,5 +1418,16 @@ std::unique_ptr<Network> MakeCudaNetworkAuto(
 REGISTER_NETWORK("cuda-auto", MakeCudaNetworkAuto, 104)
 REGISTER_NETWORK("cuda", MakeCudaNetwork<float>, 103)
 REGISTER_NETWORK("cuda-fp16", MakeCudaNetwork<half>, 102)
+#if LC0_CUDA_BF16_SUPPORTED
+REGISTER_NETWORK("cuda-bf16", MakeCudaNetwork<__nv_bfloat16>, 101)
+#else
+std::unique_ptr<Network> MakeCudaNetworkBf16Unsupported(
+    const std::optional<WeightsFile>&, const OptionsDict&) {
+  throw Exception(
+      "The cuda-bf16 backend is not supported in this build because it was compiled "
+      "with a CUDA version older than 11.0.");
+}
+REGISTER_NETWORK("cuda-bf16", MakeCudaNetworkBf16Unsupported, 101)
+#endif
 
 }  // namespace lczero
