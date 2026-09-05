@@ -94,7 +94,7 @@ void dumpTensor(T* memory, int elements, const char* message, bool only_summary 
 }
 #endif
 
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 // Use Single kernel for entire SE operation.
 // Right now supported only for fp16 with nhwc and it's quite a bit faster
@@ -2504,7 +2504,7 @@ void CublasError(cublasStatus_t status, const char* file, const int& line) {
 void CudaError(cudaError_t status, const char* file, const int& line) {
   if (status != cudaSuccess) {
     char message[128];
-    sprintf(message, "CUDA error: %s (%s:%d) ", cudaGetErrorString(status),
+    sprintf(message, BACKEND_NAME " error: %s (%s:%d) ", cudaGetErrorString(status),
             file, line);
     CERR << message;
     throw Exception(message);

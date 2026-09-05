@@ -31,7 +31,7 @@
 #include "neural/tables/activation_function.h"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 // Adds two vectors (possibly of different sizes), also do optional
 // activation (relu, tanh or sigmoid).
