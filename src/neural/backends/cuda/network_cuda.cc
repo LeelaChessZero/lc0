@@ -250,16 +250,16 @@ class CudaNetwork : public Network {
       model_size = weights.ip_emb_b.size() - 1;
     }
 
-    size_t pre_model = model_size;
+    model_size = (std::bit_width(model_size) + 1) / 2;
 
-    model_size = std::bit_width(model_size);
-
-    if (model_size > 10) {
-      opt_batch_size_ = deviceProp.multiProcessorCount / (model_size - 9);
+    if (model_size > 5) {
+      opt_batch_size_ = deviceProp.multiProcessorCount / (model_size - 4);
     } else {
-      opt_batch_size_ = deviceProp.multiProcessorCount * (11 - model_size);
+      opt_batch_size_ = deviceProp.multiProcessorCount * (6 - model_size);
     }
     opt_batch_size_ = options.GetOrDefault("opt_batch", opt_batch_size_);
+
+    opt_batch_size_ = std::clamp(opt_batch_size_, min_batch_size_, max_batch_size_);
 
     allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
 
