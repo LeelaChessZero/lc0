@@ -2603,64 +2603,49 @@ template class ConvLayer<float>;
 #endif
 
 template class FCLayer<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class FCLayer<__nv_bfloat16>;
-#endif
 template class FCLayer<float>;
 
 template class SELayer<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class SELayer<__nv_bfloat16>;
-#endif
 template class SELayer<float>;
 
 template class PolicyMapLayer<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class PolicyMapLayer<__nv_bfloat16>;
-#endif
 template class PolicyMapLayer<float>;
 
 template class FusedWinogradConvSELayer<half>;
 template class FusedWinogradConvSELayer<float>;
 
 template class Conv1Layer<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class Conv1Layer<__nv_bfloat16>;
-#endif
 template class Conv1Layer<float>;
 
 template class ResidualBlock<half>;
 template class ResidualBlock<float>;
 
 template class AttentionPolicyHead<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class AttentionPolicyHead<__nv_bfloat16>;
-#endif
 template class AttentionPolicyHead<float>;
 
 template class EncoderBlock<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class EncoderBlock<__nv_bfloat16>;
-#endif
 template class EncoderBlock<float>;
 
 template class AttentionBody<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class AttentionBody<__nv_bfloat16>;
-#endif
 template class AttentionBody<float>;
 
 template class EmbeddingLayer<half>;
-#if LC0_CUDA_BF16_SUPPORTED
-template class EmbeddingLayer<__nv_bfloat16>;
-#endif
 template class EmbeddingLayer<float>;
 
 template class ValueHead<half>;
+template class ValueHead<float>;
+
 #if LC0_CUDA_BF16_SUPPORTED
+template class FCLayer<__nv_bfloat16>;
+template class SELayer<__nv_bfloat16>;
+template class PolicyMapLayer<__nv_bfloat16>;
+template class Conv1Layer<__nv_bfloat16>;
+template class AttentionPolicyHead<__nv_bfloat16>;
+template class EncoderBlock<__nv_bfloat16>;
+template class AttentionBody<__nv_bfloat16>;
+template class EmbeddingLayer<__nv_bfloat16>;
 template class ValueHead<__nv_bfloat16>;
 #endif
-template class ValueHead<float>;
 
 // Misc error handling stuff.
 #ifdef USE_CUDNN
