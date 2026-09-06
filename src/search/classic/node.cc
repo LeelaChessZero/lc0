@@ -490,15 +490,8 @@ void NodeTree::TrimTreeAtHead() {
   current_head_->sibling_ = std::move(tmp);
 }
 
-bool NodeTree::ResetToPosition(const std::string& starting_fen,
-                               const std::vector<std::string>& moves) {
-  ChessBoard starting_board;
-  int no_capture_ply;
-  int full_moves;
-  starting_board.SetFromFen(starting_fen, &no_capture_ply, &full_moves);
-  if (gamebegin_node_ &&
-      (history_.Starting().GetBoard() != starting_board ||
-       history_.Starting().GetRule50Ply() != no_capture_ply)) {
+bool NodeTree::ResetToPosition(const GameState& pos) {
+  if (gamebegin_node_ && (history_.Starting() != pos.startpos)) {
     // Completely different position.
     DeallocateTree();
   }
@@ -507,14 +500,12 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
     gamebegin_node_ = std::make_unique<Node>(nullptr, 0);
   }
 
-  history_.Reset(starting_board, no_capture_ply,
-                 full_moves * 2 - (starting_board.flipped() ? 1 : 2));
+  history_.Reset(pos.startpos);
 
   Node* old_head = current_head_;
   current_head_ = gamebegin_node_.get();
   bool seen_old_head = (gamebegin_node_.get() == old_head);
-  for (const auto& move : moves) {
-    Move m = HeadPosition().GetBoard().ParseMove(move);
+  for (const Move m : pos.moves) {
     MakeMove(m);
     if (old_head == current_head_) seen_old_head = true;
   }
@@ -526,6 +517,21 @@ bool NodeTree::ResetToPosition(const std::string& starting_fen,
   // previously trimmed; we need to reset current_head_ in that case.
   if (!seen_old_head) TrimTreeAtHead();
   return seen_old_head;
+}
+
+bool NodeTree::ResetToPosition(const std::string& starting_fen,
+                               const std::vector<std::string>& moves) {
+  GameState state;
+  state.startpos = Position::FromFen(starting_fen);
+  ChessBoard cur_board = state.startpos.GetBoard();
+  state.moves.reserve(moves.size());
+  for (const auto& move : moves) {
+    Move m = cur_board.ParseMove(move);
+    state.moves.push_back(m);
+    cur_board.ApplyMove(m);
+    cur_board.Mirror();
+  }
+  return ResetToPosition(state);
 }
 
 void NodeTree::DeallocateTree() {

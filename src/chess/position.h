@@ -70,6 +70,9 @@ class Position {
   // Gets board from the point of view of player to move.
   const ChessBoard& GetBoard() const { return us_board_; }
 
+  bool operator==(const Position&) const = default;
+  bool operator!=(const Position&) const = default;
+
   std::string DebugString() const;
 
  private:
@@ -87,7 +90,7 @@ class Position {
 };
 
 // GetFen returns a FEN notation for the position.
-std::string GetFen(const Position& pos);
+std::string PositionToFen(const Position& pos);
 
 // These are ordered so max() prefers the best result.
 enum class GameResult : uint8_t { UNDECIDED, BLACK_WON, DRAW, WHITE_WON };
@@ -127,6 +130,7 @@ class PositionHistory {
 
   // Resets the position to a given state.
   void Reset(const ChessBoard& board, int rule50_ply, int game_ply);
+  void Reset(const Position& pos);
 
   // Appends a position to history.
   void Append(Move m);

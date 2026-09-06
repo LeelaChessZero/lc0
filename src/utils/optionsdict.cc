@@ -74,7 +74,7 @@ std::vector<std::string> OptionsDict::ListSubdicts() const {
 }
 
 bool OptionsDict::HasSubdict(const std::string& name) const {
-  return subdicts_.find(name) != subdicts_.end();
+  return subdicts_.contains(name);
 }
 
 namespace {

@@ -32,7 +32,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "neural/xla/hlo.pb.h"
+#include "proto/hlo.pb.h"
 #include "utils/logging.h"
 
 namespace lczero {

@@ -34,6 +34,7 @@
 #include "neural/shared_params.h"
 #include "utils/atomic_vector.h"
 #include "utils/fastmath.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace {
@@ -49,10 +50,11 @@ class NetworkAsBackend : public Backend {
  public:
   NetworkAsBackend(std::unique_ptr<Network> network, const OptionsDict& options)
       : network_(std::move(network)),
-        softmax_policy_temperature_(
-            1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp)),
-        fill_empty_history_(EncodeHistoryFill(
-            options.Get<std::string>(SharedBackendParams::kHistoryFill))) {
+        backend_opts_(
+            options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
+        weights_path_(
+            options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+    UpdateConfiguration(options);
     const NetworkCapabilities& caps = network_->GetCapabilities();
     attrs_.has_mlh = caps.has_mlh();
     attrs_.has_wdl = caps.has_wdl();
@@ -64,7 +66,24 @@ class NetworkAsBackend : public Backend {
   }
 
   BackendAttributes GetAttributes() const override { return attrs_; }
-  virtual std::unique_ptr<BackendComputation> CreateComputation() override;
+  std::unique_ptr<BackendComputation> CreateComputation() override;
+  UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& options) override {
+    Backend::UpdateConfiguration(options);
+    if (backend_opts_ !=
+        options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {
+      return NEED_RESTART;
+    }
+    if (weights_path_ !=
+        options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+      return NEED_RESTART;
+    }
+    softmax_policy_temperature_ =
+        1.0f / options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp);
+    fill_empty_history_ = EncodeHistoryFill(
+        options.Get<std::string>(SharedBackendParams::kHistoryFill));
+    return UPDATE_OK;
+  }
 
  private:
   std::unique_ptr<Network> network_;
@@ -72,6 +91,9 @@ class NetworkAsBackend : public Backend {
   pblczero::NetworkFormat::InputFormat input_format_;
   float softmax_policy_temperature_;
   FillEmptyHistory fill_empty_history_;
+  const std::string backend_opts_;
+  const std::string weights_path_;
+
   friend class NetworkAsBackendComputation;
 };
 
@@ -100,6 +122,7 @@ class NetworkAsBackendComputation : public BackendComputation {
   void ComputeBlocking() override {
     for (auto& entry : entries_) computation_->AddInput(std::move(entry.input));
     computation_->ComputeBlocking();
+    LCTRACE_FUNCTION_SCOPE;
     for (size_t i = 0; i < entries_.size(); ++i) {
       const EvalResultPtr& result = entries_[i].result;
       if (result.q) *result.q = computation_->GetQVal(i);
@@ -111,6 +134,7 @@ class NetworkAsBackendComputation : public BackendComputation {
 
   void SoftmaxPolicy(std::span<float> dst,
                      const NetworkComputation* computation, int idx) {
+    LCTRACE_FUNCTION_SCOPE;
     const std::vector<Move>& moves = entries_[idx].legal_moves;
     const int transform = entries_[idx].transform;
     // Copy the values to the destination array and compute the maximum.
@@ -164,11 +188,11 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
 
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);
-  std::optional<WeightsFile> weights;
-  if (!net_path.empty()) weights = LoadWeights(net_path);
-
-  return std::make_unique<NetworkAsBackend>(
-      factory_(std::move(weights), network_options), options);
+  std::optional<WeightsFile> weights = LoadWeights(net_path);
+  std::unique_ptr<Network> network =
+      factory_(std::move(weights), network_options);
+  network_options.CheckAllOptionsRead(name_);
+  return std::make_unique<NetworkAsBackend>(std::move(network), options);
 }
 
 }  // namespace lczero

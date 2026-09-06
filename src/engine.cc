@@ -28,18 +28,49 @@
 #include "engine.h"
 
 #include <algorithm>
+#include <cmath>
 
-#include "chess/gamestate.h"
 #include "chess/position.h"
 #include "neural/backend.h"
+#include "neural/memcache.h"
 #include "neural/register.h"
+#include "neural/shared_params.h"
+#include "syzygy/syzygy.h"
 
 namespace lczero {
+namespace {
+const OptionId kSyzygyTablebaseId{
+    {.long_flag = "syzygy-paths",
+     .uci_option = "SyzygyPath",
+     .help_text =
+         "List of Syzygy tablebase directories, list entries separated by "
+         "system separator (\";\" for Windows, \":\" for Linux).",
+     .short_flag = 's',
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId kStrictUciTiming{
+    {.long_flag = "strict-uci-timing",
+     .uci_option = "StrictTiming",
+     .help_text = "The UCI host compensates for lag, waits for the 'readyok' "
+                  "reply before sending 'go' and only then starts timing.",
+     .visibility = OptionId::kProOnly}};
+const OptionId kPonderId{
+    {.long_flag = "",
+     .uci_option = "Ponder",
+     .help_text =
+         "Indicates to the engine that it will be requested to ponder. Not "
+         "currently used.",
+     .visibility = OptionId::kAlwaysVisible}};
 
-Engine::Engine(std::unique_ptr<SearchBase> search, const OptionsDict& opts)
-    : options_(opts), search_(std::move(search)) {}
+const OptionId kPreload{"preload", "",
+                        "Initialize backend and load net on engine startup."};
+}  // namespace
 
-Engine::~Engine() {}
+void Engine::PopulateOptions(OptionsParser* options) {
+  options->Add<BoolOption>(kPonderId) = false;
+  options->Add<StringOption>(kSyzygyTablebaseId);
+  options->Add<BoolOption>(kStrictUciTiming) = false;
+  options->Add<BoolOption>(kPreload) = false;
+}
 
 namespace {
 GameState MakeGameState(const std::string& fen,
@@ -56,36 +87,221 @@ GameState MakeGameState(const std::string& fen,
   }
   return state;
 }
+
+std::uint64_t Perft(const ChessBoard& board, int max_depth, bool dump = false,
+                    int depth = 0) {
+  if (depth == max_depth) return 1;
+  std::uint64_t total_count = 0;
+
+  auto moves = board.GenerateLegalMoves();
+  if (depth == max_depth - 1) return moves.size();
+
+  for (const auto& move : moves) {
+    auto new_board = board;
+    new_board.ApplyMove(move);
+
+    new_board.Mirror();
+    auto count = Perft(new_board, max_depth, dump, depth + 1);
+    if (dump && depth == 0) {
+      Move m = move;
+      if (board.flipped()) m.Flip();
+      CERR << m.ToString(true) << ": " << count;
+    }
+    total_count += count;
+  }
+
+  return total_count;
+}
 }  // namespace
+
+class Engine::UciPonderForwarder : public UciResponder {
+ public:
+  UciPonderForwarder(Engine* engine) : engine_(engine) {}
+
+  void OutputBestMove(BestMoveInfo* info) override {
+    if (!wrapped_) return;
+    wrapped_->OutputBestMove(info);
+  }
+  void OutputThinkingInfo(std::vector<ThinkingInfo>* infos) override {
+    if (!wrapped_) return;
+    assert(!engine_->last_go_params_ || engine_->last_position_);
+    if (engine_->last_go_params_ && engine_->last_go_params_->ponder &&
+        !engine_->last_position_->moves.empty()) {
+      const Move ponder_move_ = engine_->last_position_->moves.back();
+      // Output all stats from main variation (not necessary the ponder move)
+      // but PV only from ponder move.
+      ThinkingInfo ponder_info;
+      for (const auto& info : *infos) {
+        if (info.multipv <= 1) {
+          ponder_info = info;
+          if (ponder_info.mate) ponder_info.mate = -*ponder_info.mate;
+          if (ponder_info.score) ponder_info.score = -*ponder_info.score;
+          if (ponder_info.depth > 1) ponder_info.depth--;
+          if (ponder_info.seldepth > 1) ponder_info.seldepth--;
+          if (ponder_info.wdl)
+            std::swap(ponder_info.wdl->w, ponder_info.wdl->l);
+          ponder_info.pv.clear();
+        }
+        if (!info.pv.empty() && info.pv[0] == ponder_move_) {
+          ponder_info.pv.assign(info.pv.begin() + 1, info.pv.end());
+        }
+      }
+      infos->clear();
+      infos->push_back(ponder_info);
+    }
+    wrapped_->OutputThinkingInfo(infos);
+  }
+
+  void Register(UciResponder* wrapped) {
+    if (wrapped_) {
+      throw Exception("UciPonderForwarder already has a wrapped responder");
+    }
+    wrapped_ = wrapped;
+  }
+  void Unregister(UciResponder* wrapped) {
+    if (wrapped_ != wrapped) {
+      throw Exception("UciPonderForwarder doesn't have this wrapped responder");
+    }
+    wrapped_ = nullptr;
+  }
+
+ private:
+  UciResponder* wrapped_ = nullptr;
+  Engine* const engine_;
+};
+
+Engine::Engine(const SearchFactory& factory, const OptionsDict& opts)
+    : uci_forwarder_(std::make_unique<UciPonderForwarder>(this)),
+      options_(opts),
+      search_(factory.CreateSearch(uci_forwarder_.get(), &options_)) {
+  if (options_.Get<bool>(kPreload)) {
+    UpdateBackendConfig();
+    EnsureSyzygyTablebasesLoaded();
+  }
+}
+
+Engine::~Engine() { EnsureSearchStopped(); }
 
 void Engine::EnsureSearchStopped() {
   search_->AbortSearch();
   search_->WaitSearch();
 }
 
-void Engine::EnsureBackendCreated() {
-  if (backend_) return;
-  backend_ = BackendManager::Get()->CreateFromParams(options_);
-  search_->SetBackend(backend_.get());
+void Engine::UpdateBackendConfig() {
+  LOGFILE << "Update backend configuration.";
+  const std::string backend_name =
+      options_.Get<std::string>(SharedBackendParams::kBackendId);
+  if (!backend_ || backend_name != backend_name_ ||
+      backend_->UpdateConfiguration(options_) == Backend::NEED_RESTART) {
+    backend_name_ = backend_name;
+    backend_ = CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
+                              options_);
+    search_->SetBackend(backend_.get());
+  } else {
+    backend_->SetCacheSize(
+        options_.Get<int>(SharedBackendParams::kNNCacheSizeId));
+  }
+}
+
+void Engine::EnsureSyzygyTablebasesLoaded() {
+  const std::string tb_paths = options_.Get<std::string>(kSyzygyTablebaseId);
+  if (tb_paths == previous_tb_paths_) return;
+  previous_tb_paths_ = tb_paths;
+
+  if (tb_paths.empty()) {
+    LOGFILE << "Reset Syzygy tablebases.";
+    syzygy_tb_.reset();
+  } else {
+    syzygy_tb_ = std::make_unique<SyzygyTablebase>();
+    CERR << "Loading Syzygy tablebases from " << tb_paths;
+    if (!syzygy_tb_->init(tb_paths)) {
+      CERR << "Failed to load Syzygy tablebases!";
+      syzygy_tb_.reset();
+    }
+  }
+
+  search_->SetSyzygyTablebase(syzygy_tb_.get());
+}
+
+// Initializes the search with either the specified position for the normal
+// search or the position one ply trimmed for the ponder search.
+void Engine::InitializeSearchPosition(bool for_ponder) {
+  LOGFILE << "Setting a new search position.";
+  assert(last_position_);
+  if (!for_ponder || last_position_->moves.empty()) {
+    search_->SetPosition(*last_position_);
+    return;
+  }
+  GameState position = *last_position_;
+  position.moves.pop_back();
+  search_->SetPosition(position);
+  return;
 }
 
 void Engine::SetPosition(const std::string& fen,
                          const std::vector<std::string>& moves) {
-  EnsureBackendCreated();
   EnsureSearchStopped();
-  search_->SetPosition(MakeGameState(fen, moves));
-  search_initialized_ = true;
+  strict_uci_timing_ = options_.Get<bool>(kStrictUciTiming);
+  isready_seen_ = false;
+  search_->StartClock();
+  UpdateBackendConfig();
+  EnsureSyzygyTablebasesLoaded();
+  last_position_ = MakeGameState(fen, moves);
 }
 
-void Engine::NewGame() { SetPosition(ChessBoard::kStartposFen, {}); }
+void Engine::NewGame() {
+  if (backend_) backend_->ClearCache();
+  search_->NewGame();
+  SetPosition(ChessBoard::kStartposFen, {});
+}
 
 void Engine::Go(const GoParams& params) {
-  if (!search_initialized_) NewGame();
+  if (params.perft) {
+    const auto start = std::chrono::steady_clock::now();
+    const auto perft =
+        Perft(last_position_ ? last_position_->CurrentPosition().GetBoard()
+                             : ChessBoard(ChessBoard::kStartposFen),
+              *params.perft, true);
+    const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+    CERR;
+    CERR << "Positions searched: " << perft;
+    CERR << "Positions/second    : "
+         << std::lround(1000.0 * perft / (time.count() + 1));
+    return;
+  }
+
+  if ((strict_uci_timing_ && isready_seen_) ||
+      !(params.wtime || params.btime)) {
+    search_->StartClock();
+  }
+  if (!last_position_) NewGame();
+  InitializeSearchPosition(params.ponder);
+  last_go_params_ = params;
   search_->StartSearch(params);
 }
 
-void Engine::Stop() {
-  if (search_) search_->StopSearch();
+void Engine::EnsureReady() { isready_seen_ = true; }
+
+void Engine::Wait() { search_->WaitSearch(); }
+
+void Engine::Stop() { search_->StopSearch(); }
+
+void Engine::PonderHit() {
+  if (!last_go_params_ || !last_go_params_->ponder) return;
+  EnsureSearchStopped();
+  search_->StartClock();
+  last_go_params_->ponder = false;
+  InitializeSearchPosition(/*ponder=*/false);
+  search_->StartSearch(*last_go_params_);
+}
+
+void Engine::RegisterUciResponder(UciResponder* responder) {
+  uci_forwarder_->Register(responder);
+}
+
+void Engine::UnregisterUciResponder(UciResponder* responder) {
+  uci_forwarder_->Unregister(responder);
 }
 
 }  // namespace lczero

@@ -32,8 +32,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "neural/onnx/onnx.pb.h"
-#include "neural/xla/hlo.pb.h"
 #include "neural/xla/hlo_builder.h"
 #include "neural/xla/print_hlo.h"
 #include "utils/bf16_utils.h"
@@ -475,6 +473,7 @@ class Onnx2HloConverter {
     onnx_op_to_builder_["GlobalAveragePool"] =
         &Onnx2HloConverter::OpGlobalAveragePool;
     onnx_op_to_builder_["Greater"] = &Onnx2HloConverter::OpGreater;
+    onnx_op_to_builder_["Elu"] = &Onnx2HloConverter::OpElu;
     onnx_op_to_builder_["Exp"] = &Onnx2HloConverter::OpExp;
     onnx_op_to_builder_["Expand"] = &Onnx2HloConverter::OpExpand;
     onnx_op_to_builder_["Identity"] = &Onnx2HloConverter::OpIdentity;
@@ -660,7 +659,7 @@ class Onnx2HloConverter {
   bool AllInputsConstant(const pblczero::NodeProto& node) {
     for (const auto& input : node.input()) {
       const std::string name(input);
-      if (initializers_.count(name)) continue;
+      if (initializers_.contains(name)) continue;
       if (auto iter = onnx_name_to_hlo_flow_.find(name);
           iter != onnx_name_to_hlo_flow_.end() &&
           iter->second->opcode() == "constant") {
@@ -844,6 +843,21 @@ class Onnx2HloConverter {
         flow,
         builder_.Broadcast(MakeScalar(gamma, input->shape().element_type()),
                            HloTensorType(input->shape()), {}))};
+  }
+
+  std::vector<HloFlow> OpElu(const pblczero::NodeProto& node) {
+    CheckKnownAttributes(node, 1, {"alpha"});
+    auto* input = GetInput(node, 0);
+    double alpha = GetOptionalAttributeAs<double>(node, "alpha").value_or(1.0);
+    auto* neg = builder_.Multiply(
+        builder_.Broadcast(MakeScalar(alpha, input->shape().element_type()),
+                           HloTensorType(input->shape()), {}),
+        builder_.ExponentialMinusOne(input));
+    auto* zeros =
+        builder_.Broadcast(MakeScalar(0, input->shape().element_type()),
+                           HloTensorType(input->shape()), {});
+    auto* preds = builder_.Compare(input, zeros, "GE");
+    return {builder_.Select(preds, input, neg)};
   }
 
   std::vector<HloFlow> OpIdentity(const pblczero::NodeProto& node) {

@@ -29,7 +29,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
@@ -37,12 +36,12 @@
 #include <sstream>
 #include <thread>
 
-#include "neural/cache.h"
 #include "neural/encoder.h"
 #include "search/classic/node.h"
 #include "utils/fastmath.h"
 #include "utils/random.h"
 #include "utils/spinhelper.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace classic {
@@ -283,6 +282,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
             .count();
     if (time_since_first_batch_ms > 0) {
       common_info.nps = total_playouts_ * 1000 / time_since_first_batch_ms;
+      common_info.eps = network_evaluations_ * 1000 / time_since_first_batch_ms;
     }
   }
   common_info.tb_hits = tb_hits_.load(std::memory_order_acquire);
@@ -427,7 +427,7 @@ float Search::GetDrawScore(bool is_odd_depth) const {
 }
 
 namespace {
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
                     float draw_score) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
@@ -437,7 +437,7 @@ inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
 }
 
 // Faster version for if visited_policy is readily available already.
-inline float GetFpu(const SearchParams& params, Node* node, bool is_root_node,
+inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_node,
                     float draw_score, float visited_pol) {
   const auto value = params.GetFpuValue(is_root_node);
   return params.GetFpuAbsolute(is_root_node)
@@ -454,7 +454,10 @@ inline float ComputeCpuct(const SearchParams& params, uint32_t N,
 }
 }  // namespace
 
-std::vector<std::string> Search::GetVerboseStats(Node* node) const {
+// Ignore the last tuple element when sorting in GetVerboseStats
+static bool operator<(const EdgeAndNode&, const EdgeAndNode&) { return false; }
+
+std::vector<std::string> Search::GetVerboseStats(const Node* node) const {
   assert(node == root_node_ || node->GetParent() == root_node_);
   const bool is_root = (node == root_node_);
   const bool is_odd_depth = !is_root;
@@ -464,16 +467,14 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   const float cpuct = ComputeCpuct(params_, node->GetN(), is_root);
   const float U_coeff =
       cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
-  std::vector<EdgeAndNode> edges;
-  for (const auto& edge : node->Edges()) edges.push_back(edge);
-
-  std::sort(edges.begin(), edges.end(),
-            [&fpu, &U_coeff, &draw_score](EdgeAndNode a, EdgeAndNode b) {
-              return std::forward_as_tuple(
-                         a.GetN(), a.GetQ(fpu, draw_score) + a.GetU(U_coeff)) <
-                     std::forward_as_tuple(
-                         b.GetN(), b.GetQ(fpu, draw_score) + b.GetU(U_coeff));
-            });
+  std::vector<std::tuple<uint32_t, float, EdgeAndNode>> edges;
+  edges.reserve(node->GetNumEdges());
+  for (const auto& edge : node->Edges()) {
+    edges.emplace_back(edge.GetN(),
+                       edge.GetQ(fpu, draw_score) + edge.GetU(U_coeff),
+                       edge);
+  }
+  std::sort(edges.begin(), edges.end());
 
   auto print = [](auto* oss, auto pre, auto v, auto post, auto w, int p = 0) {
     *oss << pre << std::setw(w) << std::setprecision(p) << v << post;
@@ -516,8 +517,10 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
     std::optional<float> v;
     if (n && n->IsTerminal()) {
       v = n->GetQ(sign * draw_score);
-    } else {
-      std::optional<EvalResult> nneval = GetCachedNNEval(n);
+    } else if (n) {
+      auto history = GetPositionHistoryAtNode(n);
+      std::optional<EvalResult> nneval = backend_->GetCachedEvaluation(
+          EvalPosition{history.GetPositions(), {}});
       if (nneval) v = -nneval->q;
     }
     if (v) {
@@ -543,7 +546,8 @@ std::vector<std::string> Search::GetVerboseStats(Node* node) const {
   std::vector<std::string> infos;
   const auto m_evaluator =
       backend_attributes_.has_mlh ? MEvaluator(params_, node) : MEvaluator();
-  for (const auto& edge : edges) {
+  for (const auto& edge_tuple : edges) {
+    const auto& edge = std::get<2>(edge_tuple);
     float Q = edge.GetQ(fpu, draw_score);
     float M = m_evaluator.GetMUtility(edge, Q);
     std::ostringstream oss;
@@ -610,30 +614,6 @@ PositionHistory Search::GetPositionHistoryAtNode(const Node* node) const {
   return history;
 }
 
-namespace {
-std::vector<Move> GetNodeLegalMoves(const Node* node, const ChessBoard& board) {
-  if (!node) return {};
-  std::vector<Move> moves;
-  if (node && node->HasChildren()) {
-    moves.reserve(node->GetNumEdges());
-    std::transform(node->Edges().begin(), node->Edges().end(),
-                   std::back_inserter(moves),
-                   [](const auto& edge) { return edge.GetMove(); });
-    return moves;
-  }
-  return board.GenerateLegalMoves();
-}
-}  // namespace
-
-std::optional<EvalResult> Search::GetCachedNNEval(const Node* node) const {
-  if (!node) return {};
-  PositionHistory history = GetPositionHistoryAtNode(node);
-  std::vector<Move> legal_moves =
-      GetNodeLegalMoves(node, history.Last().GetBoard());
-  return backend_->GetCachedEvaluation(
-      EvalPosition{history.GetPositions(), legal_moves});
-}
-
 void Search::MaybeTriggerStop(const IterationStats& stats,
                               StoppersHints* hints) {
   hints->Reset();
@@ -645,7 +625,7 @@ void Search::MaybeTriggerStop(const IterationStats& stats,
   // Already responded bestmove, nothing to do here.
   if (bestmove_is_sent_) return;
   // Don't stop when the root node is not yet expanded.
-  if (total_playouts_ + initial_visits_ == 0) return;
+  if (stats.total_nodes == 0) return;
 
   if (!stop_.load(std::memory_order_acquire)) {
     if (stopper_->ShouldStop(stats, hints)) FireStopInternal();
@@ -1127,7 +1107,7 @@ void SearchWorker::RunTasks(int tid) {
             // We got the spin lock, double check we're still in the clear.
             if (nta < tc) {
               id = tasks_taken_.fetch_add(1, std::memory_order_acq_rel);
-              task = &picking_tasks_[id];
+              task = picking_tasks_.data() + id;
               task_taking_started_.store(0, std::memory_order_release);
               break;
             }
@@ -1175,7 +1155,7 @@ void SearchWorker::RunTasks(int tid) {
           break;
         }
       }
-      picking_tasks_[id].complete = true;
+      picking_tasks_.data()[id].complete = true;
       completed_tasks_.fetch_add(1, std::memory_order_acq_rel);
     }
   }
@@ -1183,7 +1163,7 @@ void SearchWorker::RunTasks(int tid) {
 
 void SearchWorker::ExecuteOneIteration() {
   // 1. Initialize internal structures.
-  InitializeIteration(search_->backend_->CreateComputation());
+  InitializeIteration();
 
   if (params_.GetMaxConcurrentSearchers() != 0) {
     std::unique_ptr<SpinHelper> spin_helper;
@@ -1272,9 +1252,12 @@ void SearchWorker::ExecuteOneIteration() {
 
 // 1. Initialize internal structures.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::InitializeIteration(
-    std::unique_ptr<BackendComputation> computation) {
-  computation_ = std::move(computation);
+void SearchWorker::InitializeIteration() {
+  LCTRACE_FUNCTION_SCOPE;
+  // Free the old computation before allocating a new one. This works better
+  // when backend caches buffer allocations between computations.
+  computation_.reset();
+  computation_ = search_->backend_->CreateComputation();
   minibatch_.clear();
   minibatch_.reserve(2 * target_minibatch_size_);
 }
@@ -1305,6 +1288,7 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
 }  // namespace
 
 void SearchWorker::GatherMinibatch() {
+  LCTRACE_FUNCTION_SCOPE;
   // Total number of nodes to process.
   int minibatch_size = 0;
   int cur_n = 0;
@@ -1406,6 +1390,7 @@ void SearchWorker::GatherMinibatch() {
       }
     }
     if (some_ooo) {
+      LCTRACE_FUNCTION_SCOPE;
       SharedMutex::Lock lock(search_->nodes_mutex_);
       for (int i = static_cast<int>(minibatch_.size()) - 1; i >= new_start;
            i--) {
@@ -1430,6 +1415,7 @@ void SearchWorker::GatherMinibatch() {
       }
     }
 
+    LCTRACE_FUNCTION_SCOPE;
     // Check for stop at the end so we have at least one node.
     for (size_t i = new_start; i < minibatch_.size(); i++) {
       auto& picked_node = minibatch_[i];
@@ -1458,6 +1444,7 @@ void SearchWorker::GatherMinibatch() {
 
 void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
                                      TaskWorkspace* workspace) {
+  LCTRACE_FUNCTION_SCOPE;
   auto& history = workspace->history;
   history = search_->played_history_;
 
@@ -1588,6 +1575,7 @@ void SearchWorker::PickNodesToExtendTask(
     const std::vector<Move>& moves_to_base,
     std::vector<NodeToProcess>* receiver,
     TaskWorkspace* workspace) NO_THREAD_SAFETY_ANALYSIS {
+  LCTRACE_FUNCTION_SCOPE;
   // TODO: Bring back pre-cached nodes created outside locks in a way that works
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
@@ -2027,22 +2015,9 @@ void SearchWorker::ExtendNode(Node* node, int depth,
   node->CreateEdges(legal_moves);
 }
 
-// Returns whether node was already in cache.
-bool SearchWorker::AddNodeToComputation(Node* node) {
-  std::vector<Move> moves;
-  if (node && node->HasChildren()) {
-    moves.reserve(node->GetNumEdges());
-    for (const auto& edge : node->Edges()) moves.emplace_back(edge.GetMove());
-  } else {
-    moves = history_.Last().GetBoard().GenerateLegalMoves();
-  }
-  return computation_->AddInput(EvalPosition{history_.GetPositions(), moves},
-                                EvalResultPtr{}) ==
-         BackendComputation::FETCHED_IMMEDIATELY;
-}
-
 // 2b. Copy collisions into shared collisions.
 void SearchWorker::CollectCollisions() {
+  LCTRACE_FUNCTION_SCOPE;
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
   for (const NodeToProcess& node_to_process : minibatch_) {
@@ -2056,6 +2031,7 @@ void SearchWorker::CollectCollisions() {
 // 3. Prefetch into cache.
 // ~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::MaybePrefetchIntoCache() {
+  LCTRACE_FUNCTION_SCOPE;
   // TODO(mooskagh) Remove prefetch into cache if node collisions work well.
   // If there are requests to NN, but the batch is not full, try to prefetch
   // nodes which are likely useful in future.
@@ -2079,13 +2055,17 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
   // We are in a leaf, which is not yet being processed.
   if (!node || node->GetNStarted() == 0) {
-    if (AddNodeToComputation(node)) {
+    if (search_->backend_->GetCachedEvaluation(
+            EvalPosition{history_.GetPositions(), {}})) {
       // Make it return 0 to make it not use the slot, so that the function
       // tries hard to find something to cache even among unpopular moves.
       // In practice that slows things down a lot though, as it's not always
       // easy to find what to cache.
       return 1;
     }
+    auto moves = history_.Last().GetBoard().GenerateLegalMoves();
+    computation_->AddInput(EvalPosition{history_.GetPositions(), moves},
+                           EvalResultPtr{});
     return 1;
   }
 
@@ -2162,11 +2142,14 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
 
 // 4. Run NN computation.
 // ~~~~~~~~~~~~~~~~~~~~~~
-void SearchWorker::RunNNComputation() { computation_->ComputeBlocking(); }
+void SearchWorker::RunNNComputation() {
+  if (computation_->UsedBatchSize() > 0) computation_->ComputeBlocking();
+}
 
 // 5. Retrieve NN computations (and terminal values) into nodes.
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::FetchMinibatchResults() {
+  LCTRACE_FUNCTION_SCOPE;
   // Populate NN/cached results, or terminal results, into nodes.
   for (auto& node_to_process : minibatch_) {
     FetchSingleNodeResult(&node_to_process);
@@ -2215,6 +2198,7 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
 // 6. Propagate the new nodes' information to all their parents in the tree.
 // ~~~~~~~~~~~~~~
 void SearchWorker::DoBackupUpdate() {
+  LCTRACE_FUNCTION_SCOPE;
   // Nodes mutex for doing node updates.
   SharedMutex::Lock lock(search_->nodes_mutex_);
 
@@ -2308,6 +2292,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
   }
   search_->total_playouts_ += node_to_process.multivisit;
+  if (node_to_process.nn_queried && !node_to_process.is_cache_hit) {
+    search_->network_evaluations_++;
+  }
   search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }
@@ -2384,6 +2371,7 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
 // 7. Update the Search's status and progress information.
 //~~~~~~~~~~~~~~~~~~~~
 void SearchWorker::UpdateCounters() {
+  LCTRACE_FUNCTION_SCOPE;
   search_->PopulateCommonIterationStats(&iteration_stats_);
   search_->MaybeTriggerStop(iteration_stats_, &latest_time_manager_hints_);
   search_->MaybeOutputInfo();

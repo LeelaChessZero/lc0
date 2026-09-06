@@ -2,7 +2,7 @@
 setlocal
 
 rem 1. Set the following for the options you want to build.
-set CUDNN=true
+set CUDNN=false
 set CUDA=true
 set DX12=false
 set OPENCL=false
@@ -11,15 +11,24 @@ set DNNL=false
 set OPENBLAS=false
 set EIGEN=false
 set TEST=false
+set CUTLASS=true
+
+if "%CUDA%"=="true" (
+  if not defined CUDA_PATH (
+    echo WARNING: CUDA_PATH environment variable not found. Using default value.
+  ) else (
+    echo CUDA_PATH found in system environment: "%CUDA_PATH%"
+  )
+)
 
 rem 2. Edit the paths for the build dependencies.
-set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.0
+if not defined CUDA_PATH set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9
 set CUDNN_PATH=%CUDA_PATH%
+set OPENCL_LIB_PATH=%CUDA_PATH%\lib\x64
+set OPENCL_INCLUDE_PATH=%CUDA_PATH%\include
 set OPENBLAS_PATH=C:\OpenBLAS
 set MKL_PATH=C:\Program Files (x86)\IntelSWTools\compilers_and_libraries\windows\mkl
 set DNNL_PATH=C:\dnnl_win_1.1.1_cpu_vcomp
-set OPENCL_LIB_PATH=%CUDA_PATH%\lib\x64
-set OPENCL_INCLUDE_PATH=%CUDA_PATH%\include
 
 rem 3. In most cases you won't need to change anything further down.
 echo Deleting build directory:
@@ -63,6 +72,7 @@ meson setup build --backend %backend% --buildtype release -Ddx=%DX12% -Dcudnn=%C
 -Dmkl_include="%MKL_PATH%\include" -Dmkl_libdirs="%MKL_PATH%\lib\intel64" -Ddnnl_dir="%DNNL_PATH%" ^
 -Dopencl_libdirs="%OPENCL_LIB_PATH%" -Dopencl_include="%OPENCL_INCLUDE_PATH%" ^
 -Dopenblas_include="%OPENBLAS_PATH%\include" -Dopenblas_libdirs="%OPENBLAS_PATH%\lib" ^
+-Dcutlass="%CUTLASS%" ^
 -Ddefault_library=static
 
 if errorlevel 1 exit /b

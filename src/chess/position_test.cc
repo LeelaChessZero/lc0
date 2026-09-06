@@ -51,7 +51,7 @@ TEST(Position, SetFenGetFen) {
     history.Reset(board, no_capture_ply,
                   2 * game_move - (board.flipped() ? 1 : 2));
     Position pos = history.Last();
-    std::string target_fen = GetFen(pos);
+    std::string target_fen = PositionToFen(pos);
     EXPECT_EQ(source_fens[i], target_fen);
   }
 }

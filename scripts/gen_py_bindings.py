@@ -55,7 +55,7 @@ weights.AddMethod('policy_format').AddRetVal(NumericRetVal('i'))
 weights.AddMethod('value_format').AddRetVal(NumericRetVal('i'))
 weights.AddMethod('moves_left_format').AddRetVal(NumericRetVal('i'))
 weights.AddMethod('blocks').AddRetVal(NumericRetVal('i'))
-weights.AddMethod('filters').AddRetVal(NumericRetVal('i'))
+weights.AddMethod('filters').AddRetVal(NumericRetVal('i')).AddEx(ex)
 
 # Input class
 input = mod.AddClass(Class('Input', cpp_name='lczero::python::Input'))

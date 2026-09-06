@@ -28,6 +28,7 @@
 #pragma once
 
 #include "trainingdata/trainingdata.h"
+#include "trainingdata/trainingdata_v7.h"
 
 namespace lczero {
 
@@ -38,6 +39,7 @@ namespace lczero {
 // will be used with DecodeMoveFromInput or PopulateBoard which assume the
 // InputPlanes are not transformed.
 InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
+InputPlanes PlanesFromTrainingData(const V7TrainingData& data);
 
 class TrainingDataReader {
  public:

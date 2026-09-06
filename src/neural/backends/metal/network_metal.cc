@@ -160,99 +160,30 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                     "' does not exist in this net.");
   }
 
-  auto embedding = static_cast<InputEmbedding>(file.format().network_format().input_embedding());
-  builder_->build(kInputPlanes, weights, embedding, attn_body, attn_policy_, conv_policy_,
-                  wdl_, moves_left_, activations, policy_head, value_head);
+  auto embedding = static_cast<InputEmbedding>(
+      file.format().network_format().input_embedding());
+  builder_->build(kInputPlanes, weights, embedding, attn_body, attn_policy_,
+                  conv_policy_, wdl_, moves_left_, activations, policy_head,
+                  value_head);
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
-  // Expand encoded input into N x 112 x 8 x 8.
-  float* dptr = &io->input_val_mem_expanded_[0];
-  for (size_t i = 0; i < batchSize; i++) {
-    for (size_t j = 0; j < kInputPlanes; j++) {
-      const float value = io->input_val_mem_[j + i * kInputPlanes];
-      const uint64_t mask = io->input_masks_mem_[j + i * kInputPlanes];
-      for (auto k = 0; k < 64; k++) {
-        *(dptr++) = (mask & (((uint64_t)1) << k)) != 0 ? value : 0;
-      }
-    }
-  }
-
   // Metal is not thread-safe, so lock is needed.
   lock_.lock();
 
-  if (attn_policy_ || conv_policy_) {
-    /**
-     * @todo policy map implementation has bug in MPSGraph (GatherND not working
-     * in graph). Implementation of policy map to be done in CPU for now.
-     *
-     * Remove this if-branch when bug is fixed. See comments above.
-     */
-
-    if (moves_left_) {
-      builder_->forwardEval(&io->input_val_mem_expanded_[0], batchSize,
-                            {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0],
-                             &io->op_moves_left_mem_[0]});
-    } else {
-      builder_->forwardEval(
-          &io->input_val_mem_expanded_[0], batchSize,
-          {&io->op_policy_raw_mem_[0], &io->op_value_mem_[0]});
-    }
-    // The next thread can start using the GPU now.
-    lock_.unlock();
-
-    if (attn_policy_) {
-      // Promotion offset calculation.
-      for (size_t batch = 0; batch < batchSize; batch++) {
-        for (int k = 0; k < 8; k++) {      // y in cuda
-          for (int j = 0; j < 8; j++) {    // w in cuda
-            for (int i = 0; i < 3; i++) {  // c in cuda
-              // Promotion offsets already precalculated and stored in GPU.
-              // Just the main policy offsets need to be added here.
-              io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + 64 * 64 +
-                                     24 * k + 3 * j + i] +=
-                  io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) +
-                                         (48 + k) * 64 + 56 + j];
-            }
-          }
-        }
-      }
-      // Mapping from attention policy to lc0 policy
-      for (size_t batch = 0; batch < batchSize; batch++) {
-        for (size_t i = 0; i < 64 * 64 + 8 * 24; i++) {
-          size_t j = kAttnPolicyMap[i];
-          if (j >= 0) {
-            io->op_policy_mem_[batch * 1858 + j] =
-                io->op_policy_raw_mem_[batch * (64 * 64 + 8 * 24) + i];
-          }
-        }
-      }
-    } else if (conv_policy_) {
-      // Mapping from convolutional policy to lc0 policy
-      for (size_t batch = 0; batch < batchSize; batch++) {
-        for (size_t i = 0; i < 73 * 64; i++) {
-          short j = kConvPolicyMap[i];
-          if (j >= 0) {
-            io->op_policy_mem_[batch * 1858 + j] =
-                io->op_policy_raw_mem_[batch * 80 * 64 + i];
-          }
-        }
-      }
-    }
-
+  if (moves_left_) {
+    builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
+                          batchSize,
+                          {&io->op_policy_mem_[0], &io->op_value_mem_[0],
+                           &io->op_moves_left_mem_[0]});
   } else {
-    if (moves_left_) {
-      builder_->forwardEval(&io->input_val_mem_expanded_[0], batchSize,
-                            {&io->op_policy_mem_[0], &io->op_value_mem_[0],
-                             &io->op_moves_left_mem_[0]});
-    } else {
-      builder_->forwardEval(&io->input_val_mem_expanded_[0], batchSize,
-                            {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
-    }
-
-    // The next thread can start using the GPU now.
-    lock_.unlock();
+    builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
+                          batchSize,
+                          {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
   }
+
+  // The next thread can start using the GPU now.
+  lock_.unlock();
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,

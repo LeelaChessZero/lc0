@@ -27,11 +27,13 @@
 
 #pragma once
 
+#include <cstdint>
 #include <list>
+#include <random>
 
 #include "chess/pgn.h"
 #include "neural/backend.h"
-#include "neural/factory.h"
+#include "neural/register.h"
 #include "selfplay/game.h"
 #include "selfplay/multigame.h"
 #include "utils/mutex.h"
@@ -43,9 +45,7 @@ namespace lczero {
 // Runs many selfplay games, possibly in parallel.
 class SelfPlayTournament {
  public:
-  SelfPlayTournament(const OptionsDict& options,
-                     CallbackUciResponder::BestMoveCallback best_move_info,
-                     CallbackUciResponder::ThinkingCallback thinking_info,
+  SelfPlayTournament(const OptionsDict& options, UciResponder* uci_responder,
                      GameInfo::Callback game_info,
                      TournamentInfo::Callback tournament_info);
 
@@ -71,6 +71,11 @@ class SelfPlayTournament {
   ~SelfPlayTournament();
 
  private:
+  // https://nuclear.llnl.gov/CNP/rng/rngman/node4.html
+  using OpeningRandomGenerator =
+      std::linear_congruential_engine<uint64_t, 2862933555777941757ULL,
+                                      3037000493ULL, 0>;
+
   void Worker();
   void PlayOneGame(int game_id);
   void PlayMultiGames(int game_id, size_t game_count);
@@ -85,6 +90,7 @@ class SelfPlayTournament {
   int games_count_ GUARDED_BY(mutex_) = 0;
   bool abort_ GUARDED_BY(mutex_) = false;
   std::vector<Opening> openings_ GUARDED_BY(mutex_);
+  OpeningRandomGenerator opening_random_ GUARDED_BY(mutex_);
   // Games in progress. Exposed here to be able to abort them in case if
   // Abort(). Stored as list and not vector so that threads can keep iterators
   // to them and not worry that it becomes invalid.
@@ -96,15 +102,12 @@ class SelfPlayTournament {
   Mutex threads_mutex_;
   std::vector<std::thread> threads_ GUARDED_BY(threads_mutex_);
 
-  // Map from the backend configuration to a network.
-  std::map<NetworkFactory::BackendConfiguration, std::unique_ptr<Backend>>
-      backends_;
   // [player1 or player2][white or black].
+  std::shared_ptr<Backend> backends_[2][2];
   const OptionsDict player_options_[2][2];
   SelfPlayLimits search_limits_[2][2];
 
-  CallbackUciResponder::BestMoveCallback best_move_callback_;
-  CallbackUciResponder::ThinkingCallback info_callback_;
+  UciResponder* uci_responder_;
   GameInfo::Callback game_callback_;
   TournamentInfo::Callback tournament_callback_;
   const int kTotalGames;

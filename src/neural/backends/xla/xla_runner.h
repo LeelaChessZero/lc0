@@ -34,8 +34,8 @@
 #include <vector>
 
 #include "neural/backends/xla/pjrt.h"
-#include "neural/xla/hlo.pb.h"
 #include "neural/xla/xla_tensor.h"
+#include "proto/hlo.pb.h"
 
 namespace lczero {
 
@@ -60,6 +60,7 @@ class XlaRunner {
   // Maximum supported batch size. It's expected that the capacity (not size) of
   // the input tensors would be able to fit this size.
   size_t GetMaxBatchSize() const;
+  size_t GetPreferredBatchStep() const;
 
  private:
   std::unique_ptr<PjrtClient> pjrt_client_;

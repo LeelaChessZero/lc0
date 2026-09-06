@@ -81,10 +81,10 @@ class XlaNetwork : public Network {
     return std::make_unique<XlaComputation>(this);
   }
   int GetMiniBatchSize() const override {
-    // 32 is the default prefetch size, subtract it so that backend doesn't
-    // crash.
-    // TODO make it better when we have a proper way to query the batch size.
-    return runner_->GetMaxBatchSize() - 32;
+    return runner_->GetMaxBatchSize();
+  }
+  int GetPreferredBatchStep() const override {
+    return runner_->GetPreferredBatchStep();
   }
 
  private:

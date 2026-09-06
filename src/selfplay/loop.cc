@@ -36,71 +36,34 @@
 namespace lczero {
 
 namespace {
-const OptionId kInteractiveId{
-    "interactive", "", "Run in interactive mode with UCI-like interface."};
-
 const OptionId kLogFileId{"logfile", "LogFile",
-  "Write log to that file. Special value <stderr> to "
-  "output the log to the console."};
+                          "Write log to that file. Special value <stderr> to "
+                          "output the log to the console."};
 }  // namespace
-
-
-SelfPlayLoop::SelfPlayLoop() {}
 
 SelfPlayLoop::~SelfPlayLoop() {
   if (tournament_) tournament_->Abort();
   if (thread_) thread_->join();
 }
 
-void SelfPlayLoop::RunLoop() {
+void SelfPlayLoop::Run() {
   SelfPlayTournament::PopulateOptions(&options_);
 
-  options_.Add<BoolOption>(kInteractiveId) = false;
   options_.Add<StringOption>(kLogFileId);
 
   if (!options_.ProcessAllFlags()) return;
-  
-  Logging::Get().SetFilename(options_.GetOptionsDict().Get<std::string>(kLogFileId));
 
-  if (options_.GetOptionsDict().Get<bool>(kInteractiveId)) {
-    UciLoop::RunLoop();
-  } else {
-    // Send id before starting tournament to allow wrapping client to know
-    // who we are.
-    SendId();
-    SelfPlayTournament tournament(
-        options_.GetOptionsDict(),
-        std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
-        std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
-        std::bind(&SelfPlayLoop::SendGameInfo, this, std::placeholders::_1),
-        std::bind(&SelfPlayLoop::SendTournament, this, std::placeholders::_1));
-    tournament.RunBlocking();
-  }
-}
+  Logging::Get().SetFilename(
+      options_.GetOptionsDict().Get<std::string>(kLogFileId));
 
-void SelfPlayLoop::CmdUci() {
-  SendId();
-  for (const auto& option : options_.ListOptionsUci()) {
-    SendResponse(option);
-  }
-  SendResponse("uciok");
-}
-
-void SelfPlayLoop::CmdStart() {
-  if (tournament_) return;
-  tournament_ = std::make_unique<SelfPlayTournament>(
-      options_.GetOptionsDict(),
-      std::bind(&UciLoop::SendBestMove, this, std::placeholders::_1),
-      std::bind(&UciLoop::SendInfo, this, std::placeholders::_1),
+  // Send id before starting tournament to allow wrapping client to know
+  // who we are.
+  uci_responder_->SendId();
+  SelfPlayTournament tournament(
+      options_.GetOptionsDict(), uci_responder_,
       std::bind(&SelfPlayLoop::SendGameInfo, this, std::placeholders::_1),
       std::bind(&SelfPlayLoop::SendTournament, this, std::placeholders::_1));
-  thread_ =
-      std::make_unique<std::thread>([this]() { tournament_->RunBlocking(); });
-}
-
-void SelfPlayLoop::CmdStop() {
-  tournament_->Stop();
-  tournament_->Wait();
+  tournament.RunBlocking();
 }
 
 void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
@@ -123,10 +86,9 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     res += " player1 " + std::string(*info.is_black ? "black" : "white");
   if (info.game_result != GameResult::UNDECIDED) {
     res += std::string(" result ") +
-           ((info.game_result == GameResult::DRAW)
-                ? "draw"
-                : (info.game_result == GameResult::WHITE_WON) ? "whitewon"
-                                                              : "blackwon");
+           ((info.game_result == GameResult::DRAW)        ? "draw"
+            : (info.game_result == GameResult::WHITE_WON) ? "whitewon"
+                                                          : "blackwon");
   }
   if (!info.moves.empty()) {
     res += " moves";
@@ -137,13 +99,7 @@ void SelfPlayLoop::SendGameInfo(const GameInfo& info) {
     res += " from_fen " + info.initial_fen;
   }
   responses.push_back(res);
-  SendResponses(responses);
-}
-
-void SelfPlayLoop::CmdSetOption(const std::string& name,
-                                const std::string& value,
-                                const std::string& context) {
-  options_.SetUciOption(name, value, context);
+  uci_responder_->SendRawResponses(responses);
 }
 
 void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
@@ -195,7 +151,7 @@ void SelfPlayLoop::SendTournament(const TournamentInfo& info) {
                                   info.move_count_);
   oss << " nodes " + std::to_string(info.nodes_total_);
   oss << " moves " + std::to_string(info.move_count_);
-  SendResponse(oss.str());
+  uci_responder_->SendRawResponse(oss.str());
 }
 
 }  // namespace lczero

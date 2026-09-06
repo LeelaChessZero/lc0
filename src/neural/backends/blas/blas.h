@@ -18,6 +18,13 @@
 
 #pragma once
 
+// clang-format off
+// math.h include is workaround for Eigen trying to use math functions from global
+// namespaces. math.h must be included before Eigen/Core.
+#include <math.h>
+#include <Eigen/Core>
+// clang-format on
+
 // Select the BLAS vendor based on defines
 
 #ifdef USE_MKL

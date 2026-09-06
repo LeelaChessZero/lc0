@@ -30,7 +30,7 @@
 #include <initializer_list>
 #include <string>
 
-#include "neural/onnx/onnx.pb.h"
+#include "proto/onnx.pb.h"
 
 namespace lczero {
 
@@ -45,7 +45,7 @@ class OnnxConst {
 // Builds Onnx::ModelProto.
 class OnnxBuilder {
  public:
-  OnnxBuilder(int opset);
+  OnnxBuilder(int opset, int ir = -1);
   void AddInput(const std::string& name, std::initializer_list<int> dims,
                 pblczero::TensorProto::DataType datatype);
   void AddOutput(const std::string& name, std::initializer_list<int> dims,
@@ -98,6 +98,8 @@ class OnnxBuilder {
   std::string Pad(const std::string& name, const std::string& input,
                   std::initializer_list<int> pads);
   std::string Selu(const std::string& name, const std::string& input);
+  std::string Elu(const std::string& name, const std::string& input,
+                  float alpha = 1.0);
   std::string Slice(const std::string& name, const std::string& input,
                     std::initializer_list<int> starts,
                     std::initializer_list<int> ends);

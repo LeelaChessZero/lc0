@@ -29,6 +29,7 @@
 
 #include <algorithm>
 
+#include "default_backend.h"
 #include "neural/shared_params.h"
 
 namespace lczero {
@@ -52,6 +53,12 @@ std::vector<std::string> BackendManager::GetBackendNames() const {
   std::transform(priority_and_names.begin(), priority_and_names.end(),
                  std::back_inserter(result),
                  [](const std::pair<int, std::string>& p) { return p.second; });
+#ifdef DEFAULT_BACKEND
+  std::string name = DEFAULT_BACKEND;
+  auto pos = std::find(result.begin(), result.end(), name);
+  if (pos == result.end()) throw Exception("Unknown backend: " + name);
+  std::rotate(result.begin(), pos, pos + 1);
+#endif
   return result;
 }
 
@@ -76,6 +83,17 @@ std::unique_ptr<Backend> BackendManager::CreateFromName(
   BackendFactory* factory = GetFactoryByName(name);
   if (!factory) throw Exception("Unknown backend: " + std::string(name));
   return factory->Create(options);
+}
+
+void BackendManager::RemoveBackend(const BackendFactory* factory) {
+  auto iter = std::find_if(algorithms_.begin(), algorithms_.end(),
+                           [factory](const std::unique_ptr<BackendFactory>& f) {
+                             return f.get() == factory;
+                           });
+  if (iter == algorithms_.end()) {
+    throw Exception("Attempt to remove unregistered backend");
+  }
+  algorithms_.erase(iter);
 }
 
 }  // namespace lczero

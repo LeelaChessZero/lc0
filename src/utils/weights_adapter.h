@@ -27,6 +27,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <iterator>
 #include <vector>
 
@@ -56,27 +57,28 @@ class LayerAdapter {
       return data_ != other.data_;
     }
     Iterator& operator++() {
-      ++data_;
+      data_ += adapter_->element_size_;
       return *this;
     }
     Iterator& operator--() {
-      --data_;
+      data_ -= adapter_->element_size_;
       return *this;
     }
     ptrdiff_t operator-(const Iterator& other) const {
-      return data_ - other.data_;
+      return (data_ - other.data_) / adapter_->element_size_;
     }
 
     // TODO(crem) implement other iterator functions when they are needed.
 
    private:
     friend class LayerAdapter;
-    Iterator(const LayerAdapter* adapter, const uint16_t* ptr)
+    Iterator(const LayerAdapter* adapter, const std::byte* ptr)
         : adapter_(adapter), data_(ptr) {}
-    static float ExtractValue(const uint16_t* ptr, const LayerAdapter* adapter);
+    static float ExtractValue(const std::byte* ptr,
+                              const LayerAdapter* adapter);
 
     const LayerAdapter* adapter_ = nullptr;
-    const uint16_t* data_ = nullptr;
+    const std::byte* data_ = nullptr;
   };
 
   LayerAdapter(const pblczero::Weights::Layer& layer);
@@ -84,13 +86,15 @@ class LayerAdapter {
   size_t size() const { return size_; }
   float operator[](size_t idx) const { return begin()[idx]; }
   Iterator begin() const { return {this, data_}; }
-  Iterator end() const { return {this, data_ + size_}; }
+  Iterator end() const { return {this, data_ + size_ * element_size_}; }
 
  private:
-  const uint16_t* data_ = nullptr;
+  const pblczero::Weights::Layer::Encoding encoding_;
+  const size_t element_size_ = 0;
+  const std::byte* data_ = nullptr;
   const size_t size_ = 0;
   const float min_;
-  const float range_;
+  const float max_;
 };
 
 }  // namespace lczero

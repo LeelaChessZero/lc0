@@ -43,6 +43,11 @@ option('cudnn_include',
        value: ['/opt/cuda/include/', '/usr/local/cuda/include/', '/usr/lib/cuda/include/'],
        description: 'Paths to cudnn include directory')
 
+option('cutlass_include',
+       type: 'string',
+       value: '',
+       description: 'Paths to cutlass include directory')
+
 option('build_backends',
        type: 'boolean',
        value: true,
@@ -68,6 +73,11 @@ option('native_cuda',
        value: true,
        description: 'build cuda code for native arch only (if supported)')
 
+option('native_arch',
+       type: 'boolean',
+       value: true, 
+       description: 'build code for native arch only')
+
 option('cudnn',
        type: 'boolean',
        value: false,
@@ -77,6 +87,16 @@ option('plain_cuda',
        type: 'boolean',
        value: true,
        description: 'Enable CUDA backend')
+
+option('hip',
+       type: 'boolean',
+       value: false,
+       description: 'Enable ROCm/HIP backend (lc0 CUDA kernels compiled with hipcc)')
+
+option('cutlass',
+       type: 'boolean',
+       value: true,
+       description: 'Enable cutlass lib for cuda backend. Only supports Ampere+ right now')
 
 option('opencl',
        type: 'boolean',
@@ -178,20 +198,52 @@ option('cc_cuda',
        value: '',
        description: 'Build for a specific cuda CC, e.g. -Dcc_cuda=35 for CC 3.5')
 
-option('onnx_libdir',
+option('amd_gfx',
        type: 'string',
        value: '',
+       description: 'Build for a specific AMD GPU architecture, e.g. -Damd_gfx=gfx90a for gfx90a')
+
+option('onnx',
+       type: 'boolean',
+       value: true,
+       description: 'Enable ONNX backends')
+
+option('onnx_libdir',
+       type: 'string',
+       value: '/usr/lib/',
        description: 'Paths to ONNX runtime libraries')
 
 option('onnx_include',
        type: 'string',
-       value: '',
+       value: '/usr/include/onnxruntime/',
        description: 'Paths to ONNX runtime includes')
 
 option('xla',
        type: 'boolean',
        value: false,
        description: 'Enable XLA backend')
+
+option('sycl',
+       type: 'combo',
+	   choices : ['off', 'l0', 'amd', 'nvidia'],
+       value: 'off',
+       description: 'Enable SYCL backend')
+
+option('hip_libdirs',
+       type: 'array',
+       value: ['/opt/rocm/lib'],
+       description: 'Paths to AMD HIP libraries')
+
+option('hip_include',
+       type: 'array',
+       value: ['/opt/rocm/include'],
+       description: 'Path to AMD HIP includes')
+
+option('trace_library',
+       type: 'combo',
+       choices: ['off', 'perfetto', 'nvtx'],
+       value: 'off',
+       description: 'Enable trace library support')
 
 option('lc0',
        type: 'boolean',
@@ -202,3 +254,23 @@ option('rescorer',
        type: 'boolean',
        value: false,
        description: 'Build rescorer')
+
+option('default_search',
+       type: 'string',
+       value: '',
+       description: 'Default search algorithm to use, e.g. -Ddefault_search=classic')
+
+option('default_backend',
+       type: 'string',
+       value: '',
+       description: 'Default backend to use, e.g. -Ddefault_backend=onnx-trt')
+
+option('dag_classic',
+       type: 'boolean',
+       value: true,
+       description: 'Enable dag-classic search algorithm')
+
+option('nvcc',
+       type: 'boolean',
+       value: true,
+       description: 'Use nvcc: required for cuda, optional for onnx')

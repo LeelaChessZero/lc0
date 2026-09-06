@@ -27,7 +27,7 @@
 
 #include "neural/shared_params.h"
 
-#include "neural/factory.h"
+#include "neural/register.h"
 
 namespace lczero {
 const OptionId SharedBackendParams::kPolicySoftmaxTemp{
@@ -35,23 +35,30 @@ const OptionId SharedBackendParams::kPolicySoftmaxTemp{
     "Policy softmax temperature. Higher values make priors of move candidates "
     "closer to each other, widening the search."};
 const OptionId SharedBackendParams::kHistoryFill{
-    "history-fill-new", "HistoryFill",
+    "history-fill", "HistoryFill",
     "Neural network uses 7 previous board positions in addition to the current "
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "
     "synthesize them (always, never, or only at non-standard fen position)."};
 const OptionId SharedBackendParams::kWeightsId{
-    "weights", "WeightsFile",
-    "Path from which to load network weights.\nSetting it to <autodiscover> "
-    "makes it search in ./ and ./weights/ subdirectories for the latest (by "
-    "file date) file which looks like weights.",
-    'w'};
-const OptionId SharedBackendParams::kBackendId{
-    "backend", "Backend", "Neural network computational backend to use.", 'b'};
+    {.long_flag = "weights",
+     .uci_option = "WeightsFile",
+     .help_text =
+         "Path from which to load network weights.\nSetting it to "
+         "<autodiscover> makes it search in ./ and ./weights/ subdirectories "
+         "for the latest (by file date) file which looks like weights.",
+     .short_flag = 'w',
+     .visibility = OptionId::kAlwaysVisible}};
+const OptionId SharedBackendParams::kBackendId{{
+    .long_flag = "backend",
+    .uci_option = "Backend",
+    .help_text = "Neural network computational backend to use.",
+    .short_flag = 'b',
+}};
 const OptionId SharedBackendParams::kBackendOptionsId{
     "backend-opts", "BackendOptions",
-    "Parameters of neural network backend. "
-    "Exact parameters differ per backend.",
+    "Parameters of neural network backend. Exact parameters differ per "
+    "backend.",
     'o'};
 const OptionId SharedBackendParams::kNNCacheSizeId{
     "nncache", "NNCacheSize",
@@ -68,7 +75,7 @@ void SharedBackendParams::Populate(OptionsParser* options) {
 #else
   options->Add<StringOption>(SharedBackendParams::kWeightsId) = kAutoDiscover;
 #endif
-  const auto backends = NetworkFactory::Get()->GetBackendsList();
+  const auto backends = BackendManager::Get()->GetBackendNames();
   options->Add<ChoiceOption>(SharedBackendParams::kBackendId, backends) =
       backends.empty() ? "<none>" : backends[0];
   options->Add<StringOption>(SharedBackendParams::kBackendOptionsId);

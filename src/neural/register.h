@@ -40,6 +40,8 @@ class BackendManager {
   void AddBackend(std::unique_ptr<BackendFactory> factory) {
     algorithms_.push_back(std::move(factory));
   }
+  // Removes the backend factory from the list. Currently only used in tests.
+  void RemoveBackend(const BackendFactory* factory);
 
   // Returns list of backend names, sorted by priority (higher priority first).
   std::vector<std::string> GetBackendNames() const;
@@ -69,9 +71,9 @@ class BackendManager {
   std::vector<std::unique_ptr<BackendFactory>> algorithms_;
 };
 
-#define REGISTER_BACKEND(factory)                   \
-  namespace {                                       \
-  static SearchFactory::Register reg29c93##factory( \
-      std::make_unique<factory>());                 \
+#define REGISTER_BACKEND(factory)                                    \
+  namespace {                                                        \
+  [[maybe_unused]] static SearchFactory::Register reg29c93##factory( \
+      std::make_unique<factory>());                                  \
   }
 }  // namespace lczero

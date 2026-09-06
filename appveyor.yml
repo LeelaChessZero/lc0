@@ -6,20 +6,24 @@ image:
 environment:
   matrix:
   - NAME: gpu-nvidia-cudnn
-  - NAME: gpu-nvidia-cuda
+  - NAME: gpu-nvidia-cuda12
 #  - NAME: gpu-dx12
 #  - NAME: gpu-opencl
   - NAME: cpu-dnnl
   - NAME: cpu-openblas
 #  - NAME: onednn
-  - NAME: onnx-dml
+  - NAME: onnx
   - NAME: android
+  - NAME: gpu-nvidia-cuda11
 for:
 -
   matrix:
     only:
+    - NAME: gpu-nvidia-cudnn
+    - NAME: gpu-nvidia-cuda11
 #    - NAME: gpu-opencl
     - NAME: cpu-dnnl
+    - NAME: cpu-openblas
   skip_non_tags: true
 clone_folder: c:\projects\lc0
 install:
@@ -29,20 +33,21 @@ install:
 - cmd: set OPENCL=false
 - cmd: set BLAS=false
 - cmd: set ONEDNN=false
-- cmd: set ONNX_DML=false
+- cmd: set ONNX=false
 - cmd: set GTEST=false
 - cmd: set ANDROID=false
 - cmd: IF %NAME%==android set ANDROID=true
 - cmd: IF %NAME%==gpu-nvidia-cudnn set CUDNN=true
 - cmd: IF %NAME%==gpu-nvidia-cudnn set CUDA=true
-- cmd: IF %NAME%==gpu-nvidia-cuda set CUDA=true
+- cmd: IF %NAME%==gpu-nvidia-cuda11 set CUDA=true
+- cmd: IF %NAME%==gpu-nvidia-cuda12 set CUDA=true
 - cmd: IF %NAME%==gpu-dx12 set DX=true
 - cmd: IF %NAME%==gpu-opencl set OPENCL=true
 - cmd: IF %NAME%==cpu-dnnl set BLAS=true
 - cmd: IF %NAME%==cpu-openblas set BLAS=true
-- cmd: IF %NAME%==cpu-openblas set GTEST=true
 - cmd: IF %NAME%==onednn set ONEDNN=true
-- cmd: IF %NAME%==onnx-dml set ONNX_DML=true
+- cmd: IF %NAME%==onnx set ONNX=true
+- cmd: IF %NAME%==onnx set GTEST=true
 - cmd: set NET=753723
 - cmd: set NET_HASH=3e3444370b9fe413244fdc79671a490e19b93d3cca1669710ffeac890493d198
 - cmd: IF NOT %OPENCL%==true IF NOT %DX%==true set NET=791556
@@ -54,9 +59,12 @@ install:
 - cmd: IF %NAME%==onednn set DNNL_NAME=dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp
 - cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% appveyor DownloadFile https://github.com/borg323/oneDNN/releases/download/v2.7.2/dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip
 - cmd: IF %NAME%==onednn IF NOT EXIST C:\cache\%DNNL_NAME% 7z x dnnl_win_2.7.2_cpu_vcomp_gpu_vcomp.zip -oC:\cache
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-dml-1.13.1 appveyor DownloadFile https://github.com/borg323/onnxruntime/releases/download/v1.13.1/onnxruntime-win-x64-dml-1.13.1.zip
-- cmd: IF %NAME%==onnx-dml IF NOT EXIST C:\cache\onnxruntime-win-x64-dml-1.13.1 7z x onnxruntime-win-x64-dml-1.13.1.zip -oC:\cache
-- cmd: IF %NAME%==onnx-dml set ONNX_NAME=onnxruntime-win-x64-dml-1.13.1
+- cmd: IF %NAME%==onnx set ONNX_NAME=onnxruntime-win-x64-dml-1.22.1
+- cmd: IF %NAME%==onnx set ONNX_NAME_TWO=onnxruntime-win-x64-gpu-1.22.1
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME% appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME% 7z x Microsoft.ML.OnnxRuntime.DirectML.1.22.1.nupkg -oC:\cache\%ONNX_NAME%
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME_TWO% appveyor DownloadFile https://github.com/microsoft/onnxruntime/releases/download/v1.22.1/onnxruntime-win-x64-gpu-1.22.1.zip
+- cmd: IF %NAME%==onnx IF NOT EXIST C:\cache\%ONNX_NAME_TWO% 7z x onnxruntime-win-x64-gpu-1.22.1.zip -oC:\cache
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS appveyor DownloadFile https://sjeng.org/ftp/OpenBLAS-0.3.3-win-oldthread.zip
 - cmd: IF %NAME%==cpu-openblas IF NOT EXIST C:\cache\OpenBLAS 7z x OpenBLAS-0.3.3-win-oldthread.zip -oC:\cache\OpenBLAS
 - cmd: IF %OPENCL%==true nuget install opencl-nug -Version 0.777.77 -OutputDirectory C:\cache
@@ -71,17 +79,37 @@ install:
 - cmd: IF DEFINED CUDNN_INSTALL cuda_10.1.243_win10_network -s nvcc_10.1 cublas_dev_10.1 cublas_10.1 cudart_10.1
 - cmd: IF DEFINED CUDNN_INSTALL appveyor DownloadFile https://developer.download.nvidia.com/compute/redist/cudnn/v7.5.1/cudnn-10.1-windows10-x64-v7.5.1.10.zip
 - cmd: IF DEFINED CUDNN_INSTALL 7z x cudnn-10.1-windows10-x64-v7.5.1.10.zip -o"%CUDA_PATH%"
-- cmd: IF %CUDNN%==false set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1"
+- cmd: IF %NAME%==gpu-nvidia-cuda11 set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1"
+- cmd: IF %NAME%==gpu-nvidia-cuda12 set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+- cmd: IF %NAME%==onnx set "CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
 - cmd: IF %CUDA%==true IF NOT EXIST "%CUDA_PATH%" set CUDA_INSTALL=1
-- cmd: IF DEFINED CUDA_INSTALL appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/11.1.0/network_installers/cuda_11.1.0_win10_network.exe
-- cmd: IF DEFINED CUDA_INSTALL cuda_11.1.0_win10_network.exe -s nvcc_11.1 cublas_dev_11.1 cublas_11.1 cudart_11.1 documentation_11.1
+- cmd: IF %ONNX%==true IF NOT EXIST "%CUDA_PATH%" set CUDA_INSTALL=1
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda11 appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/11.1.0/network_installers/cuda_11.1.0_win10_network.exe
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda11 cuda_11.1.0_win10_network.exe -s nvcc_11.1 cublas_dev_11.1 cublas_11.1 curand_dev_11.1 cudart_11.1 documentation_11.1
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda12 appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/12.9.0/network_installers/cuda_12.9.0_windows_network.exe
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==gpu-nvidia-cuda12 cuda_12.9.0_windows_network.exe -s nvcc_12.9 cublas_dev_12.9 cublas_12.9 curand_dev_12.9 cudart_12.9 documentation_12.9
+- cmd: IF %NAME%==gpu-nvidia-cuda12 IF NOT EXIST C:\cache\cutlass-4.4.1 appveyor DownloadFile https://github.com/NVIDIA/cutlass/archive/refs/tags/v4.4.1.zip
+- cmd: IF %NAME%==gpu-nvidia-cuda12 IF NOT EXIST C:\cache\cutlass-4.4.1 7z x v4.4.1.zip -oC:\cache\
+- cmd: IF %NAME%==gpu-nvidia-cuda11 IF NOT EXIST C:\cache\cutlass-4.4.1 appveyor DownloadFile https://github.com/NVIDIA/cutlass/archive/refs/tags/v4.4.1.zip
+- cmd: IF %NAME%==gpu-nvidia-cuda11 IF NOT EXIST C:\cache\cutlass-4.4.1 7z x v4.4.1.zip -oC:\cache\
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==onnx appveyor DownloadFile https://developer.download.nvidia.com/compute/cuda/12.9.0/network_installers/cuda_12.9.0_windows_network.exe
+- cmd: IF DEFINED CUDA_INSTALL IF %NAME%==onnx cuda_12.9.0_windows_network.exe -s nvcc_12.9 cudart_12.9
 - cmd: IF %CUDA%==true set PATH=%CUDA_PATH%\bin;%PATH%
+- cmd: IF %ONNX%==true set PATH=%CUDA_PATH%\bin;%PATH%
 - cmd: set PATH=C:\Python310;C:\Python310\scripts;%PATH%
 #- cmd: pip3 install --upgrade meson==0.55.3
 - cmd: set MIMALLOC_PATH=C:\cache\mimalloc-1.8.7
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" appveyor DownloadFile https://github.com/microsoft/mimalloc/archive/refs/tags/v1.8.7.zip
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%" 7z x v1.8.7.zip -oC:\cache\
 - cmd: IF %ANDROID%==false IF NOT EXIST "%MIMALLOC_PATH%"\out msbuild "%MIMALLOC_PATH%"\ide\vs2019\mimalloc-override.vcxproj /p:Configuration=Release /m
+- cmd: set ABSEIL_PATH=C:\cache\abseil-cpp-20250814.1
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" appveyor DownloadFile https://github.com/abseil/abseil-cpp/archive/refs/tags/20250814.1.zip
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" 7z x 20250814.1.zip -o.
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cd abseil-cpp-20250814.1
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" mkdir build
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cd build
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cmake -DCMAKE_CXX_STANDARD=20 -DCMAKE_INSTALL_PREFIX="%ABSEIL_PATH%" ..
+- cmd: IF %ANDROID%==false IF NOT EXIST "%ABSEIL_PATH%" cmake --build . --target INSTALL --config Release
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64 appveyor DownloadFile https://dl.google.com/android/repository/android-ndk-r27c-windows.zip
 - cmd: IF %NAME%==android IF NOT EXIST C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64 7z x android-ndk-r27c-windows.zip -oC:\ndk
 - cmd: IF %NAME%==android set PATH=C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64\bin;%PATH%
@@ -107,11 +135,11 @@ install:
 cache:
   - C:\cache
   - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v10.1'
-  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1'
+  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.1 -> appveyor.yml'
+  - 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9'
   - C:\projects\lc0\subprojects\packagecache
   - C:\ndk\android-ndk-r27c\toolchains\llvm\prebuilt\windows-x86_64
 before_build:
-- cmd: git submodule update --init --recursive
 - cmd: IF %BLAS%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: IF %ANDROID%==true (echo.#define DEFAULT_MAX_PREFETCH 0 & echo.#define DEFAULT_TASK_WORKERS 0) > params_override.h
 - cmd: SET BUILD_BLAS=%BLAS%
@@ -126,8 +154,10 @@ before_build:
 - cmd: IF %CUDA%==true SET F16C=false
 - cmd: SET EXTRA=
 - cmd: IF %ANDROID%==false SET EXTRA=-Db_vscrt=md
-- cmd: IF %ONNX_DML%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\lib -Donnx_include=C:\cache\%ONNX_NAME%\include
-- cmd: IF %ANDROID%==false meson build --backend vs2019 --buildtype release -Dgtest=%GTEST% -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release %EXTRA%
+- cmd: IF %ONNX%==true SET EXTRA=-Db_vscrt=md -Donnx_libdir=C:\cache\%ONNX_NAME%\runtimes\win-x64\native\ -Donnx_include=C:\cache\%ONNX_NAME%\build\native\include -Ddefault_backend=onnx-trt -Dplain_cuda=false
+- cmd: IF %NAME%==gpu-nvidia-cuda12 SET EXTRA=-Db_vscrt=md -Dcutlass=true -Dcutlass_include=C:\cache\cutlass-4.4.1\include
+- cmd: IF %NAME%==gpu-nvidia-cuda11 SET EXTRA=-Db_vscrt=md -Dcutlass=true -Dcutlass_include=C:\cache\cutlass-4.4.1\include
+- cmd: IF %ANDROID%==false meson build --backend vs2019 --buildtype release -Dgtest=false -Dopencl=%OPENCL% -Dblas=%BUILD_BLAS% -Ddnnl=true -Ddx=%DX% -Dcudnn=%CUDNN% -Donednn=%ONEDNN% -Dispc_native_only=false -Dnative_cuda=false -Dpopcnt=%POPCNT% -Df16c=%F16C% -Dcudnn_include="%CUDA_PATH%\include","%CUDA_PATH%\cuda\include" -Dcudnn_libdirs="%CUDA_PATH%\lib\x64","%CUDA_PATH%\cuda\lib\x64" -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\dist64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\dist64\lib" -Ddnnl_dir="%PKG_FOLDER%\%DNNL_NAME%" -Dopencl_include="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\include" -Dopencl_libdirs="%PKG_FOLDER%\opencl-nug.0.777.77\build\native\lib\x64" -Ddefault_library=static -Dmalloc=mimalloc -Dmimalloc_libdir="%MIMALLOC_PATH%"\out\msvc-x64\Release --cmake-prefix-path="%ABSEIL_PATH%"\lib\cmake %EXTRA%
 - cmd: IF %ANDROID%==true meson arm64-v8a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-aarch64\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-aarch64\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-aarch64
 - cmd: IF %ANDROID%==true meson armeabi-v7a --buildtype release -Dgtest=false -Dopenblas_include="%PKG_FOLDER%\OpenBLAS\android-armv7a\include" -Dopenblas_libdirs="%PKG_FOLDER%\OpenBLAS\android-armv7a\lib" -Dembed=%EMBED% -Ddefault_library=static --cross-file crossfile-armv7a -Dispc=false -Dneon=false
 build_script:
@@ -139,7 +169,7 @@ after_build:
 - cmd: IF %APPVEYOR_REPO_TAG%==true IF %ANDROID%==true call scripts\appveyor_android_package.cmd
 - cmd: cd C:\projects\lc0
 artifacts:
-  - path: build/lc0.exe
+  - path: /build/lc0*.exe/
     name: lc0-$(NAME)
   - path: arm64-v8a/lc0
     name: lc0-android-arm64-v8a
@@ -169,6 +199,7 @@ deploy:
 test_script:
 - cmd: IF %GTEST%==true cd build
 - cmd: IF %GTEST%==true xcopy /s /i C:\cache\syzygy syzygy
+- cmd: IF %GTEST%==true IF %ONNX%==true copy %PKG_FOLDER%\%ONNX_NAME%\runtimes\win-x64\native\onnxruntime.dll
 - cmd: IF %GTEST%==true meson test --print-errorlogs
 - cmd: cd C:\projects\lc0
 on_finish:

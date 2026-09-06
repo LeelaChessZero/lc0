@@ -44,15 +44,19 @@ class OptionsParser {
   class Option {
    public:
     Option(const OptionId& id);
-    virtual ~Option(){};
+    virtual ~Option() {};
     // Set value from string.
     virtual void SetValue(const std::string& value, OptionsDict* dict) = 0;
 
    protected:
     const OptionId& GetId() const { return id_; }
-    std::string GetUciOption() const { return id_.uci_option(); }
+    std::string GetUciOption() const {
+      return id_.uci_option() ? id_.uci_option() : "";
+    }
     std::string GetHelpText() const { return id_.help_text(); }
-    std::string GetLongFlag() const { return id_.long_flag(); }
+    std::string GetLongFlag() const {
+      return id_.long_flag() ? id_.long_flag() : "";
+    }
     char GetShortFlag() const { return id_.short_flag(); }
 
    private:
@@ -73,7 +77,6 @@ class OptionsParser {
     virtual std::string GetHelp(const OptionsDict& dict) const = 0;
 
     const OptionId& id_;
-    bool hidden_ = false;
     friend class OptionsParser;
   };
 
@@ -95,12 +98,6 @@ class OptionsParser {
   // Set the UCI option from string value.
   void SetUciOption(const std::string& name, const std::string& value,
                     const std::string& context = "");
-  // Hide this option from help and UCI.
-  void HideOption(const OptionId& id);
-  // Hide all options defined so far from help and UCI.
-  void HideAllOptions();
-  // Make this option visible from help and UCI.
-  void UnhideOption(const OptionId& id);
   // Processes all flags from the command line and an optional
   // configuration file. Returns false if there is an invalid flag.
   bool ProcessAllFlags();
@@ -119,8 +116,6 @@ class OptionsParser {
   void ShowHelp() const;
 
  private:
-  // Make all hidden options visible.
-  void ShowHidden() const;
   // Returns an option based on the long flag.
   Option* FindOptionByLongFlag(const std::string& flag) const;
   // Returns an option based by its uci name.
@@ -131,6 +126,7 @@ class OptionsParser {
   std::vector<std::unique_ptr<Option>> options_;
   OptionsDict defaults_;
   OptionsDict& values_;
+  OptionId::VisibilityMode visibility_mode_ = OptionId::kNormalMode;
 };
 
 class StringOption : public OptionsParser::Option {

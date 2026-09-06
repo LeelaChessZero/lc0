@@ -27,6 +27,7 @@
 
 #include "optionsparser.h"
 
+#include <charconv>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -35,12 +36,6 @@
 #include "utils/configfile.h"
 #include "utils/logging.h"
 #include "utils/string.h"
-
-#if __has_include(<charconv>)
-#include <charconv>
-#else
-#define NO_CHARCONV
-#endif
 
 namespace lczero {
 namespace {
@@ -56,7 +51,8 @@ OptionsParser::OptionsParser() : values_(*defaults_.AddSubdict("values")) {}
 std::vector<std::string> OptionsParser::ListOptionsUci() const {
   std::vector<std::string> result;
   for (const auto& iter : options_) {
-    if (!iter->GetUciOption().empty() && !iter->hidden_) {
+    if (!iter->GetUciOption().empty() &&
+        (iter->GetId().visibility_mask() & visibility_mode_)) {
       result.emplace_back("option name " + iter->GetUciOption() + " " +
                           iter->GetOptionString(values_));
     }
@@ -73,22 +69,6 @@ void OptionsParser::SetUciOption(const std::string& name,
     return;
   }
   throw Exception("Unknown option: " + name);
-}
-
-void OptionsParser::HideOption(const OptionId& id) {
-  const auto option = FindOptionById(id);
-  if (option) option->hidden_ = true;
-}
-
-void OptionsParser::HideAllOptions() {
-  for (const auto& option : options_) {
-    option->hidden_ = true;
-  }
-}
-
-void OptionsParser::UnhideOption(const OptionId& id) {
-  const auto option = FindOptionById(id);
-  if (option) option->hidden_ = false;
 }
 
 OptionsParser::Option* OptionsParser::FindOptionByLongFlag(
@@ -140,13 +120,15 @@ bool OptionsParser::ProcessAllFlags() {
 
 bool OptionsParser::ProcessFlags(const std::vector<std::string>& args) {
   auto show_help = false;
-  if (CommandLine::BinaryName().find("pro") != std::string::npos) {
-    ShowHidden();
+  if (CommandLine::BinaryName().find("simple") != std::string::npos) {
+    visibility_mode_ = OptionId::kSimpleMode;
+  } else if (CommandLine::BinaryName().find("pro") != std::string::npos) {
+    visibility_mode_ = OptionId::kProMode;
   }
   for (auto iter = args.begin(), end = args.end(); iter != end; ++iter) {
     std::string param = *iter;
     if (param == "--show-hidden") {
-      ShowHidden();
+      visibility_mode_ = OptionId::kProMode;
       continue;
     }
     if (param == "-h" || param == "--help") {
@@ -288,7 +270,9 @@ void OptionsParser::ShowHelp() const {
   std::cout << FormatFlag('\0', "show-hidden",
                           "Show hidden options. Use with --help.");
   for (const auto& option : options_) {
-    if (!option->hidden_) std::cout << option->GetHelp(defaults_);
+    if ((option->GetId().visibility_mask() & visibility_mode_)) {
+      std::cout << option->GetHelp(values_);
+    }
   }
 
   auto contexts = values_.ListSubdicts();
@@ -298,10 +282,6 @@ void OptionsParser::ShowHelp() const {
     std::cout << "       --" << contexts[0] << '.'
               << options_.back()->GetLongFlag() << "=(value)\n";
   }
-}
-
-void OptionsParser::ShowHidden() const {
-  for (const auto& option : options_) option->hidden_ = false;
 }
 
 /////////////////////////////////////////////////////////////////
@@ -414,7 +394,6 @@ void IntOption::SetVal(OptionsDict* dict, const ValueType& val) const {
   dict->Set<ValueType>(GetId(), val);
 }
 
-#ifndef NO_CHARCONV
 int IntOption::ValidateIntString(const std::string& val) const {
   int result;
   const auto end = val.data() + val.size();
@@ -429,20 +408,6 @@ int IntOption::ValidateIntString(const std::string& val) const {
     return result;
   }
 }
-#else
-int IntOption::ValidateIntString(const std::string& val) const {
-  char* end;
-  errno = 0;
-  int result = std::strtol(val.c_str(), &end, 10);
-  if (errno == ERANGE) {
-    throw Exception("Flag '--" + GetLongFlag() + "' is out of range.");
-  } else if (val.length() == 0 || *end != '\0') {
-    throw Exception("Flag '--" + GetLongFlag() + "' value is invalid.");
-  } else {
-    return result;
-  }
-}
-#endif
 
 /////////////////////////////////////////////////////////////////
 // FloatOption

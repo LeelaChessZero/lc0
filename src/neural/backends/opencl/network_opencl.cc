@@ -231,7 +231,7 @@ void OpenCLComputation::EncodePlanes(const InputPlanes& sample, float* buffer) {
 
 class OpenCLNetwork : public Network {
  public:
-  virtual ~OpenCLNetwork(){};
+  virtual ~OpenCLNetwork() {};
 
   OpenCLNetwork(const WeightsFile& file, const OptionsDict& options)
       : capabilities_{file.format().network_format().input(),
@@ -247,15 +247,15 @@ class OpenCLNetwork : public Network {
     params_.tune_only = options.GetOrDefault<bool>("tune_only", false);
     params_.tune_exhaustive =
         options.GetOrDefault<bool>("tune_exhaustive", false);
-    if (options.IsDefault<std::string>("tuner_file")) {
+    if (options.Exists<std::string>("tuner_file")) {
+      params_.tuner_file = options.Get<std::string>("tuner_file");
+    } else {
       std::string user_cache_path = GetUserCacheDirectory();
       if (!user_cache_path.empty()) {
         user_cache_path += "lc0/";
         CreateDirectory(user_cache_path);
       }
       params_.tuner_file = user_cache_path + "leelaz_opencl_tuning";
-    } else {
-      params_.tuner_file = options.Get<std::string>("tuner_file");
     }
 
     wdl_ = file.format().network_format().output() ==

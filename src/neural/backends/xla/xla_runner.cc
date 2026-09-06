@@ -170,6 +170,7 @@ void XlaRunner::SetFrozenInputs(
 }
 
 size_t XlaRunner::GetMaxBatchSize() const { return executables_.back().first; }
+size_t XlaRunner::GetPreferredBatchStep() const { return executables_.front().first; }
 
 std::vector<std::unique_ptr<XlaMutableTensor>> XlaRunner::ExecuteBlocking(
     const std::vector<XlaMutableTensor*>& inputs) {

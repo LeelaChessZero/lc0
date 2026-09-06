@@ -9,24 +9,26 @@ jobs:
           name: Install build tools
           command: |
             apt-get update
-            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev
+            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev wget
             pip3 install meson==0.63
             pip3 install ninja
       - run:
-          name: "Pull Submodules"
-          command: git submodule update --init
+          name: Install onnxruntime
+          command: |
+            wget https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz -P /tmp
+            tar xzf /tmp/onnxruntime-linux-x64-1.22.0.tgz -C /tmp
       - run:
           name: Meson GCC
           environment:
             CC: gcc-10
             CXX: g++-10
-          command: meson build-gcc -Dgtest=false
+          command: meson build-gcc -Dgtest=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
       - run:
           name: Meson Clang
           environment:
             CC: clang-12
             CXX: clang++-12
-          command: meson build-clang -Dgtest=false
+          command: meson build-clang -Dgtest=false -Db_lto=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
       - run:
           name: Build GCC
           command: |
@@ -39,13 +41,9 @@ jobs:
             ninja -j 4
   "mac":
     macos:
-      xcode: 14.1.0
-    resource_class: macos.m1.medium.gen1
+      xcode: 14.3.1
     steps:
       - checkout
-      - run:
-          name: "Pull Submodules"
-          command: git submodule update --init
       - run:
           name: Install build tools
           command: |
@@ -71,10 +69,68 @@ jobs:
           command: lipo -create -o /tmp/lc0 build/lc0 build-arm/lc0
       - store_artifacts:
           path: /tmp/lc0
-          destination: lc0-macos_12.6.1
+          destination: lc0-macos_13.2.1
+      - run:
+          name: Prepare Workspace
+          command: |
+            mkdir -p workspace
+            mv /tmp/lc0 workspace
+      - persist_to_workspace:
+          root: workspace
+          paths: 
+            - lc0
+  "mac latest":
+    macos:
+      xcode: 26.1.0
+    steps:
+      - checkout
+      - run:
+          name: Install build tools
+          command: |
+            pip3 install meson
+            pip3 install ninja
+      - run:
+          name: Build lc0 arm
+          command: |
+            meson build-arm --buildtype=release -Dgtest=false -Dopencl=false
+            cd build-arm
+            ninja
+  "upload-github-release":
+    macos:
+      xcode: 14.3.1
+    steps:
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: Install GitHub CLI
+          command: brew install gh
+      - run:
+          name: Verify Workspace
+          command: |
+            ls -lah /tmp/workspace
+      - run:
+          name: Upload to GitHub Release
+          command: |
+            mv /tmp/workspace/lc0 /tmp/lc0-$CIRCLE_TAG-macos_13.2.1
+            gh release upload \
+              "$CIRCLE_TAG" \
+              /tmp/lc0-$CIRCLE_TAG-macos_13.2.1 \
+              --clobber --repo LeelaChessZero/lc0
 workflows:
   version: 2
   builds:
     jobs:
       - build
-      - "mac"
+      - "mac":
+          filters:
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*(\-.+)?/
+      - "mac latest"
+      - "upload-github-release":
+          requires:
+            - "mac"
+          filters:
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*(\-.+)?/
+            branches:
+              ignore: /.*/

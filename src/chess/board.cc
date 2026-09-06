@@ -34,6 +34,7 @@
 #include <cstring>
 #include <sstream>
 #include <utility>
+#include <absl/cleanup/cleanup.h>
 
 #include "utils/exception.h"
 
@@ -573,8 +574,36 @@ MoveList ChessBoard::GeneratePseudolegalMoves() const {
   return result;
 }  // namespace lczero
 
+bool ChessBoard::IsValid() const {
+  const auto all = ours() | theirs();
+  auto check = all | pawns() | bishops() | rooks() | queens() | kings();
+  if (check != all ||
+      (pawns() & bishops()).as_int() ||
+      (pawns() & rooks()).as_int() ||
+      (pawns() & queens()).as_int() ||
+      (pawns() & kings()).as_int() ||
+      (bishops() & rooks()).as_int() ||
+      (bishops() & queens()).as_int() ||
+      (bishops() & kings()).as_int() ||
+      (rooks() & queens()).as_int() ||
+      (rooks() & kings()).as_int() ||
+      (queens() & kings()).as_int()) {
+    return false;
+  }
+  return true;
+}
+
 bool ChessBoard::ApplyMove(Move move) {
   assert(our_pieces_.intersects(BitBoard::FromSquare(move.from())));
+#ifndef NDEBUG
+  absl::Cleanup validate = [&] {
+    if (!IsValid()) {
+      CERR << "Move " + move.ToString(true) +
+                  " resulted in invalid board: " + DebugString();
+      assert(false);
+    }
+  };
+#endif
   const Square& from = move.from();
   const Square& to = move.to();
   const Rank from_rank = from.rank();
@@ -1113,52 +1142,9 @@ bool ChessBoard::HasMatingMaterial() const {
 }
 
 std::string ChessBoard::DebugString() const {
-  std::string result;
-  for (int i = 7; i >= 0; --i) {
-    for (int j = 0; j < 8; ++j) {
-      File file = File::FromIdx(j);
-      Square square(file, Rank::FromIdx(i));
-      if (!our_pieces_.get(square) && !their_pieces_.get(square)) {
-        if (i == 2 && pawns_.get(Square(file, kRank1)))
-          result += '*';
-        else if (i == 5 && pawns_.get(Square(file, kRank8)))
-          result += '*';
-        else
-          result += '.';
-        continue;
-      }
-      if (our_king_ == square) {
-        result += 'K';
-        continue;
-      }
-      if (their_king_ == square) {
-        result += 'k';
-        continue;
-      }
-      char c = '?';
-      if ((pawns_ & kPawnMask).get(square)) {
-        c = 'p';
-      } else if (bishops_.get(square)) {
-        if (rooks_.get(square))
-          c = 'q';
-        else
-          c = 'b';
-      } else if (rooks_.get(square)) {
-        c = 'r';
-      } else {
-        c = 'n';
-      }
-      if (our_pieces_.get(square)) c = std::toupper(c);
-      result += c;
-    }
-    if (i == 0) {
-      result += " " + castlings_.DebugString();
-      result += flipped_ ? " (from black's eyes)" : " (from white's eyes)";
-      result += " Hash: " + std::to_string(Hash());
-    }
-    result += '\n';
-  }
-  return result;
+  auto fen = BoardToFen(*this);
+  std::replace(fen.begin(), fen.end(), ' ', '_');
+  return "https://lc0.org/fen/" + fen;
 }
 
 Move ChessBoard::ParseMove(std::string_view move_str) const {
@@ -1205,11 +1191,69 @@ Move ChessBoard::ParseMove(std::string_view move_str) const {
     // Qeenside castling.
     return Move::WhiteCastling(from.file(), kFileA);
   }
-  if (from.file() != to.file() && pawns_.get(from) && !their_pieces_.get(to)) {
+  if (from.file() != to.file() && pawns().get(from) && !their_pieces_.get(to)) {
     // En passant.
     return Move::WhiteEnPassant(from, to);
   }
   return Move::White(from, to);
+}
+
+namespace {
+char GetPieceAt(const lczero::ChessBoard& board, Square square) {
+  char c = '\0';
+  if (board.ours().get(square) || board.theirs().get(square)) {
+    if (board.pawns().get(square)) {
+      c = 'P';
+    } else if (board.kings().get(square)) {
+      c = 'K';
+    } else if (board.bishops().get(square)) {
+      c = 'B';
+    } else if (board.queens().get(square)) {
+      c = 'Q';
+    } else if (board.rooks().get(square)) {
+      c = 'R';
+    } else {
+      c = 'N';
+    }
+    if (board.theirs().get(square)) {
+      c = std::tolower(c);  // Capitals are for white.
+    }
+  }
+  return c;
+}
+
+}  // namespace
+
+std::string BoardToFen(const ChessBoard& in_board) {
+  ChessBoard board(in_board);
+  const bool black_to_move = board.flipped();
+  if (black_to_move) board.Mirror();
+  std::string result;
+  for (Rank rank = kRank8; rank.IsValid(); --rank) {
+    int empty = 0;
+    for (File file = kFileA; file <= kFileH; ++file) {
+      Square square(file, rank);
+      char piece = GetPieceAt(board, square);
+      if (piece) {
+        if (empty) result += std::to_string(empty);
+        empty = 0;
+        result += piece;
+      } else {
+        ++empty;
+      }
+    }
+    if (empty) result += std::to_string(empty);
+    if (rank != kRank1) result += '/';
+  }
+  result += black_to_move ? " b" : " w";
+  result += " " + board.castlings().as_string();
+  std::string ep = "-";
+  if (!board.en_passant().empty()) {
+    const Square sq = *board.en_passant().begin();
+    ep = Square(sq.file(), black_to_move ? kRank3 : kRank6).ToString(false);
+  }
+  result += " " + ep;
+  return result;
 }
 
 }  // namespace lczero

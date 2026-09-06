@@ -26,8 +26,8 @@
 */
 
 #include "chess/board.h"
+#include "default_search.h"
 #include "engine.h"
-#include "engine_classic.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
@@ -38,9 +38,46 @@
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/logging.h"
+#include "utils/trace.h"
 #include "version.h"
 
+namespace lczero {
+void ChooseAndRunEngine() {
+  // First try the engine which is explicitly specified on the command line.
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (CommandLine::ConsumeCommand(search_name)) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Then if DEFAULT_SEARCH is defined, run the engine specified by it.
+#ifdef DEFAULT_SEARCH
+  SearchFactory* factory =
+      SearchManager::Get()->GetFactoryByName(DEFAULT_SEARCH);
+  if (!factory) throw Exception("Unknown search algorithm: " DEFAULT_SEARCH);
+  RunEngine(factory);
+  return;
+#endif
+
+  // Then try to run the engine which is specified by the name of the binary.
+  const std::string& binary_name = CommandLine::BinaryName();
+  for (const std::string_view search_name :
+       SearchManager::Get()->GetSearchNames()) {
+    if (binary_name.find(search_name) != std::string::npos) {
+      RunEngine(SearchManager::Get()->GetFactoryByName(search_name));
+      return;
+    }
+  }
+
+  // Finally, run "classic" search through the new API.
+  RunEngine(SearchManager::Get()->GetFactoryByName("classic"));
+}
+}  // namespace lczero
+
 int main(int argc, const char** argv) {
+  LCTRACE_INITIALIZE;
   using namespace lczero;
   EscCodes::Init();
   LOGFILE << "Lc0 started.";
@@ -53,18 +90,18 @@ int main(int argc, const char** argv) {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
-    CommandLine::RegisterMode("uci", "(default) Act as UCI engine");
-    CommandLine::RegisterMode("selfplay", "Play games with itself");
-    CommandLine::RegisterMode("benchmark", "Quick benchmark");
-    CommandLine::RegisterMode("bench", "Very quick benchmark");
-    CommandLine::RegisterMode("backendbench",
-                              "Quick benchmark of backend only");
-    CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
-    CommandLine::RegisterMode("onnx2leela",
-                              "Convert ONNX network to Leela net.");
-    CommandLine::RegisterMode("describenet",
-                              "Shows details about the Leela network.");
-
+    if (CommandLine::BinaryName().find("simple") == std::string::npos) {
+      CommandLine::RegisterMode("selfplay", "Play games with itself");
+      CommandLine::RegisterMode("benchmark", "Quick benchmark");
+      CommandLine::RegisterMode("bench", "Very quick benchmark");
+      CommandLine::RegisterMode("backendbench",
+                                "Quick benchmark of backend only");
+      CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
+      CommandLine::RegisterMode("onnx2leela",
+                                "Convert ONNX network to Leela net.");
+      CommandLine::RegisterMode("describenet",
+                                "Shows details about the Leela network.");
+    }
     for (const std::string_view search_name :
          SearchManager::Get()->GetSearchNames()) {
       CommandLine::RegisterMode(
@@ -74,8 +111,9 @@ int main(int argc, const char** argv) {
 
     if (CommandLine::ConsumeCommand("selfplay")) {
       // Selfplay mode.
-      SelfPlayLoop loop;
-      loop.RunLoop();
+      StdoutUciResponder uci_responder;
+      SelfPlayLoop loop(&uci_responder);
+      loop.Run();
     } else if (CommandLine::ConsumeCommand("benchmark")) {
       // Benchmark mode, longer version.
       Benchmark benchmark;
@@ -95,38 +133,7 @@ int main(int argc, const char** argv) {
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
     } else {
-      auto options_parser = std::make_unique<OptionsParser>();
-
-      bool used_new_search = false;
-      for (const std::string_view search_name :
-           SearchManager::Get()->GetSearchNames()) {
-        if (CommandLine::ConsumeCommand(search_name)) {
-          used_new_search = true;
-          SearchFactory* factory =
-              SearchManager::Get()->GetFactoryByName(search_name);
-          factory->PopulateParams(options_parser.get());
-          EngineLoop loop(
-              std::move(options_parser), [factory](UciResponder& uci_responder,
-                                                   const OptionsDict& options) {
-                return std::make_unique<Engine>(
-                    factory->CreateSearch(&uci_responder, &options), options);
-              });
-          loop.RunLoop();
-        }
-      }
-
-      if (!used_new_search) {
-        // Consuming optional "uci" mode.
-        CommandLine::ConsumeCommand("uci");
-        // Ordinary UCI engine.
-        EngineClassic::PopulateOptions(options_parser.get());
-        EngineLoop loop(
-            std::move(options_parser),
-            [](UciResponder& uci_responder, const OptionsDict& options) {
-              return std::make_unique<EngineClassic>(uci_responder, options);
-            });
-        loop.RunLoop();
-      }
+      lczero::ChooseAndRunEngine();
     }
   } catch (std::exception& e) {
     std::cerr << "Unhandled exception: " << e.what() << std::endl;

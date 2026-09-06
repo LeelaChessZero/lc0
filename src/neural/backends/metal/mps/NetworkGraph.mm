@@ -25,9 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#import "neural/network_legacy.h"
-#import "NetworkGraph.h"
 #import <vector>
+#import "neural/network_legacy.h"
+#import "neural/tables/attention_policy_map.h"
+#import "neural/tables/policy_map.h"
+#import "NetworkGraph.h"
 
 static MPSGraphConvolution2DOpDescriptor * __nonnull convolution2DDescriptor = [MPSGraphConvolution2DOpDescriptor descriptorWithStrideInX:1
                                                                                                                                 strideInY:1
@@ -66,12 +68,11 @@ static const NSInteger kMinSubBatchSize = 20;
 -(NSUInteger) sizeOfDimensions:(NSArray<NSNumber *> *)dimensions {
     NSUInteger size = 1;
     for (NSNumber * dim in dimensions) {
-        if ([dim intValue] < [self.shape count])
-            size *= [self.shape[[dim intValue]] intValue];
+        if ((NSUInteger)[dim intValue] < [self.shape count])
+            size *= [self.shape[(NSUInteger)[dim intValue]] intValue];
     }
     return size;
 }
-
 
 -(NSUInteger) sizeOfDimensionsFrom:(NSNumber *)dimension {
     NSUInteger size = 1;
@@ -137,6 +138,7 @@ static const NSInteger kMinSubBatchSize = 20;
 
 -(nonnull NSArray<MPSGraphTensor *> *) runInferenceWithBatchSize:(NSUInteger)batchSize
                                                           inputs:(float * __nonnull)inputs
+                                                           masks:(uint64_t * __nonnull)masks
                                                          outputs:(float * __nonnull * __nonnull)outputBuffers
 {
     // Calculate number of sub-batches to split across GPU command buffers for parallel execution.
@@ -144,18 +146,20 @@ static const NSInteger kMinSubBatchSize = 20;
     NSUInteger splits = (batchSize + kMinSubBatchSize + 1) / kMinSubBatchSize;
     if (splits > kMaxInflightBuffers) splits = kMaxInflightBuffers;
     NSUInteger subBatchSize = batchSize / splits;
-    NSUInteger inputDataLength = subBatchSize * [_inputTensor sizeOfDimensions:@[@1, @2, @3]];
+    NSUInteger inputDataLength = subBatchSize * [_inputTensor sizeOfDimensionsFrom:@1];
 
     // Split batchSize into smaller sub-batches and run using double-buffering.
     NSUInteger subBatch = 0;
     MPSCommandBuffer * commandBuffer;
     for (subBatch = 0; subBatch < splits - 1; subBatch++) {
         commandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
+                                                     masks:masks + subBatch * inputDataLength
                                                   subBatch:subBatch
                                               subBatchSize:subBatchSize];
     }
     // Last sub-batch may be smaller or larger than others.
     MPSCommandBuffer * latestCommandBuffer = [self runCommandSubBatchWithInputs:inputs + subBatch * inputDataLength
+                                                                          masks:masks + subBatch * inputDataLength
                                                                        subBatch:subBatch
                                                                    subBatchSize:batchSize - subBatch * subBatchSize];
 
@@ -169,6 +173,7 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSCommandBuffer *) runCommandSubBatchWithInputs:(float * __nonnull)inputs
+                                                     masks:(uint64_t * __nonnull)masks
                                                   subBatch:(NSUInteger)subBatch
                                               subBatchSize:(NSUInteger)subBatchSize
 {
@@ -178,7 +183,7 @@ static const NSInteger kMinSubBatchSize = 20;
     // Create command buffer for this sub-batch.
     MPSCommandBuffer * commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:_queue];
 
-    MPSShape * shape = @[@(subBatchSize), _inputTensor.shape[1], _inputTensor.shape[2], _inputTensor.shape[3]];
+    MPSShape * shape = @[@(subBatchSize), _inputTensor.shape[1], _inputTensor.shape[2]];
 
     NSData * inputData = [NSData dataWithBytesNoCopy:inputs
                                               length:subBatchSize * sizeof(float)
@@ -189,17 +194,32 @@ static const NSInteger kMinSubBatchSize = 20;
                                                                                 shape:shape
                                                                              dataType:_inputTensor.dataType];
 
+    NSData * maskData = [NSData dataWithBytesNoCopy:masks
+                                             length:subBatchSize * sizeof(uint64_t)
+                                       freeWhenDone:NO];
+
+    MPSGraphTensorData * inputMaskData = [[MPSGraphTensorData alloc] initWithDevice:_device
+                                                                               data:maskData
+                                                                              shape:shape
+                                                                           dataType:MPSDataTypeUInt64];
+
+    NSDictionary * feeds = @{_inputTensor : inputTensorData, _maskTensor : inputMaskData};
+
     // Create execution descriptor with block to update results for each iteration.
     MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
-    executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * error) {
-        _resultDataDicts[@(subBatch)] = resultDictionary;
+    executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * _Nullable error) {
+        if (error) {
+            NSLog(@"Error occurred during execution: %@", error);
+        } else {
+            _resultDataDicts[@(subBatch)] = resultDictionary;
+        }
 
         // Release double buffering semaphore for the next training iteration to be encoded.
         dispatch_semaphore_signal(_doubleBufferingSemaphore);
     };
 
     [self encodeToCommandBuffer:commandBuffer
-                          feeds:@{_inputTensor : inputTensorData}
+                          feeds:feeds
                   targetTensors:_targetTensors
                targetOperations:nil
             executionDescriptor:executionDescriptor];
@@ -226,9 +246,6 @@ static const NSInteger kMinSubBatchSize = 20;
 
 -(void) setResultTensors:(NSArray<MPSGraphTensor *> * __nonnull)results
 {
-    // Okay to remove nulls from the read variables.
-    [_readVariables removeObjectsForKeys:[_readVariables allKeysForObject:[NSNull null]]];
-
     // Set the results we're interested in.
     _resultTensors = results;
 
@@ -238,14 +255,108 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
-                                                       height:(NSUInteger)height
-                                                        width:(NSUInteger)width
                                                         label:(NSString * __nullable)label
 {
-    // Create a placeholder tensor that can hold the specified number of sub-batches.
-    _inputTensor = [self placeholderWithShape:@[@(-1), @(channels), @(height), @(width)] name:label];
-
+    _inputTensor = [self placeholderWithShape:@[@(-1), @(channels), @1]
+                                     dataType:MPSDataTypeFloat32
+                                         name:label];
     return _inputTensor;
+}
+
+-(nonnull MPSGraphTensor *) maskPlaceholderWithInputChannels:(NSUInteger)channels
+                                                       label:(NSString * __nullable)label
+{
+    _maskTensor = [self placeholderWithShape:@[@(-1), @(channels), @1]
+                                    dataType:MPSDataTypeUInt64
+                                        name:label];
+    return _maskTensor;
+}
+
+-(nonnull MPSGraphTensor *) expandInputTensorWithMask:(MPSGraphTensor * __nonnull)maskTensor
+                                                input:(MPSGraphTensor * __nonnull)valueTensor
+                                                label:(NSString * __nonnull)label
+{
+    // 64 values to form the bitboard indices.
+    uint64_t bitIndices[64];
+    for (int i = 0; i < 64; i++) {
+        bitIndices[i] = 1ULL << i;
+    }
+    NSData * bitIndicesData = [NSData dataWithBytesNoCopy:bitIndices
+                                                   length:64 * sizeof(uint64_t)
+                                             freeWhenDone:NO];
+
+    MPSGraphTensor * bitIndicesTensor = [self constantWithData:bitIndicesData
+                                                         shape:@[@1, @1, @64]
+                                                      dataType:MPSDataTypeUInt64];
+
+    // Broadcast mask and bit index tensors to [N,C,64]
+    maskTensor = [self broadcastByStackingTensor:maskTensor
+                                            axis:3
+                                           times:64
+                                            name:[NSString stringWithFormat:@"%@/mask/broadcast", label]];
+
+    MPSGraphTensor * expandedMaskTensor;
+    if (@available(macOS 13.0, *)) {
+        // Expand the bitmap using the masks and values.
+        expandedMaskTensor = [self bitwiseANDWithPrimaryTensor:maskTensor
+                                               secondaryTensor:bitIndicesTensor
+                                                          name:[NSString stringWithFormat:@"%@/mask/bitwise_and", label]];
+
+        MPSGraphTensor * zeroTensor = [self constantWithScalar:0.0
+                                                         shape:@[@1]
+                                                      dataType:MPSDataTypeUInt64];
+
+        expandedMaskTensor = [self notEqualWithPrimaryTensor:expandedMaskTensor
+                                             secondaryTensor:zeroTensor
+                                                        name:[NSString stringWithFormat:@"%@/zero_equals", label]];
+    } else {
+        // Alternative method: bitwise ops not available in earlier macos versions, so using integer division and modulo.
+        // Divide by the bit index, which is also a power of 2, to shift the desired bit to position 0.
+        expandedMaskTensor = [self divisionWithPrimaryTensor:maskTensor
+                                             secondaryTensor:bitIndicesTensor
+                                                        name:[NSString stringWithFormat:@"%@/mask/divide", label]];
+
+        // Take modulo 2 to extract the least significant bit
+        MPSGraphTensor * twoTensor = [self constantWithScalar:2.0
+                                                        shape:@[@1]
+                                                     dataType:MPSDataTypeUInt64];
+
+        expandedMaskTensor = [self moduloWithPrimaryTensor:expandedMaskTensor
+                                           secondaryTensor:twoTensor
+                                                      name:[NSString stringWithFormat:@"%@/mask/modulo", label]];
+    }
+
+    // Broadcast input tensor values to match the expanded dimensions.
+    valueTensor = [self broadcastByStackingTensor:valueTensor
+                                             axis:3
+                                            times:64
+                                             name:[NSString stringWithFormat:@"%@/input/broadcast", label]];
+
+    expandedMaskTensor = [self castTensor:expandedMaskTensor
+                                   toType:MPSDataTypeFloat32
+                                     name:[NSString stringWithFormat:@"%@/input/cast", label]];
+
+    // Final multiplication: value * mask
+    expandedMaskTensor = [self multiplicationWithPrimaryTensor:expandedMaskTensor
+                                               secondaryTensor:valueTensor
+                                                          name:[NSString stringWithFormat:@"%@/input/multiply", label]];
+
+    // Reshape to final output format [batch_size, kInputPlanes, 8, 8]
+    return [self reshapeTensor:expandedMaskTensor
+                     withShape:@[@(-1), valueTensor.shape[1], @8, @8]
+                          name:[NSString stringWithFormat:@"%@/input/reshape", label]];
+}
+
+- (nonnull MPSGraphTensor *) broadcastByStackingTensor:(MPSGraphTensor * __nonnull)input
+                                                  axis:(NSInteger)axis
+                                                 times:(NSUInteger)times
+                                                  name:(NSString * __nonnull)name
+{
+    NSMutableArray<MPSGraphTensor *> * stackedTensors = [NSMutableArray array];
+    for (NSUInteger i = 0; i < times; i++) {
+        [stackedTensors addObject:input];
+    }
+    return [self stackTensors:stackedTensors axis:axis name:name];
 }
 
 -(nonnull MPSGraphTensor *) addConvolutionBlockWithParent:(MPSGraphTensor * __nonnull)parent
@@ -471,23 +582,37 @@ static const NSInteger kMinSubBatchSize = 20;
 }
 
 -(nonnull MPSGraphTensor *) addPolicyMapLayerWithParent:(MPSGraphTensor * __nonnull)parent
-                                              policyMap:(uint32_t * __nonnull)policyMap
+                                              policyMap:(const short * __nonnull)policyMap
+                                                mapSize:(NSUInteger)mapSize
                                                   label:(NSString * __nonnull)label
 {
-    NSData * policyMapData = [NSData dataWithBytesNoCopy:policyMap
-                                                  length:kNumPolicyOutputs * sizeof(uint32_t)
-                                            freeWhenDone:NO];
+    if ([parent sizeOfDimensionsFrom:@1] < mapSize) {
+        [NSException raise:@"Invalid parent tensor shape"
+                    format:@"Parent tensor non-batch dimensions (%zu) is less than mapping tensor size of (%zu) for policy mapping.",
+                           [parent sizeOfDimensionsFrom:@1], mapSize];
+    }
 
-    MPSGraphTensor * mappingTensor = [self constantWithData:policyMapData
+    // The mapping is an array of 64x?? squares, where each square contains a number from -1 to 1857.
+    // The mapping is flattened to a 1D array of size 1858, where each index corresponds to a square
+    // that had a value != -1.
+    uint32_t mappingIndices[kNumPolicyOutputs];
+    for (NSUInteger i = 0; i < mapSize; i++) {
+        if (policyMap[i] == -1) continue;
+        mappingIndices[policyMap[i]] = i;
+    }
+
+    NSData * policyMapIndexData = [NSData dataWithBytesNoCopy:mappingIndices
+                                                       length:kNumPolicyOutputs * sizeof(uint32_t)
+                                                 freeWhenDone:NO];
+
+    MPSGraphTensor * indicesTensor = [self constantWithData:policyMapIndexData
                                                       shape:@[@(kNumPolicyOutputs)]
                                                    dataType:MPSDataTypeUInt32];
 
-    MPSGraphTensor * flatConvTensor = [self flatten2DTensor:parent
-                                                       axis:1
-                                                       name:[NSString stringWithFormat:@"%@/flatten", label]];
+    parent = [self flatten2DTensor:parent axis:1 name:[NSString stringWithFormat:@"%@/flatten", label]];
 
-    MPSGraphTensor * policyTensor = [self gatherWithUpdatesTensor:flatConvTensor
-                                                    indicesTensor:mappingTensor
+    MPSGraphTensor * policyTensor = [self gatherWithUpdatesTensor:parent
+                                                    indicesTensor:indicesTensor
                                                              axis:1
                                                   batchDimensions:0
                                                              name:[NSString stringWithFormat:@"%@/gather", label]];
@@ -506,7 +631,6 @@ static const NSInteger kMinSubBatchSize = 20;
                                              normtype:(NSString * __nonnull)normtype
                                                 label:(NSString * __nonnull)label
 {
-    NSUInteger dModel = encoder.mha.q_b.size();
     MPSGraphTensor * mhaQ = [self addFullyConnectedLayerWithParent:parent
                                                     outputChannels:encoder.mha.q_b.size()
                                                            weights:&encoder.mha.q_w[0]
@@ -605,15 +729,16 @@ static const NSInteger kMinSubBatchSize = 20;
                                                label:[NSString stringWithFormat:@"%@/ln2", label]];
     }
     else if ([normtype isEqual:@"rmsnorm"] || [normtype isEqual:@"skipfirst"]) {
-        enc = [self addRmsNormalizationWithParent:enc
-                            scaledSecondaryTensor:ffn
-                                           gammas:&encoder.ln2_gammas[0]
-                                            alpha:alpha
-                                            label:[NSString stringWithFormat:@"%@/ln1", label]];
+        return [self addRmsNormalizationWithParent:enc
+                             scaledSecondaryTensor:ffn
+                                            gammas:&encoder.ln2_gammas[0]
+                                             alpha:alpha
+                                             label:[NSString stringWithFormat:@"%@/ln1", label]];
     }
     else {
         [NSException raise:@"Invalid normalization type."
                     format:@"Invalid normalization type specified: %@", normtype];
+        return nil;
     }
 }
 
@@ -882,7 +1007,8 @@ static const NSInteger kMinSubBatchSize = 20;
 
     qkMatmul = [self multiplicationWithPrimaryTensor:qkMatmul
                                      secondaryTensor:[self constantWithScalar:scale
-                                                                        shape:@[@1] dataType:qkMatmul.dataType]
+                                                                        shape:@[@1]
+                                                                     dataType:qkMatmul.dataType]
                                                 name:[NSString stringWithFormat:@"%@/scale", label]];
     return qkMatmul;
 }
@@ -943,6 +1069,14 @@ static const NSInteger kMinSubBatchSize = 20;
     promo = [self reshapeTensor:promo withShape:@[@(-1), @3, @64] name:[NSString stringWithFormat:@"%@/offset_reshape", label]];
 
     parent = [self reshapeTensor:parent withShape:@[@(-1), @64, @64] name:[NSString stringWithFormat:@"%@/parent_reshape", label]];
+
+    MPSGraphTensor * slice = [self sliceTensor:parent dimension:1 start:48 length:8 name:[NSString stringWithFormat:@"%@/slice_policy_1", label]];
+    slice = [self sliceTensor:slice dimension:2 start:56 length:8 name:[NSString stringWithFormat:@"%@/slice_policy_2", label]];
+    slice = [self reshapeTensor:slice withShape:@[@(-1), @64] name:[NSString stringWithFormat:@"%@/slice_reshape", label]];
+    slice = [self broadcastByStackingTensor:slice axis:2 times:3 name:[NSString stringWithFormat:@"%@/slice_broadcast", label]];
+    slice = [self transposeTensor:slice dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/slice_transpose", label]];
+
+    promo = [self additionWithPrimaryTensor:promo secondaryTensor:slice name:[NSString stringWithFormat:@"%@/offset_add", label]];
 
     return [self concatTensor:parent withTensor:promo dimension:1 name:[NSString stringWithFormat:@"%@/concat", label]];
 }
@@ -1263,7 +1397,8 @@ static const NSInteger kMinSubBatchSize = 20;
                                            scale:1.0f / sqrt(policyDModel)
                                            label:[NSString stringWithFormat:@"%@/self_attention/kq", label]];
 
-        // 6. Slice last 8 keys (k[:, 56:, :]) and matmul with policy promotion weights, then concat to matmul_qk.
+        // 6. Slice last 8 keys (k[:, 48:56, 56:64]) and matmul with policy promotion weights,
+        //    add to promotion logits then concat to matmul_qk.
         policy = [self attentionPolicyPromoMatmulConcatWithParent:policy
                                                          withKeys:keys
                                                           weights:&head.ip4_pol_w[0]
@@ -1272,6 +1407,12 @@ static const NSInteger kMinSubBatchSize = 20;
                                                         sliceFrom:56
                                                       channelSize:policyDModel
                                                             label:[NSString stringWithFormat:@"%@/promo_logits", label]];
+
+        policy = [self addPolicyMapLayerWithParent:policy
+                                         policyMap:&lczero::kAttnPolicyMap[0]
+                                           mapSize:(64 * 64 + 8 * 24)
+                                             label:[NSString stringWithFormat:@"%@/policy_mapping", label]];
+
     }
     else if (convolutionPolicy) {
         if (attentionBody) {
@@ -1296,30 +1437,10 @@ static const NSInteger kMinSubBatchSize = 20;
                                                label:[NSString stringWithFormat:@"%@/conv2", label]];
 
 
-        /**
-         * @todo policy map implementation has bug in MPSGraph (GatherND not working in graph).
-         * Implementation of policy map to be done in CPU for now.
-         *
-         * Reinstate this section when bug is fixed. See comments below.
-         *
-         // [1858 -> HWC or CHW]
-         const bool HWC = false;
-         std::vector<uint32_t> policy_map(1858);
-         for (const auto& mapping : kConvPolicyMap) {
-         if (mapping == -1) continue;
-         const auto index = &mapping - kConvPolicyMap;
-         const auto displacement = index / 64;
-         const auto square = index % 64;
-         const auto row = square / 8;
-         const auto col = square % 8;
-         if (HWC) {
-         policy_map[mapping] = ((row * 8) + col) * 80 + displacement;
-         } else {
-         policy_map[mapping] = ((displacement * 8) + row) * 8 + col;
-         }
-         }
-         policy = builder_->makePolicyMapLayer(policy, &policy_map[0], "policy_map");
-         */
+        policy = [self addPolicyMapLayerWithParent:policy
+                                         policyMap:&lczero::kConvPolicyMap[0]
+                                           mapSize:(73 * 64)
+                                             label:[NSString stringWithFormat:@"%@/policy_mapping", label]];
     }
     else {
         if (attentionBody) {
@@ -1391,10 +1512,10 @@ static const NSInteger kMinSubBatchSize = 20;
 
     value = [self addFullyConnectedLayerWithParent:value
                                     outputChannels:head.ip2_val_b.size()
-                                            weights:&head.ip2_val_w[0]
+                                           weights:&head.ip2_val_w[0]
                                             biases:&head.ip2_val_b[0]
                                         activation:wdl ? @"softmax" : @"tanh"
-                                                label:[NSString stringWithFormat:@"%@/fc2", label]];
+                                             label:[NSString stringWithFormat:@"%@/fc2", label]];
 
     return value;
 }

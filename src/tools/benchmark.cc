@@ -34,6 +34,7 @@
 #include "search/classic/search.h"
 #include "search/classic/stoppers/factory.h"
 #include "search/classic/stoppers/stoppers.h"
+#include "utils/string.h"
 
 namespace lczero {
 namespace {
@@ -73,8 +74,7 @@ void Benchmark::Run(bool run_shorter_benchmark) {
     auto option_dict = options.GetOptionsDict();
 
     auto backend = CreateMemCache(
-        BackendManager::Get()->CreateFromParams(option_dict),
-        option_dict.Get<int>(SharedBackendParams::kNNCacheSizeId));
+        BackendManager::Get()->CreateFromParams(option_dict), option_dict);
 
     const int visits = option_dict.Get<int>(kNodesId);
     const int movetime = option_dict.Get<int>(kMovetimeId);
@@ -106,12 +106,13 @@ void Benchmark::Run(bool run_shorter_benchmark) {
             std::make_unique<classic::VisitsStopper>(visits, false));
       }
 
-      NNCache cache;
-      cache.SetCapacity(
-          option_dict.Get<int>(SharedBackendParams::kNNCacheSizeId));
-
       classic::NodeTree tree;
-      tree.ResetToPosition(position, {});
+      std::vector<std::string> moves;
+      if (auto iter = position.find("moves "); iter != std::string::npos) {
+        moves = StrSplitAtWhitespace(position.substr(iter + 6));
+        position = position.substr(0, iter);
+      }
+      tree.ResetToPosition(position, moves);
 
       const auto start = std::chrono::steady_clock::now();
       auto search = std::make_unique<classic::Search>(

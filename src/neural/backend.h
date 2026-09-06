@@ -100,6 +100,28 @@ class Backend {
   virtual std::optional<EvalResult> GetCachedEvaluation(const EvalPosition&) {
     return std::nullopt;
   }
+
+  // Updates the configuration of the backend. This is between searches.
+  // It's up to the backend to detect if the configuration has changed.
+  enum UpdateConfigurationResult {
+    UPDATE_OK = 0,     // Backend handled the update by itself (if needed).
+    NEED_RESTART = 1,  // Recreate the backend.
+  };
+  virtual UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& opts) {
+    current_config_hash_ = ConfigurationHash(opts);
+    return UPDATE_OK;
+  }
+
+  virtual bool IsSameConfiguration(const OptionsDict& opts) const {
+    return ConfigurationHash(opts) == current_config_hash_;
+  }
+
+ private:
+  // Gets a hash of the backend configuration, to help detect changes.
+  virtual uint64_t ConfigurationHash(const OptionsDict&) const;
+
+  uint64_t current_config_hash_;
 };
 
 class BackendFactory {

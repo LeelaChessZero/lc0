@@ -60,9 +60,10 @@ class SearchManager {
   std::vector<std::unique_ptr<SearchFactory>> algorithms_;
 };
 
-#define REGISTER_SEARCH(alg)                                              \
-  namespace {                                                             \
-  static SearchManager::Register reg3b50Y_##alg(std::make_unique<alg>()); \
+#define REGISTER_SEARCH(alg)                                      \
+  namespace {                                                     \
+  [[maybe_unused]] static SearchManager::Register reg3b50Y_##alg( \
+      std::make_unique<alg>());                                   \
   }
 
 }  // namespace lczero

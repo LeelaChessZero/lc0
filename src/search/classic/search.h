@@ -37,7 +37,6 @@
 #include "chess/callbacks.h"
 #include "chess/uciloop.h"
 #include "neural/backend.h"
-#include "neural/cache.h"
 #include "search/classic/node.h"
 #include "search/classic/params.h"
 #include "search/classic/stoppers/timemgr.h"
@@ -95,9 +94,6 @@ class Search {
   // from temperature having been applied again.
   void ResetBestMove();
 
-  // Returns NN eval for a given node from cache, if that node is cached.
-  std::optional<EvalResult> GetCachedNNEval(const Node* node) const;
-
  private:
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
@@ -130,7 +126,7 @@ class Search {
 
   // Returns verbose information about given node, as vector of strings.
   // Node can only be root or ponder (depth 1).
-  std::vector<std::string> GetVerboseStats(Node* node) const;
+  std::vector<std::string> GetVerboseStats(const Node* node) const;
 
   // Returns the draw score at the root of the search. At odd depth pass true to
   // the value of @is_odd_depth to change the sign of the draw score.
@@ -185,6 +181,7 @@ class Search {
   Edge* last_outputted_info_edge_ GUARDED_BY(nodes_mutex_) = nullptr;
   ThinkingInfo last_outputted_uci_info_ GUARDED_BY(nodes_mutex_);
   int64_t total_playouts_ GUARDED_BY(nodes_mutex_) = 0;
+  int64_t network_evaluations_ GUARDED_BY(nodes_mutex_) = 0;
   int64_t total_batches_ GUARDED_BY(nodes_mutex_) = 0;
   // Maximum search depth = length of longest path taken in PickNodetoExtend.
   uint16_t max_depth_ GUARDED_BY(nodes_mutex_) = 0;
@@ -282,7 +279,7 @@ class SearchWorker {
   // The same operations one by one:
   // 1. Initialize internal structures.
   // @computation is the computation to use on this iteration.
-  void InitializeIteration(std::unique_ptr<BackendComputation> computation);
+  void InitializeIteration();
 
   // 2. Gather minibatch.
   void GatherMinibatch();
@@ -402,15 +399,14 @@ class SearchWorker {
   };
 
   NodeToProcess PickNodeToExtend(int collision_limit);
-  bool AddNodeToComputation(Node* node);
   int PrefetchIntoCache(Node* node, int budget, bool is_odd_depth);
   void DoBackupUpdateSingleNode(const NodeToProcess& node_to_process);
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
   void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(Node* starting_point, int collision_limit,
-                             int base_depth,
+  void PickNodesToExtendTask(Node* starting_point, int base_depth,
+                             int collision_limit,
                              const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
                              TaskWorkspace* workspace);
@@ -436,7 +432,6 @@ class SearchWorker {
   PositionHistory history_;
   int number_out_of_order_ = 0;
   const SearchParams& params_;
-  std::unique_ptr<Node> precached_node_;
   const bool moves_left_support_;
   IterationStats iteration_stats_;
   StoppersHints latest_time_manager_hints_;

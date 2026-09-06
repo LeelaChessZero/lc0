@@ -27,7 +27,8 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
+
+#include "utils/bit.h"
 
 // Define NO_F16C to avoid the F16C intrinsics. Also disabled with NO_POPCNT
 // since it catches most processors without F16C instructions.
@@ -40,59 +41,18 @@
 
 namespace lczero {
 
-#if defined(NO_POPCNT) || defined(NO_F16C) || \
-    (defined(__GNUC__) && !defined(__F16C__))
+#if defined(HAS_FLOAT16) && (defined(__F16C__) || defined(__aarch64__))
 
 inline uint16_t FP32toFP16(float f32) {
-  unsigned int x;
-  unsigned int sign = 0;
-  memcpy(&x, &f32, sizeof(float));
-  if (x & 0x80000000) sign = 0x8000;
-  x &= 0x7fffffff;
-  if (x >= 0x477ff000) {
-    if ((x & 0x7f800000) == 0x7f800000 && (x & 0x7fffff)) {
-      x = ((x >> 13) - 0x38000) | 0x200;
-    } else {
-      x = 0x7c00;
-    }
-  } else if (x <= 0x33000000)
-    x = 0;
-  else if (x <= 0x387fefff) {
-    int shift = 126 - ((x >> 23) & 0xff);
-    x = (x & 0x7fffff) | 0x800000;
-    if (x & (0x17fffff >> (24 - shift))) x += 0x800000 >> (24 - shift);
-    x >>= shift;
-  } else {
-    // Adjust exponent and round to nearest even.
-    if (x & 0x2fff) {
-      x -= 0x37fff000;
-    } else {
-      x -= 0x38000000;
-    }
-    x >>= 13;
-  }
-  return x | sign;
+  return bit_cast<uint16_t>(static_cast<_Float16>(f32));
 }
 
 inline float FP16toFP32(uint16_t f16) {
-  unsigned int x;
-  float f;
-  x = f16 & 0x7fff;
-  if ((x & 0x7c00) == 0) {
-    f = 5.9604645e-8f * x;
-    memcpy(&x, &f, sizeof(float));
-  } else if (x >= 0x7c00) {
-    if (x & 0x1ff) x |= 0x200;
-    x = (x + 0x38000) << 13;
-  } else {
-    x = (x + 0x1c000) << 13;
-  }
-  if (f16 & 0x8000) x |= 0x80000000;
-  memcpy(&f, &x, sizeof(float));
-  return f;
+  return static_cast<float>(bit_cast<_Float16>(f16));
 }
 
-#else
+#elif !defined(NO_POPCNT) && !defined(NO_F16C) && \
+    (!defined(__GNUC__) || defined(__F16C__))
 
 inline uint16_t FP32toFP16(float f32) {
   __m128 A = _mm_set_ss(f32);
@@ -105,6 +65,56 @@ inline float FP16toFP32(uint16_t f16) {
   H = _mm_insert_epi16(H, f16, 0);
   __m128 A = _mm_cvtph_ps(H);
   return _mm_cvtss_f32(A);
+}
+
+#else
+
+inline uint16_t FP32toFP16(float f32) {
+  uint32_t x = bit_cast<uint32_t>(f32);
+  uint32_t sign = (x & 0x80000000) >> 16;
+  x &= 0x7fffffff;
+  if (x < 0x477ff000) {
+    if (x >= 0x387ff000) {
+      // Normal fp16 result. Adjust exponent and round to nearest even.
+      // Branchless idea from <https://gist.github.com/rygorous/2156668>.
+      x += (x >> 13) & 1;
+      x -= 0x37fff001;
+      x >>= 13;
+    } else {
+      // Subnormal or zero. The result is the last bits of fabs(f32) + 0.5f.
+      x = bit_cast<uint32_t>(bit_cast<float>(x) + 0.5f);
+    }
+  } else {
+    if (x > 0x7f800000) {
+      // NaN
+      x = ((x >> 13) - 0x38000) | 0x200;
+    } else {
+      // Inf
+      x = 0x7c00;
+    }
+  }
+  return x | sign;
+}
+
+inline float FP16toFP32(uint16_t f16) {
+  int32_t s = static_cast<int16_t>(f16);
+  uint32_t x;
+  float f;
+  if ((s & 0x7c00) == 0) {
+    // Subnormal or zero. Scale to float.
+    x = s & 0x7fff;
+    f = 5.9604645e-8f * x;
+    x = bit_cast<uint32_t>(f);
+    if (s & 0x8000) x |= 0x80000000;
+  } else if ((s & 0x7c00) == 0x7c00) {
+    // Inf or NaN. Adjust exponent and shift.
+    if (s & 0x1ff) s |= 0x200;  // Change sNaN to qNaN as intel does.
+    x = ((s & 0x47fff) + 0x38000) << 13;
+  } else {
+    // Normal. Adjust exponent and shift.
+    x = ((s & 0x47fff) + 0x1c000U) << 13;
+  }
+  return bit_cast<float>(x);
 }
 
 #endif

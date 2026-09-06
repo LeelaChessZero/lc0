@@ -42,43 +42,48 @@ namespace classic {
 namespace {
 
 const OptionId kMoveOverheadId{
-    "move-overhead", "MoveOverheadMs",
-    "Amount of time, in milliseconds, that the engine subtracts from it's "
-    "total available time (to compensate for slow connection, interprocess "
-    "communication, etc)."};
+    {.long_flag = "move-overhead",
+     .uci_option = "MoveOverheadMs",
+     .help_text =
+         "Amount of time, in milliseconds, that the engine subtracts from its "
+         "total available time (to compensate for slow connection, "
+         "interprocess communication, etc).",
+     .visibility = OptionId::kAlwaysVisible}};
 const OptionId kTimeManagerId{
-    "time-manager", "TimeManager",
-    "Name and config of a time manager. "
-    "Possible names are 'legacy' (default), 'smooth', 'alphazero', and simple."
-    "See https://lc0.org/timemgr for configuration details."};
+    {.long_flag = "time-manager",
+     .uci_option = "TimeManager",
+     .help_text =
+         "Name and config of a time manager. Possible names are 'legacy' "
+         "(default), 'smooth', 'alphazero', and simple. See "
+         "https://lc0.org/timemgr for configuration details."}};
 const OptionId kSlowMoverId{
-    "slowmover", "Slowmover",
-    "Budgeted time for a move is multiplied by this value, causing the engine "
-    "to spend more time (if value is greater than 1) or less time (if the "
-    "value is less than 1)."};
+    {.long_flag = "slowmover",
+     .uci_option = "Slowmover",
+     .help_text = "Budgeted time for a move is multiplied by this value, "
+                  "causing the engine to spend more time (if value is greater "
+                  "than 1) or less time (if the value is less than 1).",
+     .visibility = OptionId::kSimpleOnly}};
 }  // namespace
 
 void PopulateTimeManagementOptions(RunType for_what, OptionsParser* options) {
   PopulateCommonStopperOptions(for_what, options);
-  if (for_what == RunType::kUci || for_what == RunType::kSimpleUci) {
-    options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
-    if (for_what == RunType::kUci) {
-      options->Add<StringOption>(kTimeManagerId) = "legacy";
-    } else {
-      options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
-    }
-  }
+  options->Add<IntOption>(kMoveOverheadId, 0, 100000000) = 200;
+  options->Add<StringOption>(kTimeManagerId) = "legacy";
+  options->Add<FloatOption>(kSlowMoverId, 0.0f, 100.0f) = 1.0f;
 }
 
 std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   const int64_t move_overhead = options.Get<int>(kMoveOverheadId);
 
   OptionsDict tm_options;
-  if (options.Exists<std::string>(kTimeManagerId)) {
-    tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
-  } else {
+  tm_options.AddSubdictFromString(options.Get<std::string>(kTimeManagerId));
+  if (!options.IsDefault<float>(kSlowMoverId)) {
+    // Assume that default behavior of simple and normal mode is the same.
+    if (!options.IsDefault<std::string>(kTimeManagerId)) {
+      throw Exception("You can't set both time manager and slowmover value");
+    }
     float slowmover = options.Get<float>(kSlowMoverId);
-    tm_options.AddSubdict("legacy")->Set("slowmover", slowmover);
+    tm_options.GetMutableSubdict("legacy")->Set("slowmover", slowmover);
   }
   const auto managers = tm_options.ListSubdicts();
 
