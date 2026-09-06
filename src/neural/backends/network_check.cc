@@ -114,6 +114,10 @@ class CheckComputation : public NetworkComputation {
     return work_comp_->GetPVal(sample, move_id);
   }
 
+  float GetEVal(int sample) const override {
+    return work_comp_->GetEVal(sample);
+  }
+
  private:
   const CheckParams& params_;
   std::vector<MoveList> moves_;
@@ -149,6 +153,13 @@ class CheckComputation : public NetworkComputation {
       valueAlmostEqual &= IsAlmostEqual(v1, v2);
     }
 
+    bool errorAlmostEqual = true;
+    for (int i = 0; i < size && errorAlmostEqual; i++) {
+      const float e1 = work_comp_->GetEVal(i);
+      const float e2 = check_comp_->GetEVal(i);
+      errorAlmostEqual &= IsAlmostEqual(e1, e2);
+    }
+
     bool policyAlmostEqual = true;
     for (int i = 0; i < size && policyAlmostEqual; i++) {
       const auto work = PolicySoftMax(work_comp_.get(), i, moves_[i]);
@@ -158,25 +169,43 @@ class CheckComputation : public NetworkComputation {
       }
     }
 
-    if (valueAlmostEqual && policyAlmostEqual) {
-      CERR << "Check passed for a batch of " << size << ".";
-      return;
-    }
+    size_t result = valueAlmostEqual + (errorAlmostEqual << 1) + (policyAlmostEqual << 2);
 
-    if (!valueAlmostEqual && !policyAlmostEqual) {
-      CERR << "*** ERROR check failed for a batch of " << size
-           << " both value and policy incorrect.";
-      return;
+    switch (result) {
+      case 0:
+        CERR << "*** ERROR check failed for a batch of " << size
+             << " all incorrect.";
+        break;
+      case 1:
+        CERR << "*** ERROR check failed for a batch of " << size
+             << " error and policy are incorrect (but value is ok).";
+        break;
+      case 2:
+        CERR << "*** ERROR check failed for a batch of " << size
+              << " value and policy are incorrect (but error is ok).";
+        break;
+      case 3:
+        CERR << "*** ERROR check failed for a batch of " << size
+              << " policy is incorrect (but value and error are ok).";
+        break;
+      case 4:
+        CERR << "*** ERROR check failed for a batch of " << size
+              << " value and error are incorrect (but policy is ok).";
+        break;
+      case 5:
+        CERR << "*** ERROR check failed for a batch of " << size
+              << " error is incorrect (but value and policy are ok).";
+        break;
+      case 6:
+        CERR << "*** ERROR check failed for a batch of " << size
+              << " value is incorrect (but error and policy are ok).";
+        break;
+      case 7:
+        CERR << "Check passed for a batch of " << size << ".";
+        break;
+      default:
+        assert(false && "Unexpected result");
     }
-
-    if (!valueAlmostEqual) {
-      CERR << "*** ERROR check failed for a batch of " << size
-           << " value incorrect (but policy ok).";
-      return;
-    }
-
-    CERR << "*** ERROR check failed for a batch of " << size
-         << " policy incorrect (but value ok).";
   }
 
   bool IsAlmostEqual(double a, double b) const {
@@ -193,6 +222,9 @@ class CheckComputation : public NetworkComputation {
       const float qv1 = work_comp_->GetQVal(i);
       const float qv2 = check_comp_->GetQVal(i);
       histogram.Add(qv2 - qv1);
+      const float ev1 = work_comp_->GetEVal(i);
+      const float ev2 = check_comp_->GetEVal(i);
+      histogram.Add(ev2 - ev1);
       const auto work = PolicySoftMax(work_comp_.get(), i, moves_[i]);
       const auto check = PolicySoftMax(check_comp_.get(), i, moves_[i]);
       for (size_t j = 0; j < work.size(); j++) {
@@ -244,6 +276,13 @@ class CheckComputation : public NetworkComputation {
       value_error.Add(v1, v2);
     }
 
+    MaximumError error_error;
+    for (int i = 0; i < size; i++) {
+      const float e1 = work_comp_->GetEVal(i);
+      const float e2 = check_comp_->GetEVal(i);
+      error_error.Add(e1, e2);
+    }
+
     MaximumError policy_error;
     for (int i = 0; i < size; i++) {
       const auto work = PolicySoftMax(work_comp_.get(), i, moves_[i]);
@@ -256,6 +295,7 @@ class CheckComputation : public NetworkComputation {
     CERR << "maximum error for a batch of " << size << ":";
 
     value_error.Dump("  value");
+    error_error.Dump("  error");
     policy_error.Dump("  policy");
   }
 

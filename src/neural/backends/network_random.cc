@@ -94,6 +94,12 @@ class RandomNetworkComputation : public NetworkComputation {
            (a / 10000.0f);
   }
 
+  float GetEVal(int sample) const override {
+    if (uniform_mode_) return 0.0f;
+    float e = (HashCat({inputs_[sample], 5678}) % 10000) / 100000.0;
+    return e;
+  }
+
  private:
   std::vector<std::uint64_t> inputs_;
   int delay_ms_ = 0;
