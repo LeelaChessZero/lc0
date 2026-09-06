@@ -26,7 +26,36 @@
 */
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
+
+// Debug guard against a divergent block barrier. Several of lc0's kernels launch
+// blocks whose logical rows are narrower than an AMD wavefront (e.g.
+// blockDim = (32, 1, z) packs two 32-lane rows into one 64-lane wave), so a
+// per-row early exit ahead of a __syncthreads() can leave part of a wave waiting
+// on a barrier the rest of the wave never reaches. On AMD hardware that wave
+// deadlocks or faults rather than dropping the missing lanes (the layer_norm
+// crash this port fixed was exactly this). In release builds this is a plain
+// __syncthreads(); in a HIP debug build it first checks that every lane the
+// block placed in this wave is still active at the barrier and asserts at the
+// offending site, turning a silent hang into a caught error. It is a no-op
+// wrapper on the CUDA build.
+__device__ __forceinline__ void lc0SyncThreads() {
+#if defined(USE_HIP) && !defined(NDEBUG) && defined(__HIP_DEVICE_COMPILE__)
+  const unsigned tid =
+      (threadIdx.z * blockDim.y + threadIdx.y) * blockDim.x + threadIdx.x;
+  const unsigned nthreads = blockDim.x * blockDim.y * blockDim.z;
+  const unsigned wave_base = (tid / warpSize) * warpSize;
+  const unsigned remaining = nthreads - wave_base;
+  const unsigned lanes =
+      remaining < static_cast<unsigned>(warpSize) ? remaining : warpSize;
+  const unsigned long long expected =
+      lanes >= 64u ? ~0ull : ((1ull << lanes) - 1ull);
+  assert(__ballot(1) == expected &&
+         "divergent __syncthreads(): a lane exited before this block barrier; "
+         "on AMD wavefronts this deadlocks or faults the wave");
+#endif
+  __syncthreads();
+}
 
 __device__ __forceinline__ float mishActivate(float el) {
   auto e = __expf(el);
@@ -81,7 +110,7 @@ __device__ __forceinline__ float activate(float cVal,
 template <typename T, int M, int N, int K>
 __device__ __forceinline__ void matrixMul_gpu_serial(T* c, const T* a,
                                                      const T* b) {
-#ifndef SKIP_FP16_BITS
+#ifdef HAS_FP16_SUPPORT
 #pragma unroll
   for (int i = 0; i < M; ++i)
 #pragma unroll
@@ -305,7 +334,7 @@ __device__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
                                        const T* input, const T* skip,
                                        const T* bias, const T* w1, const T* b1,
                                        const T* w2, const T* b2) {
-#ifndef SKIP_FP16_BITS
+#ifdef HAS_FP16_SUPPORT
   const bool fp16 = std::is_same<half, T>::value;
 
   int k = threadIdx.x;
@@ -353,7 +382,7 @@ __device__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
     __shared__ float shared_data[1024];
     float avg = S / 64;
     shared_data[k] = avg;
-    __syncthreads();
+    lc0SyncThreads();
 
     // First fully-connected layer for SE
     if (k < se_K) {
@@ -364,11 +393,11 @@ __device__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
       S += (float)b1[k];
       S = activate(S, activation);
     }
-    __syncthreads();
+    lc0SyncThreads();
     if (k < se_K) {
       shared_data[k] = S;
     }
-    __syncthreads();
+    lc0SyncThreads();
 
     // Second fully-connected layer for SE
     S = 0;
@@ -427,11 +456,32 @@ __device__ void OutputTransform_kernel(int N, int C, int se_K, T* output,
 #endif
 }
 
+// Shuffle participation mask. HIP requires a 64-bit mask (ROCm static_asserts
+// sizeof(mask)==8) AND asserts at runtime that the mask exactly equals the set
+// of active lanes (mask == __ballot(true)). A literal full mask therefore faults
+// whenever a block is not a whole multiple of the 64-lane wavefront (e.g.
+// layer_norm launches (32,1,z) blocks whose last wavefront is half-populated),
+// so use __activemask() -- it is exactly the active set on any wave size and in
+// any divergence state. CUDA keeps the 32-bit full-warp literal it has always
+// used (its warp is always 32 wide and fully active at these call sites).
+#if defined(USE_HIP)
+#define LC0_FULL_WARP_MASK (__activemask())
+#else
+#define LC0_FULL_WARP_MASK 0xFFFFFFFFu
+#endif
+
+// All warp reductions below combine exactly 32 lanes (the butterfly runs masks
+// 16..1, touching only bits 0-4), matching a 32-lane NVIDIA warp. On a 64-lane
+// CDNA wavefront the two 32-lane halves reduce independently, which is what the
+// per-32-channel data layout in the SE / softmax / avg-pool kernels expects.
+// Broadcasting the result therefore must read lane 0 OF THE 32-LANE SUBGROUP,
+// not lane 0 of the whole wavefront (see subgroupBroadcast).
+
 // fast reduction for the warp
 __device__ __forceinline__ float warpReduce(float x) {
 #pragma unroll
   for (int mask = 16; mask > 0; mask >>= 1)
-    x += __shfl_xor_sync(0xFFFFFFFF, x, mask);
+    x += __shfl_xor_sync(LC0_FULL_WARP_MASK, x, mask);
 
   return x;
 }
@@ -440,9 +490,18 @@ __device__ __forceinline__ float warpReduce(float x) {
 __device__ __forceinline__ float warpMax(float x) {
 #pragma unroll
   for (int mask = 16; mask > 0; mask >>= 1)
-    x = max(x, __shfl_xor_sync(0xFFFFFFFF, x, mask));
+    x = max(x, __shfl_xor_sync(LC0_FULL_WARP_MASK, x, mask));
 
   return x;
+}
+
+// Broadcast the value held by lane 0 of the caller's 32-lane subgroup to all
+// lanes of that subgroup. On NVIDIA (warp==32) this is a plain lane-0 broadcast.
+// On CDNA wave64 a width-32 shuffle keeps each 32-lane half independent, so the
+// upper half (a different data row) is not clobbered with the lower half's value
+// -- the wave64 softmax-broadcast correctness fix.
+__device__ __forceinline__ float subgroupBroadcast0(float x) {
+  return __shfl_sync(LC0_FULL_WARP_MASK, x, 0, 32);
 }
 
 // atomic max implementation for floats
@@ -481,7 +540,7 @@ __global__ __launch_bounds__(
                                                           const T* b1,
                                                           const T* w2,
                                                           const T* b2) {
-#ifndef SKIP_FP16_BITS
+#ifdef HAS_FP16_SUPPORT
   const bool fp16 = std::is_same<half, T>::value;
 
   int k = threadIdx.x;
@@ -532,7 +591,7 @@ __global__ __launch_bounds__(
 
     int lane = k & 0x1F;
     int warp = k >> 5;
-    __syncthreads();
+    lc0SyncThreads();
 
     // First fully-connected layer for SE
 
@@ -547,7 +606,7 @@ __global__ __launch_bounds__(
       val = warpReduce(val);
       if (lane == 0) shared_sums[warp][i] = val;
     }
-    __syncthreads();
+    lc0SyncThreads();
     if (k < se_K) {
       S = 0;
       for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
@@ -557,7 +616,7 @@ __global__ __launch_bounds__(
       shared_data[k] = S;
     }
 
-    __syncthreads();
+    lc0SyncThreads();
 
     // Second fully-connected layer for SE
     S = 0;
@@ -691,7 +750,7 @@ __global__ __launch_bounds__(
     4) void OutputTransform_relu_InputTransform_kernel(int N, int C, T* output,
                                                        const T* input, T* skip,
                                                        const T* bias) {
-#ifndef SKIP_FP16_BITS
+#ifdef HAS_FP16_SUPPORT
   const bool fp16 = std::is_same<half, T>::value;
 
   int k = threadIdx.x + blockIdx.x * kOpInpTransformBlockSize;

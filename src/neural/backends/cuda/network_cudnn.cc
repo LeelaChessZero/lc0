@@ -44,7 +44,7 @@
 // #define DEBUG_RAW_NPS
 
 namespace lczero {
-using namespace cudnn_backend;
+using namespace NS_BACKEND;
 
 template <typename DataType>
 class CudnnNetwork;

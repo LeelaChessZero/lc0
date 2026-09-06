@@ -88,6 +88,11 @@ option('plain_cuda',
        value: true,
        description: 'Enable CUDA backend')
 
+option('hip',
+       type: 'boolean',
+       value: false,
+       description: 'Enable ROCm/HIP backend (lc0 CUDA kernels compiled with hipcc)')
+
 option('cutlass',
        type: 'boolean',
        value: true,

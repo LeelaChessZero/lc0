@@ -32,10 +32,18 @@
 #include "neural/tables/activation_function.h"
 #include "neural/tables/attention_policy_map.h"
 #include "utils/exception.h"
+
+// This translation unit only instantiates the fp32 winograd transforms, which
+// are valid on every architecture, so enable the shared transform bodies
+// unconditionally. (fp16_kernels.cu gates the same bodies on native fp16
+// support because it instantiates the half versions.)
+#ifndef HAS_FP16_SUPPORT
+#define HAS_FP16_SUPPORT 1
+#endif
 #include "winograd_helper.inc"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 namespace {
 constexpr int kInputPlanes = 112;
 }  // namespace
@@ -637,9 +645,12 @@ __global__ void globalAvgPool_kernel(T* output, const T* input,
   }
 
 // Compute warp wide sum (for entire plane - elementsPerWarp elements).
+// offsets stay < 32 so each 32-lane subgroup reduces its own plane; only lane 0
+// of the subgroup (laneId==0) reads the result, so the down-shuffle's upper-half
+// reads are discarded and a 64-lane wavefront yields two correct plane sums.
 #pragma unroll
   for (int offset = 1; offset < 32; offset *= 2) {
-    S += __shfl_down_sync(0xFFFFFFFF, S, offset);
+    S += __shfl_down_sync(LC0_FULL_WARP_MASK, S, offset);
   }
 
   float avg = S / elementsPerWarp;
@@ -811,17 +822,18 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input,
   }
   float threadMax = max(x[0], x[1]);
   float maxval = warpMax(threadMax);
-  maxval = __shfl_sync(0xFFFFFFFF, maxval, 0);
+  maxval = subgroupBroadcast0(maxval);
 
   ex[0] = exp(x[0] - maxval);
   ex[1] = exp(x[1] - maxval);
 
   float threadSum = ex[0] + ex[1];
   float Sum = warpReduce(threadSum);
-  Sum = __shfl_sync(0xFFFFFFFF, Sum, 0);
+  Sum = subgroupBroadcast0(Sum);
 
-  ex[0] = ex[0] / Sum;
-  ex[1] = ex[1] / Sum;
+  const float inv_sum = 1.0f / Sum;
+  ex[0] = ex[0] * inv_sum;
+  ex[1] = ex[1] * inv_sum;
 
   // Store to memory
   if constexpr (is_16bit) {
@@ -861,13 +873,13 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
     maxval = x;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // Get max across warp first, and then update across C dimension
   float warpmax = warpMax(x);
   if ((c & 0x1F) == 0) atomicMaxFloat(&maxval, warpmax);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float ex = exp(x - maxval);
 
@@ -877,7 +889,7 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
   // update shared memory sum across C dimension
   if ((c & 0x1F) == 0) atomicAdd(&sum, val);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float op = ex / sum;
 
@@ -889,7 +901,7 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2,
              cudaStream_t stream) {
   if (C == 64) {
     int size = N * 32;  // Total no of threads needed
-    const int kBlockSize = 256;
+    const int kBlockSize = 128;  // Four independent softmax rows per block.
     int blocks = DivUp(size, kBlockSize);
     softmax_opt_64_kernel<T>
         <<<blocks, kBlockSize, 0, stream>>>(output, input, input2, size);
@@ -913,14 +925,14 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 
   // compute sum across C dimension using the warp wide partial sums
   if (threadIdx.x == 0) sum[threadIdx.z][threadIdx.y] = s;
-  __syncthreads();
+  lc0SyncThreads();
 
   if (threadIdx.x == 0 && threadIdx.y == 0) {
     float cSum = 0;
     for (int j = 0; j < blockDim.y; j++) cSum += sum[threadIdx.z][j];
     sum[threadIdx.z][0] = cSum;
   }
-  __syncthreads();
+  lc0SyncThreads();
 
   // s now contains the sum across C dimension
   return sum[threadIdx.z][0];
@@ -935,9 +947,17 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
                                   const T* betas, float ep, float alpha,
                                   ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
-  if (n >= N) return;
   int c = (threadIdx.y * 32 + threadIdx.x) * 16;
-  bool oobThread = c >= C;
+  // An out-of-range row (n >= N) must NOT early-return: shared_sum_for_layer_norm
+  // calls lc0SyncThreads(), and on a 64-lane wavefront two threadIdx.z rows share
+  // one wavefront, so returning the padding row while its partner survives is a
+  // partial-wavefront barrier -> GPU fault on AMD (it is benign on NVIDIA only
+  // because whole 32-lane warps exit). Instead fold it into oobThread so the
+  // padding row skips every load/store (each guarded by !oobThread) yet still
+  // reaches both barriers. Padding rows own their own sum[threadIdx.z] slot, so
+  // valid rows are never corrupted. Arch-unified: identical results on NVIDIA.
+  bool oobThread = (c >= C) || (n >= N);
+  if (n >= N) n = N - 1;  // keep index arithmetic in-bounds; loads are guarded
 
   int biasIndex = c;
   int tensorIndex = n * C + c;
@@ -1154,7 +1174,7 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
     promotion_offsets[x][y] = S;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // phase 2: add the last "row" to the other 3
   // #knight offset is added to the other three
@@ -1169,7 +1189,7 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
     }
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // phase 3: add 8x8 chunk of policy_attn_logits matrix to promotion offsets
   //          the output is 3x8x8 (written as 8 * 24)
@@ -1227,6 +1247,36 @@ __global__ void preprocess_for_attention_body_kernel(
   output[n * 64 * outputC + hw * outputC + c] = op;
 }
 
+__global__ void preprocess_for_attention_body_fp16x8_kernel(
+    half* output, const half* input, const half* encoding, int input_size,
+    int encoding_size) {
+  constexpr int kContextSize = 64;
+  constexpr int kElementsPerThread = 8;
+
+  const int n = blockIdx.x;
+  const int hw = blockIdx.y;
+  const int c = threadIdx.x * kElementsPerThread;
+  const int output_size = input_size + encoding_size;
+  const int output_index =
+      n * kContextSize * output_size + hw * output_size + c;
+
+  half values[kElementsPerThread];
+  if (c < input_size) {
+    const int input_base =
+        n * input_size * kContextSize + c * kContextSize + hw;
+#pragma unroll
+    for (int i = 0; i < kElementsPerThread; i++) {
+      values[i] = input[input_base + i * kContextSize];
+    }
+  } else {
+    const int encoding_index = n * kContextSize * encoding_size +
+                               hw * encoding_size + c - input_size;
+    copyAs<uint4>(&values[0], &encoding[encoding_index]);
+  }
+
+  copyAs<uint4>(&output[output_index], &values[0]);
+}
+
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
                                      const T* encoding, int N, int input_size,
@@ -1238,6 +1288,22 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
   // Each thread computes a single output element
   dim3 gridSize = dim3(N, 64);
   int blockSize = input_size + encoding_size;
+  if constexpr (std::is_same<half, T>::value) {
+    constexpr int kElementsPerThread = 8;
+    // Keep every vector wholly within either the input or encoding region.
+    const bool use_vector_dense =
+        is_pe_dense_embedding && input_size > 0 && encoding_size > 0 &&
+        input_size % kElementsPerThread == 0 &&
+        encoding_size % kElementsPerThread == 0 &&
+        blockSize % kElementsPerThread == 0;
+    if (use_vector_dense) {
+      preprocess_for_attention_body_fp16x8_kernel
+          <<<gridSize, blockSize / kElementsPerThread, 0, stream>>>(
+              output, input, encoding, input_size, encoding_size);
+      return;
+    }
+  }
+
   preprocess_for_attention_body_kernel<T><<<gridSize, blockSize, 0, stream>>>(
       output, input, encoding, input_size, encoding_size,
       is_pe_dense_embedding);
