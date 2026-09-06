@@ -64,7 +64,8 @@ class BlasComputation : public NetworkComputation {
                   const MultiHeadWeights& weights,
                   const std::string policy_head, const std::string value_head,
                   const size_t max_batch_size, const bool wdl,
-                  const bool moves_left, const bool conv_policy,
+                  const bool wdl_err, const bool moves_left,
+                  const bool conv_policy,
                   const ActivationFunction default_activation,
                   const ActivationFunction smolgen_activation,
                   const ActivationFunction ffn_activation,
@@ -115,6 +116,14 @@ class BlasComputation : public NetworkComputation {
     return policies_[sample][move_id];
   }
 
+  float GetEVal(int sample) const override {
+    if (wdl_err_) {
+      return e_values_[sample];
+    } else {
+      return 0.0f;
+    }
+  }
+
  private:
   void EncodePlanes(const InputPlanes& sample, float* buffer);
   void ForwardEncoderLayer(
@@ -123,6 +132,14 @@ class BlasComputation : public NetworkComputation {
       size_t batch_size, const MultiHeadWeights::EncoderLayer& layer,
       int embedding_size, int heads, ActivationFunction smolgen_activation,
       ActivationFunction ffn_activation, float alpha, float default_eps);
+
+  void ForwardValueHead(std::vector<float>& head_buffer,
+                        const std::vector<float>& buffer1,
+                        const std::vector<float>& buffer2,
+                        std::vector<float>& buffer3, size_t batch_size,
+                        size_t output_channels,
+                        const MultiHeadWeights::ValueHead& value_head,
+                        bool wdl_err);
 
   static constexpr auto kWidth = 8;
   static constexpr auto kHeight = 8;
@@ -137,8 +154,10 @@ class BlasComputation : public NetworkComputation {
   std::vector<InputPlanes> planes_;
   std::vector<std::vector<float>> policies_;
   std::vector<float> q_values_;
+  std::vector<float> e_values_;
   std::vector<float> m_values_;
   bool wdl_;
+  bool wdl_err_;
   bool moves_left_;
   bool conv_policy_;
   bool attn_policy_;
@@ -161,9 +180,9 @@ class BlasNetwork : public Network {
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<BlasComputation<use_eigen>>(
         this, weights_, policy_head_, value_head_, max_batch_size_, wdl_,
-        moves_left_, conv_policy_, default_activation_, smolgen_activation_,
-        ffn_activation_, attn_policy_, attn_body_, is_pe_dense_embedding_,
-        threads_);
+        wdl_err_, moves_left_, conv_policy_, default_activation_,
+        smolgen_activation_, ffn_activation_, attn_policy_, attn_body_,
+        is_pe_dense_embedding_, threads_);
   }
 
   const NetworkCapabilities& GetCapabilities() const override {
@@ -201,6 +220,7 @@ class BlasNetwork : public Network {
   size_t max_batch_size_;
   int threads_;
   bool wdl_;
+  bool wdl_err_;
   bool moves_left_;
   bool conv_policy_;
   bool attn_policy_;
@@ -219,8 +239,9 @@ template <bool use_eigen>
 BlasComputation<use_eigen>::BlasComputation(
     BlasNetwork<use_eigen>* network, const MultiHeadWeights& weights,
     const std::string policy_head, const std::string value_head,
-    const size_t max_batch_size, const bool wdl, const bool moves_left,
-    const bool conv_policy, const ActivationFunction default_activation,
+    const size_t max_batch_size, const bool wdl, const bool wdl_err,
+    const bool moves_left, const bool conv_policy,
+    const ActivationFunction default_activation,
     const ActivationFunction smolgen_activation,
     const ActivationFunction ffn_activation, const bool attn_policy,
     const bool attn_body, bool is_pe_dense_embedding,
@@ -229,7 +250,9 @@ BlasComputation<use_eigen>::BlasComputation(
       max_batch_size_(max_batch_size),
       policies_(0),
       q_values_(0),
+      e_values_(0),
       wdl_(wdl),
+      wdl_err_(wdl_err),
       moves_left_(moves_left),
       conv_policy_(conv_policy),
       attn_policy_(attn_policy),
@@ -471,6 +494,74 @@ void BlasComputation<use_eigen>::ForwardEncoderLayer(
 }
 
 template <bool use_eigen>
+void BlasComputation<use_eigen>::ForwardValueHead(
+    std::vector<float>& head_buffer, const std::vector<float>& buffer1,
+    const std::vector<float>& buffer2, std::vector<float>& buffer3,
+    size_t batch_size, size_t output_channels,
+    const MultiHeadWeights::ValueHead& value_head, bool wdl_err) {
+  const auto num_value_channels = value_head.ip1_val_b.size();
+  const auto num_value_input_planes =
+      attn_body_ ? value_head.ip_val_b.size() : value_head.value.biases.size();
+  if (attn_body_) {
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size * kSquares, weights_.ip_emb_b.size(), num_value_input_planes,
+        buffer1.data(), value_head.ip_val_w.data(), value_head.ip_val_b.data(),
+        default_activation_, head_buffer.data());
+  } else {
+    Convolution1<use_eigen>::Forward(
+        batch_size, output_channels, num_value_input_planes, buffer2.data(),
+        value_head.value.weights.data(), head_buffer.data());
+
+    BiasActivate(batch_size, num_value_input_planes, &head_buffer[0],
+                 value_head.value.biases.data(), default_activation_);
+  }
+
+  FullyConnectedLayer<use_eigen>::Forward1D(
+      batch_size, num_value_input_planes * kSquares, num_value_channels,
+      head_buffer.data(), value_head.ip1_val_w.data(),
+      value_head.ip1_val_b.data(),
+      default_activation_,  // Activation On
+      buffer3.data());
+
+  // Now get the score
+  if (wdl_ && !wdl_err) {
+    std::vector<float> wdl(3 * batch_size);
+    FullyConnectedLayer<use_eigen>::Forward1D(
+        batch_size, num_value_channels, 3, buffer3.data(),
+        value_head.ip2_val_w.data(), value_head.ip2_val_b.data(),
+        ACTIVATION_NONE,  // Activation Off
+        wdl.data());
+
+    for (size_t j = 0; j < batch_size; j++) {
+      std::vector<float> wdl_softmax(3);
+      SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
+
+      q_values_.emplace_back(wdl_softmax[0]);
+      q_values_.emplace_back(wdl_softmax[1]);
+      q_values_.emplace_back(wdl_softmax[2]);
+    }
+  } else if (!wdl_err) {
+    for (size_t j = 0; j < batch_size; j++) {
+      double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
+                           num_value_channels, value_head.ip2_val_w.data(),
+                           &buffer3[j * num_value_channels]) +
+                       value_head.ip2_val_b[0];
+
+      q_values_.emplace_back(std::tanh(winrate));
+    }
+  } else {
+    for (size_t j = 0; j < batch_size; j++) {
+      double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
+                           num_value_channels, value_head.ip_val_err_w.data(),
+                           &buffer3[j * num_value_channels]) +
+                       value_head.ip_val_err_b[0];
+
+      e_values_.emplace_back(Activate(winrate, ACTIVATION_SIGMOID));
+    }
+  }
+}
+
+template <bool use_eigen>
 void BlasComputation<use_eigen>::ComputeBlocking() {
   const auto& value_head = weights_.value_heads.at(value_head_);
   const auto& policy_head = weights_.policy_heads.at(policy_head_);
@@ -549,6 +640,7 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
   // Output values.
   q_values_.reserve(wdl_ ? 3 * total_batches : total_batches);
+  if (wdl_err_) e_values_.reserve(total_batches);
   policies_.reserve(total_batches);
   if (moves_left_) m_values_.resize(total_batches);
 
@@ -722,53 +814,13 @@ void BlasComputation<use_eigen>::ComputeBlocking() {
 
     // Preserve buffer1 and buffer2, used for policy and moves left heads.
     // Value head
-    if (attn_body_) {
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size * kSquares, weights_.ip_emb_b.size(),
-          num_value_input_planes, buffer1.data(), value_head.ip_val_w.data(),
-          value_head.ip_val_b.data(), default_activation_, head_buffer.data());
-    } else {
-      Convolution1<use_eigen>::Forward(
-          batch_size, output_channels, num_value_input_planes, buffer2.data(),
-          value_head.value.weights.data(), head_buffer.data());
+    ForwardValueHead(head_buffer, buffer1, buffer2, buffer3, batch_size,
+                     output_channels, value_head, false);
 
-      BiasActivate(batch_size, num_value_input_planes, &head_buffer[0],
-                   value_head.value.biases.data(), default_activation_);
-    }
-
-    FullyConnectedLayer<use_eigen>::Forward1D(
-        batch_size, num_value_input_planes * kSquares, num_value_channels,
-        head_buffer.data(), value_head.ip1_val_w.data(),
-        value_head.ip1_val_b.data(),
-        default_activation_,  // Activation On
-        buffer3.data());
-
-    // Now get the score
-    if (wdl_) {
-      std::vector<float> wdl(3 * batch_size);
-      FullyConnectedLayer<use_eigen>::Forward1D(
-          batch_size, num_value_channels, 3, buffer3.data(),
-          value_head.ip2_val_w.data(), value_head.ip2_val_b.data(),
-          ACTIVATION_NONE,  // Activation Off
-          wdl.data());
-
-      for (size_t j = 0; j < batch_size; j++) {
-        std::vector<float> wdl_softmax(3);
-        SoftmaxActivation(3, &wdl[j * 3], wdl_softmax.data());
-
-        q_values_.emplace_back(wdl_softmax[0]);
-        q_values_.emplace_back(wdl_softmax[1]);
-        q_values_.emplace_back(wdl_softmax[2]);
-      }
-    } else {
-      for (size_t j = 0; j < batch_size; j++) {
-        double winrate = FullyConnectedLayer<use_eigen>::Forward0D(
-                             num_value_channels, value_head.ip2_val_w.data(),
-                             &buffer3[j * num_value_channels]) +
-                         value_head.ip2_val_b[0];
-
-        q_values_.emplace_back(std::tanh(winrate));
-      }
+    if (wdl_err_) {
+      const auto& error_head = weights_.value_heads.at("st");
+      ForwardValueHead(head_buffer, buffer1, buffer2, buffer3, batch_size,
+                       output_channels, error_head, true);
     }
 
     // Moves left head.
@@ -996,6 +1048,9 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   auto nf = file.format().network_format();
   using NF = pblczero::NetworkFormat;
   wdl_ = nf.value() == NF::VALUE_WDL;
+
+  wdl_err_ = weights_.value_heads.contains("st") &&
+             weights_.value_heads.at("st").ip_val_b.size() > 0;
 
   moves_left_ = (nf.moves_left() == NF::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
