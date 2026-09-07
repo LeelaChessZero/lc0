@@ -128,7 +128,7 @@ void Node::Trim() {
 
   d_ = 0.0f;
   m_ = 0.0f;
-  n_ = 0;
+  weight_ = 0.0;
   n_in_flight_.store(0, std::memory_order_release);
 
   // edge_
@@ -167,12 +167,12 @@ uint32_t Node::GetNInFlight() const {
   return n_in_flight_.load(std::memory_order_acquire);
 }
 
-uint32_t Node::GetChildrenVisits() const {
-  return low_node_ ? low_node_->GetChildrenVisits() : 0;
+float Node::GetChildrenVisits() const {
+  return low_node_ ? low_node_->GetChildrenVisits() : 0.0f;
 }
 
-uint32_t Node::GetTotalVisits() const {
-  return low_node_ ? low_node_->GetN() : 0;
+float Node::GetTotalVisits() const {
+  return low_node_ ? low_node_->GetN() : 0.0f;
 }
 
 const Edge& LowNode::GetEdgeAt(uint16_t index) const { return edges_[index]; }
@@ -182,7 +182,8 @@ std::string Node::DebugString() const {
   oss << " <Node> This:" << this << " LowNode:" << low_node_.get()
       << " Index:" << index_ << " Move:" << GetMove().ToString(true)
       << " Sibling:" << sibling_.get() << " P:" << GetP() << " WL:" << wl_
-      << " D:" << d_ << " M:" << m_ << " N:" << n_ << " N_:" << GetNInFlight()
+      << " D:" << d_ << " M:" << m_ << " N:" << weight_
+      << " N_:" << GetNInFlight()
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
@@ -194,7 +195,7 @@ std::string LowNode::DebugString() const {
   oss << " <LowNode> This:" << this << " Edges:" << edges_.get()
       << " NumEdges:" << static_cast<int>(num_edges_)
       << " Child:" << child_.get() << " WL:" << wl_ << " D:" << d_
-      << " M:" << m_ << " N:" << n_ << " NP:" << num_parents_
+      << " M:" << m_ << " N:" << weight_ << " NP:" << num_parents_
       << " Term:" << static_cast<int>(terminal_type_)
       << " Bounds:" << static_cast<int>(lower_bound_) - 2 << ","
       << static_cast<int>(upper_bound_) - 2;
@@ -233,7 +234,7 @@ void LowNode::MakeNotTerminal(const Node* node) {
   terminal_type_ = Terminal::NonTerminal;
   lower_bound_ = GameResult::BLACK_WON;
   upper_bound_ = GameResult::WHITE_WON;
-  n_ = 0;
+  weight_ = 0.0;
   wl_ = 0.0;
   d_ = 0.0;
   m_ = 0.0;
@@ -241,21 +242,21 @@ void LowNode::MakeNotTerminal(const Node* node) {
   // Include children too.
   if (node->GetNumEdges() > 0) {
     for (const auto& child : node->Edges()) {
-      const auto n = child.GetN();
-      if (n > 0) {
-        n_ += n;
+      auto weight = child.GetWeight();
+      if (weight > 0) {
+        weight_ += weight;
         // Flip Q for opponent.
         // Default values don't matter as n is > 0.
-        wl_ += child.GetWL(0.0f) * n;
-        d_ += child.GetD(0.0f) * n;
-        m_ += child.GetM(0.0f) * n;
+        wl_ += child.GetWL(0.0f) * weight;
+        d_ += child.GetD(0.0f) * weight;
+        m_ += child.GetM(0.0f) * weight;
       }
     }
 
     // Recompute with current eval (instead of network's) and children's eval.
-    wl_ /= n_;
-    d_ /= n_;
-    m_ /= n_;
+    wl_ /= weight_;
+    d_ /= weight_;
+    m_ /= weight_;
   }
 
   assert(WLDMInvariantsHold());
@@ -306,14 +307,14 @@ void Node::MakeNotTerminal(bool also_low_node) {
     auto [lower_bound, upper_bound] = low_node_->GetBounds();
     lower_bound_ = -upper_bound;
     upper_bound_ = -lower_bound;
-    n_ = low_node_->GetN();
+    weight_ = low_node_->GetWeight();
     wl_ = -low_node_->GetWL();
     d_ = low_node_->GetD();
     m_ = low_node_->GetM() + 1;
   } else {  // Real terminal.
     lower_bound_ = GameResult::BLACK_WON;
     upper_bound_ = GameResult::WHITE_WON;
-    n_ = 0.0f;
+    weight_ = 0.0f;
     wl_ = 0.0f;
     d_ = 0.0f;
     m_ = 0.0f;
@@ -328,13 +329,13 @@ void Node::SetBounds(GameResult lower, GameResult upper) {
 }
 
 bool Node::TryStartScoreUpdate() {
-  if (n_ > 0) {
+  if (weight_ > 0) {
     n_in_flight_.fetch_add(1, std::memory_order_acq_rel);
     return true;
   } else {
     uint32_t expected_n_if_flight_ = 0;
     return n_in_flight_.compare_exchange_strong(expected_n_if_flight_, 1,
-                                              std::memory_order_acq_rel);
+                                                std::memory_order_acq_rel);
   }
 }
 
@@ -344,53 +345,53 @@ void Node::CancelScoreUpdate(uint32_t multivisit) {
 }
 
 void LowNode::FinalizeScoreUpdate(float v, float d, float m,
-                                  uint32_t multivisit) {
+                                  float multiweight) {
   assert(edges_);
-  // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
-  m_ += multivisit * (m - m_) / (n_ + multivisit);
-
-  assert(WLDMInvariantsHold());
-
   // Increment N.
-  n_ += multivisit;
-}
-
-void LowNode::AdjustForTerminal(float v, float d, float m,
-                                uint32_t multivisit) {
-  assert(static_cast<uint32_t>(multivisit) <= n_);
+  weight_ += multiweight;
 
   // Recompute Q.
-  wl_ += multivisit * v / n_;
-  d_ += multivisit * d / n_;
-  m_ += multivisit * m / n_;
+  wl_ += multiweight * (v - wl_) / weight_;
+  d_ += multiweight * (d - d_) / weight_;
+  m_ += multiweight * (m - m_) / weight_;
 
   assert(WLDMInvariantsHold());
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit) {
+void LowNode::AdjustForTerminal(float v, float d, float m, float multiweight) {
+  assert(multiweight <= weight_);
+
   // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
-  m_ += multivisit * (m - m_) / (n_ + multivisit);
+  wl_ += multiweight * v / weight_;
+  d_ += multiweight * d / weight_;
+  m_ += multiweight * m / weight_;
+
+  assert(WLDMInvariantsHold());
+}
+
+void Node::FinalizeScoreUpdate(float v, float d, float m, float multiweight) {
+  // Increment N.
+  weight_ += multiweight;
+
+  // Recompute Q.
+  wl_ += multiweight * (v - wl_) / weight_;
+  d_ += multiweight * (d - d_) / weight_;
+  m_ += multiweight * (m - m_) / weight_;
 
   assert(WLDMInvariantsHold());
 
-  // Increment N.
-  n_ += multivisit;
   // Decrement virtual loss.
-  assert(GetNInFlight() >= (uint32_t)multivisit);
-  n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
+  auto old = n_in_flight_.fetch_sub(1, std::memory_order_acq_rel);
+  assert(old > 0);
 }
 
-void Node::AdjustForTerminal(float v, float d, float m, uint32_t multivisit) {
-  assert(static_cast<uint32_t>(multivisit) <= n_);
+void Node::AdjustForTerminal(float v, float d, float m, float multiweight) {
+  assert(multiweight <= weight_);
 
   // Recompute Q.
-  wl_ += multivisit * v / n_;
-  d_ += multivisit * d / n_;
-  m_ += multivisit * m / n_;
+  wl_ += multiweight * v / weight_;
+  d_ += multiweight * d / weight_;
+  m_ += multiweight * m / weight_;
 
   assert(WLDMInvariantsHold());
 }
@@ -513,33 +514,33 @@ void LowNode::DotNodeString(std::ofstream& oss) const {
       << std::showpos    //
       << "WL=" << wl_    //
       << std::noshowpos  //
-      << "\\lD=" << d_ << "\\lM=" << m_ << "\\lN=" << n_ << "\\l\"";
+      << "\\lD=" << d_ << "\\lM=" << m_ << "\\lN=" << weight_ << "\\l\"";
   // Set precision for tooltip.
   oss << std::fixed << std::showpos << std::setprecision(5);
   oss << ",tooltip=\""   //
       << std::showpos    //
       << "WL=" << wl_    //
       << std::noshowpos  //
-      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
+      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << weight_
       << "\\nNP=" << num_parents_
       << "\\nTerm=" << static_cast<int>(terminal_type_)  //
       << std::showpos                                    //
       << "\\nBounds=" << static_cast<int>(lower_bound_) - 2 << ","
-      << static_cast<int>(upper_bound_) - 2
-      << std::noshowpos                             //
+      << static_cast<int>(upper_bound_) - 2 << std::noshowpos  //
       << "\\n\\nThis=" << this << "\\nEdges=" << edges_.get()
       << "\\nNumEdges=" << static_cast<int>(num_edges_)
       << "\\nChild=" << child_.get() << "\\n\"";
   oss << "];" << std::endl;
 }
 
-void Node::DotEdgeString(std::ofstream& oss, bool as_opponent, const LowNode* parent) const {
+void Node::DotEdgeString(std::ofstream& oss, bool as_opponent,
+                         const LowNode* parent) const {
   oss << (parent == nullptr ? "top" : PtrToNodeName(parent)) << " -> "
       << (low_node_ ? PtrToNodeName(low_node_.get()) : PtrToNodeName(this))
       << " [";
   oss << "label=\""
       << (parent == nullptr ? "N/A" : GetMove(as_opponent).ToString(true))
-      << "\\lN=" << n_ << "\\lN_=" << GetNInFlight();
+      << "\\lN=" << weight_ << "\\lN_=" << GetNInFlight();
   oss << "\\l\"";
   // Set precision for tooltip.
   oss << std::fixed << std::setprecision(5);
@@ -548,7 +549,7 @@ void Node::DotEdgeString(std::ofstream& oss, bool as_opponent, const LowNode* pa
       << std::showpos                                 //
       << "\\nWL= " << wl_                             //
       << std::noshowpos                               //
-      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << n_
+      << "\\nD=" << d_ << "\\nM=" << m_ << "\\nN=" << weight_
       << "\\nN_=" << GetNInFlight()
       << "\\nTerm=" << static_cast<int>(terminal_type_)  //
       << std::showpos                                    //

@@ -44,7 +44,7 @@ std::vector<EvalResult> Backend::EvaluateBatch(
     EvalResult& result = results.back();
     result.p.resize(pos.legal_moves.size());
     computation->AddInput(
-        pos, EvalResultPtr{&result.q, &result.d, &result.m,
+        pos, EvalResultPtr{&result.q, &result.d, &result.m, &result.e,
                            std::span<float>(result.p.data(), result.p.size())});
   }
   computation->ComputeBlocking();

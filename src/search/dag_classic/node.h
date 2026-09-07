@@ -143,9 +143,7 @@ class atomic_unique_ptr {
   // Returns the managed pointer.
   pointer operator->() const noexcept { return get(); }
   // Returns the managed pointer.
-  pointer get() const noexcept {
-    return ptr.load(std::memory_order_acquire);
-  }
+  pointer get() const noexcept { return ptr.load(std::memory_order_acquire); }
 
   // Checks whether there is a managed pointer.
   explicit operator bool() const noexcept { return get() != pointer(); }
@@ -210,6 +208,7 @@ struct Eval {
   float wl;
   float d;
   float ml;
+  float e;
 };
 
 struct NNEval {
@@ -294,12 +293,15 @@ class Node {
 
   // Returns sum of policy priors which have had at least one playout.
   float GetVisitedPolicy() const;
-  uint32_t GetN() const { return n_; }
+  double GetWeight() const { return weight_; }
+  float GetN() const { return weight_; }
   uint32_t GetNInFlight() const;
-  uint32_t GetChildrenVisits() const;
-  uint32_t GetTotalVisits() const;
+  float GetChildrenVisits() const;
+  float GetTotalVisits() const;
   // Returns n + n_in_flight.
-  int GetNStarted() const { return n_ + GetNInFlight(); }
+  float GetNStarted() const {
+    return weight_ + static_cast<float>(GetNInFlight());
+  }
 
   float GetQ(float draw_score) const { return wl_ + draw_score * d_; }
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
@@ -333,11 +335,11 @@ class Node {
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)
-  // * N (+=multivisit)
-  // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit);
+  // * W (+=multiweight)
+  // * N-in-flight (-=1)
+  void FinalizeScoreUpdate(float v, float d, float m, float multiweight);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
+  void AdjustForTerminal(float v, float d, float m, float multiweight);
   // When search decides to treat one visit as several (in case of collisions
   // or visiting terminal nodes several times), it amplifies the visit by
   // incrementing n_in_flight.
@@ -376,8 +378,7 @@ class Node {
   std::string DebugString() const;
   // Return string describing the edge from node's parent to its low node in the
   // Graphviz dot format.
-  void DotEdgeString(std::ofstream& file,
-                     bool as_opponent = false,
+  void DotEdgeString(std::ofstream& file, bool as_opponent = false,
                      const LowNode* parent = nullptr) const;
   // Return string describing the graph starting at this node in the Graphviz
   // dot format.
@@ -414,13 +415,12 @@ class Node {
     explicit VisitorId();
     ~VisitorId();
 
-    operator type() const {
-      return id_;
-    }
+    operator type() const { return id_; }
 
     friend class Node;
     friend class LowNode;
-  private:
+
+   private:
     type id_;
   };
 #endif
@@ -445,6 +445,10 @@ class Node {
   // flipped depending on the side to move.
   double d_ = 0.0f;
 
+  // W is completed visits adjusted by uncertainty. It is used to estimate
+  // confidence bounds of evaluation.
+  double weight_ = 0.0;
+
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Pointer to a next sibling. nullptr if there are no further siblings.
   atomic_unique_ptr<Node> sibling_;
@@ -452,8 +456,8 @@ class Node {
   // 4 byte fields.
   // Estimated remaining plies.
   float m_ = 0.0f;
+
   // How many completed visits this node had.
-  uint32_t n_ = 0;
   // (AKA virtual loss.) How many threads currently process this node (started
   // but not finished). This value is added to n during selection which node
   // to pick in MCTS, and also when selecting the best move.
@@ -521,7 +525,7 @@ class LowNode {
   ~LowNode();
 
   void SetNNEval(const EvalResult* eval) {
-    assert(n_ == 0);
+    assert(weight_ == 0);
     assert(!child_);
 
     for (size_t idx = 0; idx < num_edges_; idx++) {
@@ -541,8 +545,9 @@ class LowNode {
   // Returns whether a node has children.
   bool HasChildren() const { return num_edges_ > 0; }
 
-  uint32_t GetN() const { return n_; }
-  uint32_t GetChildrenVisits() const { return n_ - 1; }
+  double GetWeight() const { return weight_; }
+  float GetN() const { return weight_; }
+  float GetChildrenVisits() const { return weight_ - 1.0; }
 
   // Returns node eval, i.e. average subtree V for non-terminal node and -1/0/1
   // for terminal nodes.
@@ -572,11 +577,11 @@ class LowNode {
   // Updates the node with newly computed value v.
   // Updates:
   // * Q (weighted average of all V in a subtree)
-  // * N (+=multivisit)
-  // * N-in-flight (-=multivisit)
-  void FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit);
+  // * W (+=multiweight)
+  // * N-in-flight (-=1)
+  void FinalizeScoreUpdate(float v, float d, float m, float multiweight);
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
-  void AdjustForTerminal(float v, float d, float m, uint32_t multivisit);
+  void AdjustForTerminal(float v, float d, float m, float multiweight);
 
   // Deletes all children.
   void ReleaseChildren();
@@ -637,6 +642,9 @@ class LowNode {
   // flipped depending on the side to move.
   double d_ = 0.0f;
 
+  // How many completed visits this node had.
+  double weight_ = 0.0f;
+
   // 8 byte fields on 64-bit platforms, 4 byte on 32-bit.
   // Array of edges.
   std::unique_ptr<Edge[]> edges_;
@@ -645,9 +653,8 @@ class LowNode {
 
   // 4 byte fields.
   // Estimated remaining plies.
+
   float m_ = 0.0f;
-  // How many completed visits this node had.
-  uint32_t n_ = 0;
 
   // 2 byte fields.
   // Number of parents.
@@ -704,9 +711,11 @@ class EdgeAndNode {
     return (node_ && node_->GetN() > 0) ? node_->GetM() : default_m;
   }
   // N-related getters, from Node (if exists).
-  uint32_t GetN() const { return node_ ? node_->GetN() : 0; }
-  int GetNStarted() const { return node_ ? node_->GetNStarted() : 0; }
+  float GetN() const { return node_ ? node_->GetN() : 0.0f; }
+  float GetNStarted() const { return node_ ? node_->GetNStarted() : 0.0f; }
   uint32_t GetNInFlight() const { return node_ ? node_->GetNInFlight() : 0; }
+
+  double GetWeight() const { return node_ ? node_->GetWeight() : 0; }
 
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
@@ -727,7 +736,7 @@ class EdgeAndNode {
   // Returns U = numerator * p / N.
   // Passed numerator is expected to be equal to (cpuct * sqrt(N[parent])).
   float GetU(float numerator) const {
-    return numerator * GetP() / (1 + GetNStarted());
+    return numerator * GetP() / (1.0f + GetNStarted());
   }
 
   std::string DebugString() const;
@@ -997,7 +1006,8 @@ class NodeTree {
 // the thread.
 class ReleaseNodesWork {
   static constexpr size_t kCapacity = 32;
-public:
+
+ public:
   ReleaseNodesWork(bool gc_thread = false);
   ~ReleaseNodesWork();
   bool IsWorker() const;
@@ -1008,8 +1018,9 @@ public:
 
   // Swap is used to transfer queue into a new stack variable. The stack
   // variable will flush the queue in the desctructor.
-  void swap(ReleaseNodesWork &other);
-private:
+  void swap(ReleaseNodesWork& other);
+
+ private:
   // Flush the local queue to the shared queue.
   void Submit();
 
@@ -1021,7 +1032,8 @@ private:
 class NodeGarbageCollector {
   NodeGarbageCollector();
   ~NodeGarbageCollector();
-public:
+
+ public:
   enum State {
     Running,
     GoToSleep,
@@ -1035,7 +1047,7 @@ public:
     return singleton;
   }
   // Delays node destruction until GC thread activates.
-  template<typename UniquePtr>
+  template <typename UniquePtr>
   void AddToGcQueue(UniquePtr& node);
 
   // Allow search to control when garbage collection runs.
@@ -1050,7 +1062,7 @@ public:
   // there is no need to call this.
   void NotifyThreadGoingSleep();
 
-private:
+ private:
   // Helper to transition between states safely
   bool SetState(State& old, State desired);
   bool IsActive() const;
@@ -1073,7 +1085,8 @@ private:
 #endif
   std::thread gc_thread_;
   SpinMutex mutex_;
-  std::deque<std::vector<std::unique_ptr<Node>>> released_nodes_ GUARDED_BY(mutex_);
+  std::deque<std::vector<std::unique_ptr<Node>>> released_nodes_
+      GUARDED_BY(mutex_);
 
   friend class ReleaseNodesWork;
 };

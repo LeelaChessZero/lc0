@@ -71,7 +71,7 @@ struct CudaGraphExec {
 
 template <typename DataType>
 struct InputsOutputs {
-  InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
+  InputsOutputs(unsigned maxBatchSize, bool wdl, bool wdl_err, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
                 bool cublasDisableTensorCores = false) {
     ReportCUDAErrors(cudaHostAlloc(
@@ -117,6 +117,17 @@ struct InputsOutputs {
                                               cudaEventDisableTiming));
     ReportCUDAErrors(cudaEventCreateWithFlags(&download_done_event_,
                                               cudaEventDisableTiming));
+
+    if (wdl_err) {
+      ReportCUDAErrors(cudaHostAlloc(
+          &op_value_err_mem_, maxBatchSize * sizeof(op_value_err_mem_[0]),
+          cudaHostAllocMapped));
+      ReportCUDAErrors(
+          cudaMalloc(&op_value_err_mem_gpu_,
+                     maxBatchSize * sizeof(op_value_err_mem_gpu_[0])));
+      ReportCUDAErrors(cudaEventCreateWithFlags(&value_err_done_event_,
+                                                cudaEventDisableTiming));
+    }
     if (moves_left) {
       ReportCUDAErrors(cudaHostAlloc(
           &op_moves_left_mem_, maxBatchSize * sizeof(op_moves_left_mem_[0]),
@@ -178,6 +189,11 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaEventDestroy(value_done_event_));
     ReportCUDAErrors(cudaEventDestroy(wdl_download_done_event_));
     ReportCUDAErrors(cudaEventDestroy(download_done_event_));
+    if (op_value_err_mem_) {
+      ReportCUDAErrors(cudaFreeHost(op_value_err_mem_));
+      ReportCUDAErrors(cudaFree(op_value_err_mem_gpu_));
+      ReportCUDAErrors(cudaEventDestroy(value_err_done_event_));
+    }
     if (op_moves_left_mem_ != nullptr) {
       ReportCUDAErrors(cudaFreeHost(op_moves_left_mem_));
       ReportCUDAErrors(cudaFree(op_moves_left_mem_gpu_));
@@ -205,6 +221,7 @@ struct InputsOutputs {
   DataType* input_val_mem_;
   DataType* op_policy_mem_;
   DataType* op_value_mem_;
+  DataType* op_value_err_mem_ = nullptr;
   DataType* op_moves_left_mem_ = nullptr;
 
   // Copies in VRAM.
@@ -213,6 +230,7 @@ struct InputsOutputs {
   DataType* op_policy_mem_gpu_;
   DataType* op_value_mem_gpu_;
   DataType* op_moves_left_mem_gpu_ = nullptr;
+  DataType* op_value_err_mem_gpu_ = nullptr;
 
   std::unique_ptr<float[]> wdl_cpu_softmax_;
 
@@ -233,6 +251,7 @@ struct InputsOutputs {
   cudaEvent_t upload_done_event_ = nullptr;
   cudaEvent_t policy_done_event_ = nullptr;
   cudaEvent_t value_done_event_ = nullptr;
+  cudaEvent_t value_err_done_event_ = nullptr;
   cudaEvent_t moves_left_done_event_ = nullptr;
   cudaEvent_t wdl_download_done_event_ = nullptr;
   cudaEvent_t download_done_event_ = nullptr;

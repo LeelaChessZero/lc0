@@ -123,6 +123,7 @@ class OnnxComputation final : public NetworkComputation {
   void ComputeBlocking() override;
   float GetQVal(int sample) const override;
   float GetDVal(int sample) const override;
+  float GetEVal(int sample) const override;
   float GetPVal(int sample, int move_id) const override;
   float GetMVal(int sample) const override;
 
@@ -200,6 +201,7 @@ class OnnxNetwork final : public Network {
   int wdl_head_ = -1;
   int value_head_ = -1;
   int mlh_head_ = -1;
+  int error_head_ = -1;
   NetworkCapabilities capabilities_;
   bool fp16_;
   bool bf16_;
@@ -232,9 +234,10 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
   int wdl_head = network->wdl_head_;
   int policy_head = network->policy_head_;
   int mlh_head = network->mlh_head_;
+  int err_head = network->error_head_;
   int data_size = (network->fp16_ | network->bf16_) ? 2 : 4;
   int outputs_size =
-      std::max({value_head, wdl_head, policy_head, mlh_head}) + 1;
+      std::max({value_head, wdl_head, policy_head, mlh_head, err_head}) + 1;
   output_tensors_data_.resize(outputs_size);
   output_tensors_data_device_.resize(outputs_size);
   output_tensors_step_.resize(outputs_size);
@@ -250,6 +253,9 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
   }
   if (mlh_head != -1) {
     output_tensors_step_[mlh_head] = 1;
+  }
+  if (err_head != -1) {
+    output_tensors_step_[err_head] = 1;
   }
 
   switch (provider_) {
@@ -404,6 +410,14 @@ template <typename DataType>
 float OnnxComputation<DataType>::GetDVal(int sample) const {
   if (network_->wdl_head_ == -1) return 0.0f;
   return inputs_outputs_->wdl_output_data_[sample * 3 + 1];
+}
+
+template <typename DataType>
+float OnnxComputation<DataType>::GetEVal(int sample) const {
+  if (network_->error_head_ == -1) return 0.0f;
+  DataType* data = static_cast<DataType*>(
+      inputs_outputs_->output_tensors_data_[network_->error_head_]);
+  return AsFloat(data[sample]);
 }
 
 template <typename DataType>
@@ -896,6 +910,10 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     mlh_head_ = outputs_.size();
     outputs_.emplace_back(md.output_mlh());
   }
+  if (md.has_output_err()) {
+    error_head_ = outputs_.size();
+    outputs_.emplace_back(md.output_err());
+  }
   uint64_t hash = 0;
   if (provider == OnnxProvider::TRT) {
     hash = std::hash<std::string_view>()(md.model());
@@ -949,6 +967,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
         opts.GetOrDefault<std::string>("policy_head", "vanilla");
     converter_options.value_head =
         opts.GetOrDefault<std::string>("value_head", "winner");
+    converter_options.error_head =
+        opts.GetOrDefault<std::string>("error_head", "st");
     converter_options.no_wdl_softmax = true;
     converter_options.alt_selu =
         kProvider == OnnxProvider::COREML ? true : false;

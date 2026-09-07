@@ -230,6 +230,7 @@ endif
 if get_option('dag_classic')
   files += [
     'src/search/dag_classic/node.cc',
+    'src/search/dag_classic/params.cc',
     'src/search/dag_classic/search.cc',
     'src/search/dag_classic/wrapper.cc',
   ]

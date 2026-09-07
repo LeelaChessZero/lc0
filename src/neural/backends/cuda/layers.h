@@ -533,7 +533,7 @@ class ValueHead : public BaseLayer<DataType> {
 
  public:
   ValueHead(BaseLayer<DataType>* ip, const MultiHeadWeights::ValueHead& weights,
-            void* scratch, bool attention_body, bool wdl,
+            void* scratch, bool attention_body, bool wdl, bool wdl_err,
             ActivationFunction act, int max_batch_size, bool use_gemm_ex);
   ~ValueHead();
   void Eval(int N, DataType* output, const DataType* input,
@@ -554,6 +554,7 @@ class ValueHead : public BaseLayer<DataType> {
   int embedding_size_;
   int value_hidden_size_;
   bool wdl_;
+  bool wdl_err_;
   bool attention_body_;
   ActivationFunction act_;
 };

@@ -128,6 +128,7 @@ class NetworkAsBackendComputation : public BackendComputation {
       if (result.q) *result.q = computation_->GetQVal(i);
       if (result.d) *result.d = computation_->GetDVal(i);
       if (result.m) *result.m = computation_->GetMVal(i);
+      if (result.e) *result.e = computation_->GetEVal(i);
       if (!result.p.empty()) SoftmaxPolicy(result.p, computation_.get(), i);
     }
   }

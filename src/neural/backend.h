@@ -53,6 +53,7 @@ struct EvalResultPtr {
   float* q = nullptr;
   float* d = nullptr;
   float* m = nullptr;
+  float* e = nullptr;
   std::span<float> p = {};
 };
 
@@ -60,10 +61,11 @@ struct EvalResult {
   float q;
   float d;
   float m;
+  float e;
   std::vector<float> p;
 
   EvalResultPtr AsPtr() {
-    return EvalResultPtr{.q = &q, .d = &d, .m = &m, .p = p};
+    return EvalResultPtr{.q = &q, .d = &d, .m = &m, .e = &e, .p = p};
   }
 };
 

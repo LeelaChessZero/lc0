@@ -46,14 +46,16 @@ struct CachedValue {
   float q;
   float d;
   float m;
-  uint8_t num_moves;
+  float e;
   std::unique_ptr<float[]> p;
+  uint8_t num_moves;
 };
 
 void CachedValueToEvalResult(const CachedValue& cv, const EvalResultPtr& ptr) {
   if (ptr.d) *ptr.d = cv.d;
   if (ptr.q) *ptr.q = cv.q;
   if (ptr.m) *ptr.m = cv.m;
+  if (ptr.e) *ptr.e = cv.e;
   std::copy(cv.p.get(), cv.p.get() + ptr.p.size(), ptr.p.begin());
 }
 
@@ -133,7 +135,7 @@ class MemCacheComputation : public BackendComputation {
                                            : new float[pos.legal_moves.size()]);
     value->num_moves = pos.legal_moves.size();
     return wrapped_computation_->AddInput(
-        pos, EvalResultPtr{&value->q, &value->d, &value->m,
+        pos, EvalResultPtr{&value->q, &value->d, &value->m, &value->e,
                            value->p ? std::span<float>{value->p.get(),
                                                        pos.legal_moves.size()}
                                     : std::span<float>{}});
@@ -176,6 +178,7 @@ std::optional<EvalResult> MemCache::GetCachedEvaluation(
   result.d = lock->d;
   result.q = lock->q;
   result.m = lock->m;
+  result.e = lock->e;
   if (lock->p) {
     result.p.reserve(pos.legal_moves.size());
     std::copy(lock->p.get(), lock->p.get() + pos.legal_moves.size(),

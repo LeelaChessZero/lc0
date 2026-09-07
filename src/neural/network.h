@@ -64,6 +64,7 @@ class NetworkComputation {
   // Returns Q value of @sample.
   virtual float GetQVal(int sample) const = 0;
   virtual float GetDVal(int sample) const = 0;
+  virtual float GetEVal(int /*sample*/) const { return 0; }
   // Returns P value @move_id of @sample.
   virtual float GetPVal(int sample, int move_id) const = 0;
   virtual float GetMVal(int sample) const = 0;

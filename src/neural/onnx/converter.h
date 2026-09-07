@@ -43,6 +43,7 @@ struct WeightsToOnnxConverterOptions {
   std::string output_wdl = "/output/wdl";
   std::string output_value = "/output/value";
   std::string output_mlh = "/output/mlh";
+  std::string output_error = "/output/error";
   int batch_size = -1;
   int opset = 17;
   int ir = -1;                 // ONNX IR, -1 for auto.
@@ -54,6 +55,7 @@ struct WeightsToOnnxConverterOptions {
   bool no_wdl_softmax = false; // Skip wdl softmax.
   std::string policy_head = "vanilla";
   std::string value_head = "winner";
+  std::string error_head = "st";
 
   static DataType StringToDataType(const std::string&);
 };

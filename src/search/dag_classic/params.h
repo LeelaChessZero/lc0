@@ -33,7 +33,47 @@ namespace lczero {
 namespace dag_classic {
 
 using ContemptMode = classic::ContemptMode;
-using SearchParams = classic::BaseSearchParams;
+
+class SearchParams : public classic::BaseSearchParams {
+ public:
+  SearchParams(const OptionsDict& options);
+  SearchParams(const SearchParams&) = delete;
+
+  // Populates UciOptions with search parameters.
+  static void Populate(OptionsParser* options);
+
+  // Parameter getters.
+  bool GetUseUncertaintyWeighting() const { return kUseUncertaintyWeighting; }
+  float GetUncertaintyWeightingMidPoint() const { return kUncertaintyWeightingMidPoint; }
+  float GetUncertaintyWeightingMinusExponent() const {
+    return kUncertaintyWeightingMinusExponent;
+  }
+  float GetUncertaintyWeightingScale() const {
+    return kUncertaintyWeightingScale;
+  }
+  float GetUncertaintyWeightingBase() const {
+    return kUncertaintyWeightingBase;
+  }
+  float GetUncertaintyWeightingCap() const {
+    return kUncertaintyWeightingCap;
+  }
+
+  // Search parameter IDs.
+  static const OptionId kUseUncertaintyWeightingId;
+  static const OptionId kUncertaintyWeightingMidPointId;
+  static const OptionId kUncertaintyWeightingMinusExponentId;
+  static const OptionId kUncertaintyWeightingScaleId;
+  static const OptionId kUncertaintyWeightingBaseId;
+  static const OptionId kUncertaintyWeightingCapId;
+
+  // Search parameter values.
+  const bool kUseUncertaintyWeighting;
+  const float kUncertaintyWeightingMidPoint;
+  const float kUncertaintyWeightingMinusExponent;
+  const float kUncertaintyWeightingScale;
+  const float kUncertaintyWeightingBase;
+  const float kUncertaintyWeightingCap;
+};
 
 }  // namespace dag_classic
 }  // namespace lczero

@@ -109,6 +109,12 @@ class DemuxingComputation final : public NetworkComputation {
     return parent->GetPVal(offset, move_id);
   }
 
+  float GetEVal(int sample) const override {
+    auto [parent, offset] = GetParent(sample);
+    if (!parent) return 0;
+    return parent->GetEVal(offset);
+  }
+
   void NotifyComplete() {
     if (1 == dataready_.fetch_sub(1, std::memory_order_release)) {
       {

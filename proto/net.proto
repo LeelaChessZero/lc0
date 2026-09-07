@@ -397,6 +397,7 @@ message OnnxModel {
   optional string output_wdl = 5;
   optional string output_policy = 6;
   optional string output_mlh = 7;
+  optional string output_err = 8;
 }
 
 message Net {

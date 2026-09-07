@@ -220,6 +220,11 @@ void ShowNetworkWeightsInfo(const pblczero::Net& weights) {
   const auto& w = weights.weights();
   COUT << Justify("Value")
        << (w.ip2_val_w().params().size() / 2 % 3 == 0 ? "WDL" : "Classical");
+  COUT << Justify("Error")
+       << (w.has_value_heads() && w.value_heads().has_st() &&
+                   w.value_heads().st().ip_val_err_b().params().size() > 0
+               ? "Present"
+               : "Absent");
   COUT << Justify("MLH") << (w.has_ip2_mov_w() ? "Present" : "Absent");
 }
 
