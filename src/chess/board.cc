@@ -862,11 +862,6 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   king_attack_info.attack_lines_ =
       king_attack_info.attack_lines_ | attacking_pawns;
 
-  if (attacking_pawns.as_int()) {
-    // No more than one pawn can give check.
-    num_king_attackers++;
-  }
-
   // Check knights.
   const BitBoard attacking_knights =
       kKnightAttacks[our_king_.as_idx()] &
@@ -874,13 +869,9 @@ KingAttackInfo ChessBoard::GenerateKingAttackInfo() const {
   king_attack_info.attack_lines_ =
       king_attack_info.attack_lines_ | attacking_knights;
 
-  if (attacking_knights.as_int()) {
-    // No more than one knight can give check.
-    num_king_attackers++;
-  }
+  num_king_attackers += (attacking_knights | attacking_pawns).count();
 
-  assert(num_king_attackers <= 2);
-  king_attack_info.double_check_ = (num_king_attackers == 2);
+  king_attack_info.double_check_ = (num_king_attackers >= 2);
 
   return king_attack_info;
 }
