@@ -648,6 +648,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       break;
     default:
       level = GraphOptimizationLevel::ORT_ENABLE_ALL;
+      if (is_ep_context) {
+        level = GraphOptimizationLevel::ORT_DISABLE_ALL;
+      }
       break;
   }
   options.SetGraphOptimizationLevel(level);
@@ -706,7 +709,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
                                 std::to_string(batch_size)) +
           "_" + std::to_string(optimize) + "_" + oss.str() + "_";
       trt_options["trt_engine_cache_prefix"] = cache_prefix;
-      trt_options["trt_ep_context_file_path"] = cache_dir + "/" + cache_prefix + "ctx.onnx";
+      if (ep_context_path) {
+        trt_options["trt_ep_context_file_path"] = cache_prefix + "ctx.onnx";
+      }
       if (ep_context_path) *ep_context_path = trt_options["trt_ep_context_file_path"];
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
@@ -1041,6 +1046,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
   if (w->has_onnx_model()) {
+    const auto& md = w->onnx_model();
+    if (md.is_ep_context()) {
+      return std::make_unique<OnnxNetwork>(*w, opts, kProvider, true);
+    }
     return std::make_unique<OnnxNetwork>(*w, opts, kProvider, false);
   } else {
     WeightsToOnnxConverterOptions converter_options;
