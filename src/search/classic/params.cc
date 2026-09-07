@@ -191,23 +191,16 @@ const OptionId BaseSearchParams::kCpuctAtRootId{
      .help_text =
          "cpuct_init constant from \"UCT search\" algorithm, for root node.",
      .visibility = OptionId::kProOnly}};
-const OptionId BaseSearchParams::kCpuctBaseId{
-    "cpuct-base", "CPuctBase",
-    "cpuct_base constant from \"UCT search\" algorithm. Lower value means "
-    "higher growth of Cpuct as number of node visits grows."};
-const OptionId BaseSearchParams::kCpuctBaseAtRootId{
-    {.long_flag = "cpuct-base-at-root",
-     .uci_option = "CPuctBaseAtRoot",
-     .help_text =
-         "cpuct_base constant from \"UCT search\" algorithm, for root node.",
-     .visibility = OptionId::kProOnly}};
-const OptionId BaseSearchParams::kCpuctFactorId{
-    "cpuct-factor", "CPuctFactor", "Multiplier for the cpuct growth formula."};
-const OptionId BaseSearchParams::kCpuctFactorAtRootId{
-    {.long_flag = "cpuct-factor-at-root",
-     .uci_option = "CPuctFactorAtRoot",
-     .help_text = "Multiplier for the cpuct growth formula at root.",
-     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kCpuctExponentId{
+    "cpuct-exponent", "CpuctExponent",
+    "Exponent from \"Generalized PUCT\" algorithm. Higher values mean that Cpuct grows "
+    "faster as number of node visits grows, which promotes more exploration "
+    "later into the search."};
+const OptionId BaseSearchParams::kCpuctExponentAtRootId{
+    "cpuct-exponent", "CpuctExponentAtRoot",
+    "Exponent from \"Generalized PUCT\" algorithm. Higher values mean that Cpuct grows "
+    "faster as number of node visits grows, which promotes more exploration "
+    "later into the search."};
 // Remove this option after 0.25 has been made mandatory in training and the
 // training server stops sending it.
 const OptionId BaseSearchParams::kRootHasOwnCpuctParamsId{
@@ -544,12 +537,10 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
   // Many of them are overridden with training specific values in tournament.cc.
   options->Add<IntOption>(kMiniBatchSizeId, 0, 1024) = 0;
-  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 1.745f;
-  options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 1.745f;
-  options->Add<FloatOption>(kCpuctBaseId, 1.0f, 1000000000.0f) = 38739.0f;
-  options->Add<FloatOption>(kCpuctBaseAtRootId, 1.0f, 1000000000.0f) = 38739.0f;
-  options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
-  options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
+  options->Add<FloatOption>(kCpuctId, 0.0f, 100.0f) = 0.2f;
+  options->Add<FloatOption>(kCpuctAtRootId, 0.0f, 100.0f) = 1.5f;
+  options->Add<FloatOption>(kCpuctExponentId, 0.0f, 1.0f) = 0.8f;
+  options->Add<FloatOption>(kCpuctExponentAtRootId, 0.0f, 1.0f) = 0.5f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
@@ -645,14 +636,10 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
       kCpuctAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctAtRootId
                                                       : kCpuctId)),
-      kCpuctBase(options.Get<float>(kCpuctBaseId)),
-      kCpuctBaseAtRoot(options.Get<float>(
-          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctBaseAtRootId
-                                                      : kCpuctBaseId)),
-      kCpuctFactor(options.Get<float>(kCpuctFactorId)),
-      kCpuctFactorAtRoot(options.Get<float>(
-          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
-                                                      : kCpuctFactorId)),
+      kCpuctExponent(options.Get<float>(kCpuctExponentId)),
+      kCpuctExponentAtRoot(options.Get<float>(
+          options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctExponentAtRootId
+                                                      : kCpuctExponentId)),
       kTwoFoldDraws(options.Get<bool>(kTwoFoldDrawsId)),
       kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),
