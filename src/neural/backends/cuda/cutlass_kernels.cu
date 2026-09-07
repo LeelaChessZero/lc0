@@ -32,7 +32,7 @@
 #include "utils/exception.h"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 template <bool bias>
 void fusedMHACutlass(void* output, void* q, void* k, void* v, void* skip,
