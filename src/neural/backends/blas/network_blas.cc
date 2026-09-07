@@ -1050,7 +1050,7 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
   wdl_ = nf.value() == NF::VALUE_WDL;
 
   wdl_err_ = weights_.value_heads.contains("st") &&
-             weights_.value_heads.at("st").ip_val_b.size() > 0;
+             weights_.value_heads.at("st").ip_val_err_b.size() > 0;
 
   moves_left_ = (nf.moves_left() == NF::MOVES_LEFT_V1) &&
                 options.GetOrDefault<bool>("mlh", true);
