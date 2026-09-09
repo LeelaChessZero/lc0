@@ -37,6 +37,18 @@
 namespace lczero {
 namespace NS_BACKEND {
 
+enum ExtraPolicyHeadIndex {
+  kExtraPolicyOptimistic = 0,
+  kExtraPolicySoft = 1,
+  kNumExtraPolicyHeads = 2
+};
+
+// Subset of policyheads for geometric blending.
+struct ExtraPolicyHeads {
+  bool optimistic = false;
+  bool soft = false;
+};
+
 inline void ToType(float& dst, float src) { dst = src; }
 inline void ToType(half& dst, float src) {
   auto temp = FP32toFP16(src);
@@ -73,7 +85,8 @@ template <typename DataType>
 struct InputsOutputs {
   InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
-                bool cublasDisableTensorCores = false) {
+                bool cublasDisableTensorCores = false,
+                ExtraPolicyHeads extra_policy_heads = {}) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -98,6 +111,19 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaMalloc(
         &op_policy_mem_gpu_,
         maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
+
+    // Output of the extra policy heads. Device only: the blend folds them into
+    // the policy output before it is copied out, so their logits never leave
+    // the card.
+    const bool wanted[kNumExtraPolicyHeads] = {extra_policy_heads.optimistic,
+                                               extra_policy_heads.soft};
+    for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+      if (!wanted[i]) continue;
+      ReportCUDAErrors(cudaMalloc(
+          &op_policy_extra_mem_gpu_[i],
+          maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
+    }
+
     ReportCUDAErrors(cudaHostAlloc(
         &op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(op_value_mem_[0]),
         cudaHostAllocMapped));
@@ -171,6 +197,9 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaFree(input_val_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
     ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
+    for (auto mem : op_policy_extra_mem_gpu_) {
+      if (mem) ReportCUDAErrors(cudaFree(mem));
+    }
     ReportCUDAErrors(cudaFreeHost(op_value_mem_));
     ReportCUDAErrors(cudaFree(op_value_mem_gpu_));
     ReportCUDAErrors(cudaEventDestroy(upload_done_event_));
@@ -195,6 +224,9 @@ struct InputsOutputs {
       if (head_offset_pointers_) {
         ReportCUDAErrors(cudaFree(head_offset_pointers_));
       }
+      for (auto ptrs : extra_head_offset_pointers_) {
+        if (ptrs) ReportCUDAErrors(cudaFree(ptrs));
+      }
       ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
       ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
       ReportCUDAErrors(cudaStreamDestroy(download_stream_));
@@ -213,6 +245,8 @@ struct InputsOutputs {
   DataType* op_policy_mem_gpu_;
   DataType* op_value_mem_gpu_;
   DataType* op_moves_left_mem_gpu_ = nullptr;
+  // Indexed by ExtraPolicyHeadIndex; null for heads the network cannot make.
+  DataType* op_policy_extra_mem_gpu_[kNumExtraPolicyHeads] = {};
 
   std::unique_ptr<float[]> wdl_cpu_softmax_;
 
@@ -223,6 +257,9 @@ struct InputsOutputs {
   void* scratch_mem_;
   void** offset_pointers_ = nullptr;
   void** head_offset_pointers_ = nullptr;
+  // The extra heads keep their own, because their policy encoder blocks may
+  // differ in shape from the selected head's.
+  void** extra_head_offset_pointers_[kNumExtraPolicyHeads] = {};
 
   // cuda stream used to run the network
   cudaStream_t compute_stream_ = nullptr;

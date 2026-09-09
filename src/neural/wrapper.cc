@@ -186,6 +186,17 @@ std::unique_ptr<Backend> NetworkAsBackendFactory::Create(
   OptionsDict network_options;
   network_options.AddSubdictFromString(backend_options);
 
+  const float blend_optimistic =
+      options.Get<float>(SharedBackendParams::kPolicyBlendOptimistic);
+  if (blend_optimistic > 0.0f) {
+    network_options.Set<float>("policy_blend_optimistic", blend_optimistic);
+  }
+  const float blend_soft =
+      options.Get<float>(SharedBackendParams::kPolicyBlendSoft);
+  if (blend_soft > 0.0f) {
+    network_options.Set<float>("policy_blend_soft", blend_soft);
+  }
+
   std::string net_path =
       options.Get<std::string>(SharedBackendParams::kWeightsId);
   std::optional<WeightsFile> weights = LoadWeights(net_path);

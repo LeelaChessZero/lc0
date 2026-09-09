@@ -58,6 +58,11 @@ namespace {
 template <typename DataType>
 class CudaNetwork;
 
+// Policy heads a multihead network carries besides the one the backend was
+// configured with, in ExtraPolicyHeadIndex order.
+static constexpr const char* kExtraPolicyHeadNames[kNumExtraPolicyHeads] = {
+    "optimistic", "soft"};
+
 static size_t getMaxAttentionHeadSize(
     const MultiHeadWeights::PolicyHead& weights, int N) {
   const size_t embedding_op_size = weights.ip_pol_b.size();
@@ -425,11 +430,84 @@ class CudaNetwork : public Network {
                       "' does not exist in this net.");
     }
 
+    // Pooling the policy heads here rather than anywhere downstream. Geometric
+    // pooling is a sum of logits, and the logits are exactly what this backend
+    // hands over, so the whole blend fits in the gap before the output is
+    // copied out -- and what leaves the backend is one policy vector,
+    // indistinguishable from an unblended one to everything downstream, which
+    // is why nothing outside this file has to know about it.
+    // The backend-opts lexer sorts `1` into the integer dictionary and `0.55`
+    // into the float one, so reading a weight as a float only would silently
+    // ignore any whole-number value. Both dictionaries are read and the float
+    // wins, which is also the precedence the UCI option needs: it is written
+    // as a float on top of whatever the backend options said. Reading both
+    // also leaves the key marked as read either way, and an unread key is a
+    // hard error.
+    auto blend_weight = [&options](const char* key) {
+      float weight = 0.0f;
+      if (options.Exists<int>(key)) weight = options.Get<int>(key);
+      if (options.Exists<float>(key)) weight = options.Get<float>(key);
+      return weight;
+    };
+    blend_w_extra_[kExtraPolicyOptimistic] =
+        blend_weight("policy_blend_optimistic");
+    blend_w_extra_[kExtraPolicySoft] = blend_weight("policy_blend_soft");
+    for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+      if (blend_w_extra_[i] < 0.0f || blend_w_extra_[i] > 1.0f) {
+        throw Exception(std::string("The policy blend weight for the '") +
+                        kExtraPolicyHeadNames[i] +
+                        "' head must be between 0 and 1.");
+      }
+      if (blend_w_extra_[i] > 0.0f) blend_active_ = true;
+    }
+    if (blend_active_) {
+      if (!attn_policy_ || !attn_body_) {
+        throw Exception(
+            "The policy blend needs an attention policy network with an "
+            "attention body (multihead format)."
+            );
+      }
+      if (policy_head != "vanilla") {
+        // A selected head is never built a second time as an extra head, so
+        // pooling on top of one would read a buffer nothing has written.
+        throw Exception(
+            "The policy blend pools the policy heads itself and needs "
+            "policy_head=vanilla, not '" +
+            policy_head + "'.");
+      }
+      // Weights past the simplex would scale every logit by the same factor,
+      // which is a temperature rather than a blend. Renormalize onto itself.
+      const float w_sum = blend_w_extra_[kExtraPolicyOptimistic] +
+                          blend_w_extra_[kExtraPolicySoft];
+      if (w_sum > 1.0f) {
+        for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+          blend_w_extra_[i] /= w_sum;
+        }
+      }
+      blend_w_main_ =
+          std::max(0.0f, 1.0f - blend_w_extra_[kExtraPolicyOptimistic] -
+                             blend_w_extra_[kExtraPolicySoft]);
+      // A head stays in the blend however small its
+      // weight is, so that moving the weight cannot move the cost of a search
+      blend_heads_.optimistic = blend_w_extra_[kExtraPolicyOptimistic] > 0.0f;
+      blend_heads_.soft = blend_w_extra_[kExtraPolicySoft] > 0.0f;
+    }
+
     // Attention policy head or body may need more memory
-    const size_t attentionPolicySize =
+    size_t attentionPolicySize =
         getMaxAttentionHeadSize(weights.policy_heads.at(policy_head),
                                 max_batch_size_) *
         sizeof(DataType);
+    // The extra policy heads run over the same scratch allocation, so it has
+    // to fit the largest of them too.
+    for (const char* extra_head : kExtraPolicyHeadNames) {
+      if (!weights.policy_heads.contains(extra_head)) continue;
+      attentionPolicySize = std::max(
+          attentionPolicySize,
+          getMaxAttentionHeadSize(weights.policy_heads.at(extra_head),
+                                  max_batch_size_) *
+              sizeof(DataType));
+    }
 
     const size_t attentionBodySize =
         getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
@@ -593,6 +671,69 @@ class CudaNetwork : public Network {
       }
     }
 
+    // Extra policy heads, for the blend below. They read the same attention
+    // body output as the selected head, so they are kept out of network_
+    // (which forwardEval walks in order) and evaluated separately, after it.
+    if (attn_policy_ && attn_body_) {
+      // Reusing the selected head's policy embedding is what makes an extra
+      // head cheap. Turned off, every extra head recomputes its own
+      // Exposed so the two can be compared, and as a way out if a
+      // future net trips the detection below.
+      const bool allow_shared_embedding =
+          options.GetOrDefault<bool>("shared_policy_embedding", true);
+      const MultiHeadWeights::PolicyHead& main_head =
+          weights.policy_heads.at(policy_head);
+      for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+        const char* name = kExtraPolicyHeadNames[i];
+        if (policy_head == name || !weights.policy_heads.contains(name)) {
+          continue;
+        }
+        if (blend_w_extra_[i] <= 0.0f) continue;
+        const MultiHeadWeights::PolicyHead& head =
+            weights.policy_heads.at(name);
+        // Multihead nets keep a single policy embedding for all heads: the
+        // weights loader binds every head's ip_pol_w to the same vector unless
+        // the head carries its own. When it is shared, the extra head can pick
+        // up the embedding the selected head already computed and pay only for
+        // its own query/key projections.
+        extra_policy_shares_embedding_[i] =
+            allow_shared_embedding && &head.ip_pol_w == &main_head.ip_pol_w &&
+            &head.ip_pol_b == &main_head.ip_pol_b && head.pol_encoder.empty() &&
+            main_head.pol_encoder.empty();
+        extra_policy_head_[i] = std::make_unique<AttentionPolicyHead<DataType>>(
+            encoder_last_, head, scratch_mem_, attn_body_, act, max_batch_size_,
+            use_gemm_ex, extra_policy_shares_embedding_[i]);
+        auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+            extra_policy_head_[i].get(), kNumOutputPolicy, 1, 1,
+            64 * 64 + 8 * 24, true);
+        policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
+        extra_policy_map_[i] = std::move(policymap);
+      }
+      available_extra_heads_.optimistic =
+          extra_policy_head_[kExtraPolicyOptimistic] != nullptr;
+      available_extra_heads_.soft =
+          extra_policy_head_[kExtraPolicySoft] != nullptr;
+    }
+
+    // Deliberately outside the block above: a net that never reaches it has no
+    // extra heads at all, which is the same failure as a net that reaches it
+    // and turns out not to carry the head asked for.
+    if (blend_active_) {
+      for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+        if (blend_w_extra_[i] > 0.0f && !extra_policy_head_[i]) {
+          throw Exception(std::string("The policy blend was given weight on "
+                                      "the '") +
+                          kExtraPolicyHeadNames[i] +
+                          "' head, which this network does not have.");
+        }
+      }
+      CERR << "GPU policy blend: w_v=" << blend_w_main_
+           << " w_o=" << blend_w_extra_[kExtraPolicyOptimistic]
+           << " w_s=" << blend_w_extra_[kExtraPolicySoft]
+           << " (geometric/logit-space, pre-softmax); extra policy heads are "
+              "consumed internally.";
+    }
+
     // Value heads.
     {
       const MultiHeadWeights::ValueHead& head =
@@ -647,6 +788,13 @@ class CudaNetwork : public Network {
     // take max size of all layers
     for (auto& layer : network_) {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
+    }
+    for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+      if (!extra_policy_head_[i]) continue;
+      maxSize = std::max(maxSize,
+                         extra_policy_head_[i]->GetOutputSize(max_batch_size_));
+      maxSize = std::max(maxSize,
+                         extra_policy_map_[i]->GetOutputSize(max_batch_size_));
     }
 
     if ((attn_policy_ || use_res_block_winograd_fuse_opt_ || attn_body_) &&
@@ -760,6 +908,7 @@ class CudaNetwork : public Network {
     void* scratch_mem;
     DataType*** offset_pointers;
     DataType*** head_offset_pointers;
+    void*** extra_head_offset_pointers;
     cudaStream_t compute_stream, upload_stream, download_stream;
     cublasHandle_t cublas;
     if (multi_stream_) {
@@ -769,6 +918,7 @@ class CudaNetwork : public Network {
       scratch_mem = io->scratch_mem_;
       offset_pointers = (DataType***)&io->offset_pointers_;
       head_offset_pointers = (DataType***)&io->head_offset_pointers_;
+      extra_head_offset_pointers = io->extra_head_offset_pointers_;
       compute_stream = io->compute_stream_;
       upload_stream = io->upload_stream_;
       download_stream = io->download_stream_;
@@ -778,6 +928,7 @@ class CudaNetwork : public Network {
       scratch_mem = scratch_mem_;
       offset_pointers = (DataType***)&offset_pointers_;
       head_offset_pointers = (DataType***)&head_offset_pointers_;
+      extra_head_offset_pointers = extra_head_offset_pointers_;
       compute_stream = compute_stream_;
       upload_stream = upload_stream_;
       download_stream = download_stream_;
@@ -918,6 +1069,54 @@ class CudaNetwork : public Network {
           batchSize, (DataType*)opPol, spare1, nullptr, scratch_mem,
           scratch_size_, nullptr, cublas,
           compute_stream);  // policy map layer  // POLICY output
+
+      if (blend_active_) {
+        // The pooled heads run over the same body output. spare1 and spare2 are
+        // free again now that the policy map has consumed them, and `flow` is
+        // untouched by the attention policy head, so each extra head is just
+        // its own query/key projections plus a policy map.
+        //
+        // One array decides both what is evaluated and what is pooled, so a
+        // head can never be computed and then dropped, or pooled from a buffer
+        // nothing wrote. The load-time guards make every entry here a head the
+        // network actually has.
+        const bool pooled[kNumExtraPolicyHeads] = {blend_heads_.optimistic,
+                                                   blend_heads_.soft};
+        // spare2 still holds the policy embedding the selected head computed.
+        // A head that has to recompute its own embedding overwrites it, so the
+        // heads that reuse it go first.
+        for (int pass = 0; pass < 2; pass++) {
+          const bool shared_pass = pass == 0;
+          for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+            if (!pooled[i]) continue;
+            if (extra_policy_shares_embedding_[i] != shared_pass) continue;
+            extra_policy_head_[i]->Eval(
+                batchSize, spare1, flow, spare2, scratch_mem, scratch_size_,
+                nullptr, cublas, compute_stream,
+                (DataType***)&extra_head_offset_pointers[i]);
+            extra_policy_map_[i]->Eval(
+                batchSize, (DataType*)io->op_policy_extra_mem_gpu_[i], spare1,
+                nullptr, scratch_mem, scratch_size_, nullptr, cublas,
+                compute_stream);
+          }
+        }
+
+        // Folding the heads together here, before the policy output is copied
+        // out, is what keeps the rest of the engine on its vanilla path: one
+        // download, one softmax, one prior per position.
+        const DataType* blended[kNumExtraPolicyHeads] = {};
+        for (int i = 0; i < kNumExtraPolicyHeads; i++) {
+          if (pooled[i]) {
+            blended[i] = (const DataType*)io->op_policy_extra_mem_gpu_[i];
+          }
+        }
+        blendPolicyLogits<DataType>(
+            (DataType*)opPol, blended[kExtraPolicyOptimistic],
+            blended[kExtraPolicySoft], blend_w_main_,
+            blend_w_extra_[kExtraPolicyOptimistic],
+            blend_w_extra_[kExtraPolicySoft], batchSize * kNumOutputPolicy,
+            compute_stream);
+      }
 
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
@@ -1062,6 +1261,9 @@ class CudaNetwork : public Network {
       if (offset_pointers_) ReportCUDAErrors(cudaFree(offset_pointers_));
       if (head_offset_pointers_)
         ReportCUDAErrors(cudaFree(head_offset_pointers_));
+      for (auto ptrs : extra_head_offset_pointers_) {
+        if (ptrs) ReportCUDAErrors(cudaFree(ptrs));
+      }
       ReportCUBLASErrors(cublasDestroy(cublas_));
       ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
       ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
@@ -1104,7 +1306,8 @@ class CudaNetwork : public Network {
     if (free_inputs_outputs_.empty()) {
       return std::make_unique<InputsOutputs<DataType>>(
           max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
-          !has_tensor_cores_ && std::is_same<half, DataType>::value);
+          !has_tensor_cores_ && std::is_same<half, DataType>::value,
+          available_extra_heads_);
     } else {
       std::unique_ptr<InputsOutputs<DataType>> resource =
           std::move(free_inputs_outputs_.front());
@@ -1154,6 +1357,21 @@ class CudaNetwork : public Network {
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
+  // Extra policy heads, indexed by ExtraPolicyHeadIndex. Null for a head the
+  // weights file does not have (or that is the selected head already).
+  ExtraPolicyHeads available_extra_heads_;
+  std::unique_ptr<BaseLayer<DataType>> extra_policy_head_[kNumExtraPolicyHeads];
+  std::unique_ptr<BaseLayer<DataType>> extra_policy_map_[kNumExtraPolicyHeads];
+  bool extra_policy_shares_embedding_[kNumExtraPolicyHeads] = {};
+
+  // Geometric pooling of the policy heads inside the backend. Fixed at load,
+  // which is what lets the captured cuda graphs bake the weights in: the heads
+  // to evaluate are the ones carrying weight, and the weights sum to one.
+  bool blend_active_ = false;
+  ExtraPolicyHeads blend_heads_;
+  float blend_w_main_ = 1.0f;
+  float blend_w_extra_[kNumExtraPolicyHeads] = {};
+
   BaseLayer<DataType>* resi_last_;
   BaseLayer<DataType>* encoder_last_;
 
@@ -1165,6 +1383,7 @@ class CudaNetwork : public Network {
   // this is only used when multi-stream is disabled
   void** offset_pointers_ = nullptr;
   void** head_offset_pointers_ = nullptr;
+  void** extra_head_offset_pointers_[kNumExtraPolicyHeads] = {};
 
   bool has_tensor_cores_;
 
