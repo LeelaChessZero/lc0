@@ -96,6 +96,16 @@ class Edge {
   float GetP() const;
   void SetP(float val);
 
+  // Virtual visits and values for node priors, initialized once at expansion.
+  float GetN0() const { return n0_; }
+  float GetW0() const { return w0_; }
+  float GetD0() const { return d0_; }
+  void SetVirtualVisits(float n0, float w0, float d0) {
+    n0_ = n0;
+    w0_ = w0;
+    d0_ = d0;
+  }
+
   // Debug information about the edge.
   std::string DebugString() const;
 
@@ -108,6 +118,14 @@ class Edge {
   // Probability that this move will be made, from the policy head of the neural
   // network; compressed to a 16 bit format (5 bits exp, 11 bits significand).
   uint16_t p_ = 0;
+
+  // Virtual visits for node priors: n0(a) = K*P(a), initialized once at expansion.
+  float n0_ = 0.0f;
+  // Virtual W value: W0(a) = n0(a) * WL_parent.
+  float w0_ = 0.0f;
+  // Virtual D value: D0(a) = n0(a) * D_parent.
+  float d0_ = 0.0f;
+
   friend class Node;
 };
 
