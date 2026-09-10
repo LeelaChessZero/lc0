@@ -929,7 +929,8 @@ void ApplyDTZCorrections(FileData<FrameType>& data, SyzygyTablebase* tablebase) 
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
     if (board.castlings().no_legal_castle() &&
-        (board.ours() | board.theirs()).count() <= 3 && board.pawns().empty()) {
+        (board.ours() | board.theirs()).count() <= 3 && board.pawns().empty() &&
+        (board.ours() | board.theirs()).count() <= tablebase->max_cardinality()) {
       ProbeState state;
       WDLScore wdl = tablebase->probe_wdl(history.Last(), &state);
       // Only fail state means the WDL is wrong, probe_wdl may produce

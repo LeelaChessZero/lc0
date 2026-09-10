@@ -35,7 +35,7 @@
 #include "utils/bit.h"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 inline void ToType(float& dst, float src) { dst = src; }
 inline void ToType(half& dst, float src) {
@@ -48,6 +48,16 @@ inline float FromType(half src) {
   uint16_t temp = bit_cast<uint16_t>(src);
   return FP16toFP32(temp);
 }
+
+#if LC0_CUDA_BF16_SUPPORTED
+inline void ToType(__nv_bfloat16& dst, float src) {
+  dst = __float2bfloat16(src);
+}
+
+inline float FromType(__nv_bfloat16 src) {
+  return __bfloat162float(src);
+}
+#endif
 
 template <typename DataType>
 struct CudaGraphCapture;
@@ -150,9 +160,15 @@ struct InputsOutputs {
             cudaMemsetAsync(mem, 0, tensor_mem_size, compute_stream_));
       }
       ReportCUBLASErrors(cublasCreate(&cublas_));
+#if !defined(USE_HIP)
+      // No hipBLAS equivalent for the TF32/tensor-op math-mode toggle; hipBLAS
+      // picks its default precision (see network_cuda.cc constructor).
       ReportCUBLASErrors(cublasSetMathMode(
           cublas_, cublasDisableTensorCores ? CUBLAS_PEDANTIC_MATH
                                             : CUBLAS_TENSOR_OP_MATH));
+#else
+      (void)cublasDisableTensorCores;
+#endif
       ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
     } else {
       multi_stream_ = false;
@@ -286,7 +302,7 @@ inline CudaGraphExec<DataType>& CudaGraphExec<DataType>::operator=(
     const CudaGraphCapture<DataType>& graph) {
   assert(graph_exec_ == nullptr);
   if (graph.graph_ == nullptr) {
-    throw Exception("Trying to instantiate an nullptr cuda graph");
+    throw Exception("Trying to instantiate an nullptr " BACKEND_NAME " graph");
   }
   ReportCUDAErrors(
       cudaGraphInstantiate(&graph_exec_, graph.graph_, nullptr, nullptr, 0));

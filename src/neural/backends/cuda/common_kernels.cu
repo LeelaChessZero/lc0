@@ -32,10 +32,18 @@
 #include "neural/tables/activation_function.h"
 #include "neural/tables/attention_policy_map.h"
 #include "utils/exception.h"
+
+// This translation unit only instantiates the fp32 winograd transforms, which
+// are valid on every architecture, so enable the shared transform bodies
+// unconditionally. (fp16_kernels.cu gates the same bodies on native fp16
+// support because it instantiates the half versions.)
+#ifndef HAS_FP16_SUPPORT
+#define HAS_FP16_SUPPORT 1
+#endif
 #include "winograd_helper.inc"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 namespace {
 constexpr int kInputPlanes = 112;
 }  // namespace
@@ -118,9 +126,9 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   float b[4];
 
   // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[4];
+  constexpr bool is_16bit = sizeof(T) == 2;
+  if constexpr (is_16bit) {
+    T inp[4];
     copyAs<uint2>(&inp[0], &input[tensorIndex]);
 #pragma unroll
     for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
@@ -142,10 +150,10 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   }
 
   // write to memory
-  if (fp16) {
-    half op[4];
+  if constexpr (is_16bit) {
+    T op[4];
 #pragma unroll
-    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+    for (int i = 0; i < 4; i++) op[i] = (T)val[i];
     copyAs<uint2>(&output[tensorIndex], &op[0]);
   } else {
     copyAs<uint4>(&output[tensorIndex], &val[0]);
@@ -217,9 +225,9 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   float b[4];
 
   // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[4];
+  constexpr bool is_16bit = sizeof(T) == 2;
+  if constexpr (is_16bit) {
+    T inp[4];
     copyAs<uint2>(&inp[0], &input[tensorIndex]);
 #pragma unroll
     for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
@@ -241,10 +249,10 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   }
 
   // write to memory
-  if (fp16) {
-    half op[4];
+  if constexpr (is_16bit) {
+    T op[4];
 #pragma unroll
-    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+    for (int i = 0; i < 4; i++) op[i] = (T)val[i];
     copyAs<uint2>(&output[tensorIndex], &op[0]);
   } else {
     copyAs<uint4>(&output[tensorIndex], &val[0]);
@@ -344,7 +352,7 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
 template <typename dT, typename sT>
 __device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
                        int Nin, int Cin, int H, int W) {
-  if (n >= Nin || c >= Cin) return 0;
+  if (n >= Nin || c >= Cin) return static_cast<dT>(0.0f);
 
   int index;
   index = n;
@@ -462,7 +470,7 @@ __global__ void expandPlanes_kernel_NHWC(T* output, const uint64_t* masks,
 
   uint64_t mask = masks[boardIndex * kInputPlanes + planeIndex];
 
-  T op = 0;
+  T op = static_cast<T>(0.0f);
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
     op = values[boardIndex * kInputPlanes + planeIndex];
@@ -494,7 +502,7 @@ __global__ void expandPlanes_kernel_NCHW(T* output, const uint64_t* masks,
   uint64_t mask = masks[planeIndex];
 
   int sqIndex = index & 0x3F;
-  T op[2] = {0, 0};
+  T op[2] = {static_cast<T>(0.0f), static_cast<T>(0.0f)};
 
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
@@ -637,9 +645,12 @@ __global__ void globalAvgPool_kernel(T* output, const T* input,
   }
 
 // Compute warp wide sum (for entire plane - elementsPerWarp elements).
+// offsets stay < 32 so each 32-lane subgroup reduces its own plane; only lane 0
+// of the subgroup (laneId==0) reads the result, so the down-shuffle's upper-half
+// reads are discarded and a 64-lane wavefront yields two correct plane sums.
 #pragma unroll
   for (int offset = 1; offset < 32; offset *= 2) {
-    S += __shfl_down_sync(0xFFFFFFFF, S, offset);
+    S += __shfl_down_sync(LC0_FULL_WARP_MASK, S, offset);
   }
 
   float avg = S / elementsPerWarp;
@@ -782,9 +793,9 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input,
   float ex[2];
 
   // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[2];
+  constexpr bool is_16bit = sizeof(T) == 2;
+  if constexpr (is_16bit) {
+    T inp[2];
     copyAs<int>(&inp[0], &input[index * 2]);
     x[0] = (float)inp[0];
     x[1] = (float)inp[1];
@@ -804,30 +815,31 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input,
     x[0] += x[2];
     x[1] += x[3];
   }
-  if (fp16) {
+  if constexpr (std::is_same<half, T>::value) {
     // Guard against Inf from fp16 overflow.
     x[0] = clamp(x[0], -kTwiceHalfMax, kTwiceHalfMax);
     x[1] = clamp(x[1], -kTwiceHalfMax, kTwiceHalfMax);
   }
   float threadMax = max(x[0], x[1]);
   float maxval = warpMax(threadMax);
-  maxval = __shfl_sync(0xFFFFFFFF, maxval, 0);
+  maxval = subgroupBroadcast0(maxval);
 
   ex[0] = exp(x[0] - maxval);
   ex[1] = exp(x[1] - maxval);
 
   float threadSum = ex[0] + ex[1];
   float Sum = warpReduce(threadSum);
-  Sum = __shfl_sync(0xFFFFFFFF, Sum, 0);
+  Sum = subgroupBroadcast0(Sum);
 
-  ex[0] = ex[0] / Sum;
-  ex[1] = ex[1] / Sum;
+  const float inv_sum = 1.0f / Sum;
+  ex[0] = ex[0] * inv_sum;
+  ex[1] = ex[1] * inv_sum;
 
   // Store to memory
-  if (fp16) {
-    half op[2];
-    op[0] = (half)ex[0];
-    op[1] = (half)ex[1];
+  if constexpr (is_16bit) {
+    T op[2];
+    op[0] = (T)ex[0];
+    op[1] = (T)ex[1];
     copyAs<int>(&output[index * 2], &op[0]);
   } else {
     copyAs<uint2>(&output[index * 2], &ex[0]);
@@ -861,13 +873,13 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
     maxval = x;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // Get max across warp first, and then update across C dimension
   float warpmax = warpMax(x);
   if ((c & 0x1F) == 0) atomicMaxFloat(&maxval, warpmax);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float ex = exp(x - maxval);
 
@@ -877,7 +889,7 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
   // update shared memory sum across C dimension
   if ((c & 0x1F) == 0) atomicAdd(&sum, val);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float op = ex / sum;
 
@@ -889,7 +901,7 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2,
              cudaStream_t stream) {
   if (C == 64) {
     int size = N * 32;  // Total no of threads needed
-    const int kBlockSize = 256;
+    const int kBlockSize = 128;  // Four independent softmax rows per block.
     int blocks = DivUp(size, kBlockSize);
     softmax_opt_64_kernel<T>
         <<<blocks, kBlockSize, 0, stream>>>(output, input, input2, size);
@@ -913,14 +925,14 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 
   // compute sum across C dimension using the warp wide partial sums
   if (threadIdx.x == 0) sum[threadIdx.z][threadIdx.y] = s;
-  __syncthreads();
+  lc0SyncThreads();
 
   if (threadIdx.x == 0 && threadIdx.y == 0) {
     float cSum = 0;
     for (int j = 0; j < blockDim.y; j++) cSum += sum[threadIdx.z][j];
     sum[threadIdx.z][0] = cSum;
   }
-  __syncthreads();
+  lc0SyncThreads();
 
   // s now contains the sum across C dimension
   return sum[threadIdx.z][0];
@@ -935,9 +947,17 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
                                   const T* betas, float ep, float alpha,
                                   ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
-  if (n >= N) return;
   int c = (threadIdx.y * 32 + threadIdx.x) * 16;
-  bool oobThread = c >= C;
+  // An out-of-range row (n >= N) must NOT early-return: shared_sum_for_layer_norm
+  // calls lc0SyncThreads(), and on a 64-lane wavefront two threadIdx.z rows share
+  // one wavefront, so returning the padding row while its partner survives is a
+  // partial-wavefront barrier -> GPU fault on AMD (it is benign on NVIDIA only
+  // because whole 32-lane warps exit). Instead fold it into oobThread so the
+  // padding row skips every load/store (each guarded by !oobThread) yet still
+  // reaches both barriers. Padding rows own their own sum[threadIdx.z] slot, so
+  // valid rows are never corrupted. Arch-unified: identical results on NVIDIA.
+  bool oobThread = (c >= C) || (n >= N);
+  if (n >= N) n = N - 1;  // keep index arithmetic in-bounds; loads are guarded
 
   int biasIndex = c;
   int tensorIndex = n * C + c;
@@ -945,11 +965,11 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   float val[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   float oth[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  const bool fp16 = std::is_same<half, T>::value;
+  constexpr bool is_16bit = sizeof(T) == 2;
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
+    if constexpr (is_16bit) {
+      T inp[8];
       copyAs<uint4>(&inp[0], &input[tensorIndex]);
       for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &input[tensorIndex + 8]);
@@ -975,8 +995,8 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   if (!oobThread) {
     if (skip != nullptr) {
       // Load from memory (16 elements a time)
-      if (fp16) {
-        half inp[8];
+      if constexpr (is_16bit) {
+        T inp[8];
         copyAs<uint4>(&inp[0], &skip[tensorIndex]);
         for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
         copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
@@ -1021,8 +1041,8 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
 
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
+    if constexpr (is_16bit) {
+      T inp[8];
       copyAs<uint4>(&inp[0], &gammas[biasIndex]);
       for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &gammas[biasIndex + 8]);
@@ -1045,8 +1065,8 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
 
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
+    if constexpr (is_16bit) {
+      T inp[8];
       copyAs<uint4>(&inp[0], &betas[biasIndex]);
       for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &betas[biasIndex + 8]);
@@ -1065,11 +1085,11 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
 
   if (!oobThread) {
     // Write to memory
-    if (fp16) {
-      half op[8];
-      for (int i = 0; i < 8; i++) op[i] = (half)val[i];
+    if constexpr (is_16bit) {
+      T op[8];
+      for (int i = 0; i < 8; i++) op[i] = (T)val[i];
       copyAs<uint4>(&output[tensorIndex], &op[0]);
-      for (int i = 0; i < 8; i++) op[i] = (half)val[i + 8];
+      for (int i = 0; i < 8; i++) op[i] = (T)val[i + 8];
       copyAs<uint4>(&output[tensorIndex + 8], &op[0]);
     } else {
       copyAs<uint4>(&output[tensorIndex], &val[0]);
@@ -1147,7 +1167,7 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   // This layout makes the 192 worker writes contiguous in linear thread order.
   promotion_partials[offset][worker] = partial;
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // Add the knight offset while consuming the promotion offsets, avoiding a
   // separate shared-memory update phase and block-wide synchronization.
@@ -1216,6 +1236,36 @@ __global__ void preprocess_for_attention_body_kernel(
   output[n * 64 * outputC + hw * outputC + c] = op;
 }
 
+__global__ void preprocess_for_attention_body_fp16x8_kernel(
+    half* output, const half* input, const half* encoding, int input_size,
+    int encoding_size) {
+  constexpr int kContextSize = 64;
+  constexpr int kElementsPerThread = 8;
+
+  const int n = blockIdx.x;
+  const int hw = blockIdx.y;
+  const int c = threadIdx.x * kElementsPerThread;
+  const int output_size = input_size + encoding_size;
+  const int output_index =
+      n * kContextSize * output_size + hw * output_size + c;
+
+  half values[kElementsPerThread];
+  if (c < input_size) {
+    const int input_base =
+        n * input_size * kContextSize + c * kContextSize + hw;
+#pragma unroll
+    for (int i = 0; i < kElementsPerThread; i++) {
+      values[i] = input[input_base + i * kContextSize];
+    }
+  } else {
+    const int encoding_index = n * kContextSize * encoding_size +
+                               hw * encoding_size + c - input_size;
+    copyAs<uint4>(&values[0], &encoding[encoding_index]);
+  }
+
+  copyAs<uint4>(&output[output_index], &values[0]);
+}
+
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
                                      const T* encoding, int N, int input_size,
@@ -1227,6 +1277,22 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
   // Each thread computes a single output element
   dim3 gridSize = dim3(N, 64);
   int blockSize = input_size + encoding_size;
+  if constexpr (std::is_same<half, T>::value) {
+    constexpr int kElementsPerThread = 8;
+    // Keep every vector wholly within either the input or encoding region.
+    const bool use_vector_dense =
+        is_pe_dense_embedding && input_size > 0 && encoding_size > 0 &&
+        input_size % kElementsPerThread == 0 &&
+        encoding_size % kElementsPerThread == 0 &&
+        blockSize % kElementsPerThread == 0;
+    if (use_vector_dense) {
+      preprocess_for_attention_body_fp16x8_kernel
+          <<<gridSize, blockSize / kElementsPerThread, 0, stream>>>(
+              output, input, encoding, input_size, encoding_size);
+      return;
+    }
+  }
+
   preprocess_for_attention_body_kernel<T><<<gridSize, blockSize, 0, stream>>>(
       output, input, encoding, input_size, encoding_size,
       is_pe_dense_embedding);
@@ -1643,5 +1709,112 @@ template void genOffsetPointers<half>(half** offsets, int heads, int max_batch,
                                       int depth, int d_model, half* k, half* q,
                                       half* b1, half* v, half* b2,
                                       cudaStream_t stream);
+
+#if LC0_CUDA_BF16_SUPPORTED
+template void copyTypeConverted<__nv_bfloat16, float>(__nv_bfloat16* op,
+                                                      float* ip, int N,
+                                                      cudaStream_t stream);
+template void copyTypeConverted<float, __nv_bfloat16>(float* op,
+                                                      __nv_bfloat16* ip, int N,
+                                                      cudaStream_t stream);
+template void copyTypeConverted<__nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* op, __nv_bfloat16* ip, int N, cudaStream_t stream);
+
+template void batchNorm<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* skipInput, int N, int C, int H, int W, float* means,
+    float* var_multipliers, ActivationFunction activation,
+    cudaStream_t stream);
+
+template void addVectors<__nv_bfloat16>(
+    __nv_bfloat16* c, __nv_bfloat16* a, __nv_bfloat16* b, int size, int asize,
+    int bsize, ActivationFunction act, cudaStream_t stream);
+
+template void addVectorsHNC_NHC<__nv_bfloat16>(__nv_bfloat16* a,
+                                               __nv_bfloat16* b, int N, int H,
+                                               int C, cudaStream_t stream);
+
+template void addBiasBatched<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* bias, int Batch, int N, int C,
+    ActivationFunction activation, cudaStream_t stream);
+
+template void addBiasBatched<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* bias, int Batch, int N, int C, int Nstride,
+    ActivationFunction activation, cudaStream_t stream);
+
+template void addBias_NCHW<__nv_bfloat16>(
+    __nv_bfloat16* c, __nv_bfloat16* a, __nv_bfloat16* b, int N, int C, int H,
+    int W, ActivationFunction activation, cudaStream_t stream);
+
+template void globalAvgPool<__nv_bfloat16>(
+    int N, int C, __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* prevLayerBias, bool nhwc, cudaStream_t stream);
+
+template void expandPlanes_NHWC<__nv_bfloat16>(__nv_bfloat16* output,
+                                               const uint64_t* masks,
+                                               const __nv_bfloat16* values,
+                                               int n, cudaStream_t stream);
+
+template void expandPlanes_NCHW<__nv_bfloat16>(__nv_bfloat16* output,
+                                               const uint64_t* masks,
+                                               const __nv_bfloat16* values,
+                                               int n, cudaStream_t stream);
+
+template void globalScale<__nv_bfloat16>(
+    int N, int C, __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* scaleBias, const __nv_bfloat16* prevLayerBias,
+    bool nhwc, ActivationFunction activation, cudaStream_t stream);
+
+template void PolicyMap<__nv_bfloat16>(
+    int N, __nv_bfloat16* output, const __nv_bfloat16* input,
+    const short* indices, int inputSize, int usedSize, int outputSize,
+    cudaStream_t stream);
+
+template void Softmax<__nv_bfloat16>(int N, int C, __nv_bfloat16* output,
+                                     const __nv_bfloat16* input,
+                                     const __nv_bfloat16* input2,
+                                     cudaStream_t stream);
+
+template void LayerNorm<__nv_bfloat16>(int N, int C, __nv_bfloat16* output,
+                                       const __nv_bfloat16* input,
+                                       const __nv_bfloat16* bias,
+                                       const __nv_bfloat16* skip,
+                                       const __nv_bfloat16* gammas,
+                                       const __nv_bfloat16* betas, float ep,
+                                       float alpha, ActivationFunction act,
+                                       cudaStream_t stream);
+
+template void ComputePromotionLogits<__nv_bfloat16>(
+    int N, int C, __nv_bfloat16* output, const __nv_bfloat16* keys,
+    const __nv_bfloat16* ppo, const __nv_bfloat16* policy_attn_logits,
+    cudaStream_t stream);
+
+template void convertNCHWtoNHWC<__nv_bfloat16, float>(
+    __nv_bfloat16* output_tensor, const float* input_tensor, int Nin, int Cin,
+    int Nout, int Cout, int H, int W, cudaStream_t stream);
+
+template void convertNCHWtoNHWC<__nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* output_tensor, const __nv_bfloat16* input_tensor, int Nin,
+    int Cin, int Nout, int Cout, int H, int W, cudaStream_t stream);
+
+template void inputPreprocessForAttentionBody<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* encoding, int N, int input_size, int encoding_size,
+    bool is_pe_dense_embedding, cudaStream_t stream);
+
+template void applyInputGating<__nv_bfloat16>(__nv_bfloat16* output,
+                                             const __nv_bfloat16* input,
+                                             const __nv_bfloat16* mult,
+                                             const __nv_bfloat16* add, int N,
+                                             int C, int output_size,
+                                             cudaStream_t stream);
+
+template void genOffsetPointers<__nv_bfloat16>(
+    __nv_bfloat16** offsets, int heads, int max_batch, int depth, int d_model,
+    __nv_bfloat16* k, __nv_bfloat16* q, __nv_bfloat16* b1, __nv_bfloat16* v,
+    __nv_bfloat16* b2, cudaStream_t stream);
+#endif
 }  // namespace cudnn_backend
 }  // namespace lczero
