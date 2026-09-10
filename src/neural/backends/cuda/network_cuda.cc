@@ -693,6 +693,10 @@ class CudaNetwork : public Network {
 
     tensor_mem_size_ = multi_stream_ ? maxSize : 0;
 
+    // Make sure that weight upload has stopped using scratch memory before
+    // compute may use it.
+    ReportCUDAErrors(cudaDeviceSynchronize());
+
     if (!options.GetOrDefault("capture_graphs_onload", true)) {
       return;
     }

@@ -679,6 +679,10 @@ class CudnnNetwork : public Network {
          << " bytes of GPU memory to run the network";
 #endif
 
+    // Make sure that weight upload has stopped using scratch memory before
+    // compute may use it.
+    ReportCUDAErrors(cudaDeviceSynchronize());
+
     if (!options.GetOrDefault("capture_graphs_onload", true)) {
       return;
     }
