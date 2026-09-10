@@ -296,6 +296,9 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
       this_score += 1000 * (this_vendor.find("nvidia") != std::string::npos);
       this_score += 500 * (this_vendor.find("intel") != std::string::npos);
       this_score += 100 * (d.getInfo<CL_DEVICE_TYPE>() == CL_DEVICE_TYPE_GPU);
+      this_score += 10 * (d.getInfo<CL_DEVICE_EXTENSIONS>().find(
+                              "cl_khr_command_buffer") != std::string::npos);
+
       this_score += opencl_version * 10;
       CERR << "Device score:   " << this_score;
 
@@ -376,6 +379,15 @@ void OpenCL::initialize(const int channels, const OpenCLParams& params) {
 
   m_max_workgroup_size = best_device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
   m_max_workgroup_dims = best_device.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
+
+  m_graph_capture_enabled = params.graph_capture;  // defaults to true
+  if (m_graph_capture_enabled) {
+    // If requested by user also check for device support for extension
+    std::string extensions = best_device.getInfo<CL_DEVICE_EXTENSIONS>();
+    m_graph_capture_enabled =
+        extensions.find("cl_khr_command_buffer") != std::string::npos;
+  }
+  CERR << "Graph Capture enabled: " << m_graph_capture_enabled;
 
   CERR << "Max workgroup size: " << m_max_workgroup_size;
   std::ostringstream ss;
