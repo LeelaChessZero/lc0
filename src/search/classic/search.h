@@ -47,9 +47,11 @@
 namespace lczero {
 namespace classic {
 
+class SearchCachedState;
+
 class Search {
  public:
-  Search(const NodeTree& tree, Backend* network,
+  Search(SearchCachedState& state, const NodeTree& tree, Backend* network,
          std::unique_ptr<UciResponder> uci_responder,
          const MoveList& searchmoves,
          std::chrono::steady_clock::time_point start_time,
@@ -138,6 +140,7 @@ class Search {
 
   PositionHistory GetPositionHistoryAtNode(const Node* node) const;
 
+  SearchCachedState& state_;
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -200,6 +203,7 @@ class Search {
 
   std::unique_ptr<UciResponder> uci_responder_;
   ContemptMode contempt_mode_;
+  std::vector<float> root_utility_offsets_;
   friend class SearchWorker;
 };
 
@@ -449,6 +453,20 @@ class SearchWorker {
   std::vector<TaskWorkspace> task_workspaces_;
   TaskWorkspace main_workspace_;
   bool exiting_ = false;
+};
+
+class SearchCachedState {
+  public:
+    SearchCachedState() {}
+
+    void UciNewGame();
+
+    float GetTemperatureOffsetDecay() const { return temperature_offset_decay_; }
+
+    friend class Search;
+    friend class SearchWorker;
+  private:
+    float temperature_offset_decay_ = 0.0f;
 };
 
 }  // namespace classic
