@@ -245,7 +245,22 @@ class CudaNetwork : public Network {
     showDeviceInfo(deviceProp, gpu_id_);
 
     l2_cache_size_ = deviceProp.l2CacheSize;
-    sm_count_ = deviceProp.multiProcessorCount;
+    const int kNumFilters = (int)weights.input.biases.size();
+    size_t model_size = kNumFilters;
+    if (!weights.encoder.empty()) {
+      model_size = weights.ip_emb_b.size() - 1;
+    }
+
+    model_size = (std::bit_width(model_size) + 1) / 2;
+
+    if (model_size > 5) {
+      opt_batch_size_ = deviceProp.multiProcessorCount / (model_size - 4);
+    } else {
+      opt_batch_size_ = deviceProp.multiProcessorCount * (6 - model_size);
+    }
+    opt_batch_size_ = options.GetOrDefault("opt_batch", opt_batch_size_);
+
+    opt_batch_size_ = std::clamp(opt_batch_size_, min_batch_size_, max_batch_size_);
 
     allow_cache_opt_ = options.GetOrDefault<bool>("cache_opt", false);
 
@@ -328,7 +343,6 @@ class CudaNetwork : public Network {
     }
 
     const int kNumInputPlanes = kInputPlanes;
-    const int kNumFilters = (int)weights.input.biases.size();
     numBlocks_ = (int)weights.residual.size();
     numFilters_ = kNumFilters;
 
@@ -679,6 +693,10 @@ class CudaNetwork : public Network {
 
     tensor_mem_size_ = multi_stream_ ? maxSize : 0;
 
+    if (!options.GetOrDefault("capture_graphs_onload", true)) {
+      return;
+    }
+
     // pre-allocate cuda graphs for search threads
     auto allocateCudaGraphs = [&] {
       ReportCUDAErrors(cudaSetDevice(gpu_id_));
@@ -686,7 +704,7 @@ class CudaNetwork : public Network {
       comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
       // Make sure cublas is initialized in this thread.
       comp.ComputeBlocking();
-      for (int i = 0; i < GetMiniBatchSize(); i++) {
+      for (int i = 1; i < GetMiniBatchSize(); i++) {
         comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
         auto lock = LockEval();
         comp.CaptureGraph(std::move(lock));
@@ -1088,12 +1106,12 @@ class CudaNetwork : public Network {
 
   int GetMiniBatchSize() const override {
     // Simple heuristic that seems to work for a wide range of GPUs.
-    return 2 * sm_count_;
+    return opt_batch_size_;
   }
 
   int GetPreferredBatchStep() const override {
     int preferred_split = 7;
-    while (sm_count_ % preferred_split != 0) preferred_split++;
+    while (opt_batch_size_ % preferred_split != 0) preferred_split++;
     return preferred_split;
   }
 
@@ -1147,7 +1165,7 @@ class CudaNetwork : public Network {
   const NetworkCapabilities capabilities_;
   int gpu_id_;
   int l2_cache_size_;
-  int sm_count_;
+  int opt_batch_size_;
   int max_batch_size_;
   int min_batch_size_;
   bool enable_graph_capture_;

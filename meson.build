@@ -1137,18 +1137,25 @@ if get_option('python_bindings')
   if not python.language_version().version_compare('>3.7')
     error('You need python 3.7 or newer')
   endif
-  py_bindings_generator = find_program('scripts/gen_py_bindings.py')
 
-  gen_py_bindings = custom_target('backends', input:[], output:['backends.cc'],
-    command : [py_bindings_generator, '@OUTPUT0@'])
-
-  py_files = [ gen_py_bindings ]
+  pybind11_dep = dependency('pybind11', required: false)
+  if not pybind11_dep.found()
+    pybind11_inc = run_command(python,
+      ['-c', 'import pybind11; print(pybind11.get_include())'],
+      check: true).stdout().strip()
+    pybind11_dep = declare_dependency(
+      include_directories: include_directories(pybind11_inc))
+  endif
 
   cpython = dependency('python3')
   python.extension_module('backends',
-    [py_files + files],
+    [
+      'src/python/bindings.cc',
+      'src/python/python_chess.cc'
+    ] + files,
     include_directories: [includes],
-    dependencies: [cpython] + deps,
+    dependencies: [cpython, pybind11_dep] + deps,
+    cpp_args: ['-fvisibility=hidden'],
     subdir: 'lczero',
     install: true)
 endif
