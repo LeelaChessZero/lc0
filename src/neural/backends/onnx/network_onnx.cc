@@ -306,11 +306,13 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
 }
 
 OnnxNetwork::~OnnxNetwork() {
+  free_inputs_outputs_.clear();
+  session_.clear();
 #ifdef USE_ONNX_CUDART
   if (provider_ == OnnxProvider::TRT || provider_ == OnnxProvider::CUDA) {
-    ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
-    ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
-    ReportCUDAErrors(cudaStreamDestroy(download_stream_));
+    if (compute_stream_) cudaStreamDestroy(compute_stream_);
+    if (upload_stream_) cudaStreamDestroy(upload_stream_);
+    if (download_stream_) cudaStreamDestroy(download_stream_);
   }
 #endif
 }
@@ -810,8 +812,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     CERR << "Latest version of CUDA supported by the driver: "
          << nv_version(driver_version);
     if (driver_version < runtime_version) {
-      throw Exception(
-          "ERROR: The CUDA driver version is older than the runtime version.");
+      CERR << "WARNING: The CUDA driver version is older than the runtime version.";
     }
     cudaDeviceProp deviceProp = {};
     if (!cudaGetDeviceProperties(&deviceProp, gpu_)) {
