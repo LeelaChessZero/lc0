@@ -65,4 +65,10 @@ uint64_t Backend::ConfigurationHash(const OptionsDict& options) const {
   return hash;
 }
 
+std::unique_ptr<Backend> BackendFactory::Create(const OptionsDict& options) {
+  const std::string network =
+      options.Get<std::string>(SharedBackendParams::kWeightsId);
+  return this->Create(options, network);
+}
+
 }  // namespace lczero

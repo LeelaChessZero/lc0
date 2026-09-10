@@ -28,7 +28,6 @@
 #pragma once
 
 #include "gmock/gmock.h"
-
 #include "neural/backend.h"
 
 namespace lczero {
@@ -44,7 +43,7 @@ class MockBackendComputation : public BackendComputation {
 class MockBackend : public Backend {
  public:
   MOCK_METHOD(BackendAttributes, GetAttributes, (), (const, override));
-  MOCK_METHOD(std::unique_ptr<BackendComputation>, CreateComputation, (),
+  MOCK_METHOD(std::unique_ptr<BackendComputation>, CreateComputation, (size_t time_remaining),
               (override));
   MOCK_METHOD(std::vector<EvalResult>, EvaluateBatch,
               (std::span<const EvalPosition> positions), (override));
@@ -58,8 +57,8 @@ class MockBackendFactory : public BackendFactory {
  public:
   MOCK_METHOD(int, GetPriority, (), (const, override));
   MOCK_METHOD(std::string_view, GetName, (), (const, override));
-  MOCK_METHOD(std::unique_ptr<Backend>, Create, (const OptionsDict&),
-              (override));
+  MOCK_METHOD(std::unique_ptr<Backend>, Create,
+              (const OptionsDict&, const std::string&), (override));
 };
 
 }  // namespace lczero

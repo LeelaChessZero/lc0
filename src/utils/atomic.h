@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2024 The LCZero Authors
+  Copyright (C) 2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -26,31 +26,47 @@
 */
 
 #pragma once
-
-#include <functional>
-#include <string>
-
-#include "neural/network.h"
-#include "neural/register.h"
+#include <atomic>
+#include <version>
+#if __cpp_lib_atomic_wait < 201907L
+#include <condition_variable>
+#include "utils/mutex.h"
+#endif
 
 namespace lczero {
 
-class NetworkAsBackendFactory : public BackendFactory {
+#if __cpp_lib_atomic_wait >= 201907L
+template <typename T>
+using WaitableAtomic = std::atomic<T>;
+#else
+template <typename T>
+class WaitableAtomic : public std::atomic<T> {
+  using Base = std::atomic<T>;
+
  public:
-  using FactoryFunc = std::function<std::unique_ptr<Network>(
-      const std::optional<WeightsFile>&, const OptionsDict&)>;
+  using Base::atomic;
+  using value_type = typename Base::value_type;
 
-  NetworkAsBackendFactory(const std::string& name, FactoryFunc factory,
-                          int priority = 0);
+  void wait(value_type old, std::memory_order order =
+                                std::memory_order_seq_cst) const noexcept {
+    Mutex::Lock lock(mutex_);
+    cv_.wait(lock.get_raw(), [this, old, order]() { return this->load(order) != old; });
+  }
 
-  int GetPriority() const override { return priority_; }
-  std::string_view GetName() const override { return name_; }
-  std::unique_ptr<Backend> Create(const OptionsDict&, const std::string&) override;
+  void notify_one() noexcept {
+    Mutex::Lock lock(mutex_);
+    cv_.notify_one();
+  }
+
+  void notify_all() noexcept {
+    Mutex::Lock lock(mutex_);
+    cv_.notify_all();
+  }
 
  private:
-  std::string name_;
-  FactoryFunc factory_;
-  int priority_;
+  mutable Mutex mutex_;
+  mutable std::condition_variable cv_;
 };
+#endif
 
 }  // namespace lczero
