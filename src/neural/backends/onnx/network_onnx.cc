@@ -306,8 +306,6 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
 }
 
 OnnxNetwork::~OnnxNetwork() {
-  free_inputs_outputs_.clear();
-  session_.clear();
 #ifdef USE_ONNX_CUDART
   if (provider_ == OnnxProvider::TRT || provider_ == OnnxProvider::CUDA) {
     if (compute_stream_) cudaStreamDestroy(compute_stream_);
