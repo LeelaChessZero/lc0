@@ -236,6 +236,18 @@ if get_option('dag_classic')
 endif
 
 #############################################################################
+## CONTEMPT SEARCH
+#############################################################################
+if get_option('search_contempt')
+  files += [
+    'src/search/contempt/node.cc',
+    'src/search/contempt/params.cc',
+    'src/search/contempt/search.cc',
+    'src/search/contempt/wrapper.cc',
+  ]
+endif
+
+#############################################################################
 ## BACKENDS
 #############################################################################
 
