@@ -1058,7 +1058,7 @@ void BaseLayer<__nv_bfloat16>::cublasRowMajorMatrixMul(
   ReportCUBLASErrors(cublasGemmStridedBatchedEx(
       cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_16BF, N,
       N * K, A, CUDA_R_16BF, K, K * M, &floatZero, Out, CUDA_R_16BF, N, N * M,
-      batchSize, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
+      batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
 }
 #endif
 
@@ -1242,7 +1242,7 @@ void Conv1Layer<__nv_bfloat16>::cublasSpecialMatrixMul(
   ReportCUBLASErrors(cublasGemmStridedBatchedEx(
       cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_16BF, N,
       N * K, A, CUDA_R_16BF, K, 0, &floatZero, Out, CUDA_R_16BF, N, N * M,
-      batchSize, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
+      batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
 }
 #endif
 
@@ -1791,7 +1791,7 @@ static void cublasXGemmStridedBatched(
     ReportCUBLASErrors(cublasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha, A, CUDA_R_16BF, lda, strideA,
         B, CUDA_R_16BF, ldb, strideB, &beta, C, CUDA_R_16BF, ldc, strideC,
-        batchCount, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
+        batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
   }
 #endif
   else {

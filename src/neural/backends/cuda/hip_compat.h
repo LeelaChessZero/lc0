@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <hip/hip_bf16.h>
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 #include <hip/library_types.h>
@@ -44,6 +45,7 @@
 // unconditionally here. Without it those fp16 SE / fused conv-transform kernels
 // would compile to empty bodies and leave their output uninitialized.
 #define HAS_FP16_SUPPORT 1
+#define LC0_CUDA_BF16_SUPPORTED 1
 
 // Deliberately report a pre-11.0 CUDA runtime so every `CUDART_VERSION >= 11000`
 // / `>= 11010` block in the backend (NVIDIA L2-persistence cache hints, CUDA
@@ -137,11 +139,17 @@
 // --- fp16 -------------------------------------------------------------------
 // __half / __half_raw / half come from <hip/hip_fp16.h> with matching names.
 
+// --- bf16 -------------------------------------------------------------------
+using __nv_bfloat16 = __hip_bfloat16;
+
 // --- library data types -----------------------------------------------------
 // hipDataType from <hip/library_types.h>. These are correct in the GEMM *data*
 // type positions; the compute-type position is handled by the GEMM shims below.
 #define CUDA_R_16F HIP_R_16F
+#define CUDA_R_16BF HIP_R_16BF
 #define CUDA_R_32F HIP_R_32F
+#define CUBLAS_COMPUTE_16F HIPBLAS_COMPUTE_16F
+#define CUBLAS_COMPUTE_32F HIPBLAS_COMPUTE_32F
 
 // --- cuBLAS: handle / ops / status ------------------------------------------
 #define cublasHandle_t hipblasHandle_t
@@ -171,6 +179,8 @@
 #define cublasSgemm hipblasSgemm
 #define cublasSgemmStridedBatched hipblasSgemmStridedBatched
 #define cublasSgemmBatched hipblasSgemmBatched
+#define cublasGemmEx hipblasGemmEx
+#define cublasGemmBatchedEx hipblasGemmBatchedEx
 
 #define NS_BACKEND hip_backend
 #define BACKEND_NAME "HIP"

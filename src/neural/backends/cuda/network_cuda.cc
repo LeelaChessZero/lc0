@@ -1432,8 +1432,6 @@ std::unique_ptr<Network> MakeCudaNetworkAuto(
   CERR << "Switching to [" BACKEND_NAME_LC "]...";
   return MakeCudaNetwork<float>(weights, options);
 }
-}
-
 #if LC0_CUDA_BF16_SUPPORTED
 std::unique_ptr<Network> MakeCudaNetworkBf16(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
@@ -1442,12 +1440,14 @@ std::unique_ptr<Network> MakeCudaNetworkBf16(
   cudaGetDeviceProperties(&deviceProp, gpu_id);
 
   // Check if the GPU supports bfloat16 (Compute Capability >= 8.0).
+#if !defined(USE_HIP)
   if (deviceProp.major < 8) {
-    CERR << "WARNING: " BACKEND_NAME_LC "-bf16 backend requires NVIDIA GPU with Compute Capability >= 8.0 (Ampere or newer). "
+    CERR << "WARNING: " BACKEND_NAME_LC "-bf16 backend requires " BACKEND_NAME " GPU with Compute Capability >= 8.0 (Ampere or newer). "
             "Selected GPU has Compute Capability " << deviceProp.major << "." << deviceProp.minor
          << ". Switching to [" BACKEND_NAME_LC "-fp16]...";
     return MakeCudaNetwork<half>(weights, options);
   }
+#endif
   if (weights) {
     auto nf = weights->format().network_format();
     using NF = pblczero::NetworkFormat;
@@ -1461,6 +1461,7 @@ std::unique_ptr<Network> MakeCudaNetworkBf16(
   return MakeCudaNetwork<__nv_bfloat16>(weights, options);
 }
 #endif
+}
 
 REGISTER_NETWORK(BACKEND_NAME_LC "-auto", MakeCudaNetworkAuto, 104)
 REGISTER_NETWORK(BACKEND_NAME_LC, MakeCudaNetwork<float>, 103)
