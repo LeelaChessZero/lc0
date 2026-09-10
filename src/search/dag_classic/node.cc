@@ -343,54 +343,60 @@ void Node::CancelScoreUpdate(uint32_t multivisit) {
   n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
 }
 
-void LowNode::FinalizeScoreUpdate(float v, float d, float m,
-                                  uint32_t multivisit) {
+double LowNode::FinalizeScoreUpdate(double v, double d, float m,
+                                   uint32_t multivisit) {
   assert(edges_);
-  // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
-  m_ += multivisit * (m - m_) / (n_ + multivisit);
-
-  assert(WLDMInvariantsHold());
-
   // Increment N.
   n_ += multivisit;
+
+  // Recompute Q.
+  double divisor = 1.0 / n_;
+  wl_ += multivisit * (v - wl_) * divisor;
+  d_ += multivisit * (d - d_) * divisor;
+  m_ += multivisit * (m - m_) * static_cast<float>(divisor);
+
+  assert(WLDMInvariantsHold());
+  return divisor;
 }
 
-void LowNode::AdjustForTerminal(float v, float d, float m,
+void LowNode::AdjustForTerminal(double v, double d, float m, double divisor,
                                 uint32_t multivisit) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
-  wl_ += multivisit * v / n_;
-  d_ += multivisit * d / n_;
-  m_ += multivisit * m / n_;
+  wl_ += multivisit * v * divisor;
+  d_ += multivisit * d * divisor;
+  m_ += multivisit * m * static_cast<float>(divisor);
 
   assert(WLDMInvariantsHold());
 }
 
-void Node::FinalizeScoreUpdate(float v, float d, float m, uint32_t multivisit) {
-  // Recompute Q.
-  wl_ += multivisit * (v - wl_) / (n_ + multivisit);
-  d_ += multivisit * (d - d_) / (n_ + multivisit);
-  m_ += multivisit * (m - m_) / (n_ + multivisit);
-
-  assert(WLDMInvariantsHold());
-
+double Node::FinalizeScoreUpdate(double v, double d, float m,
+                                uint32_t multivisit) {
   // Increment N.
   n_ += multivisit;
+
+  // Recompute Q.
+  double divisor = 1.0 / n_;
+  wl_ += multivisit * (v - wl_) * divisor;
+  d_ += multivisit * (d - d_) * divisor;
+  m_ += multivisit * (m - m_) * static_cast<float>(divisor);
+
+  assert(WLDMInvariantsHold());
   // Decrement virtual loss.
   assert(GetNInFlight() >= (uint32_t)multivisit);
   n_in_flight_.fetch_sub(multivisit, std::memory_order_acq_rel);
+  return divisor;
 }
 
-void Node::AdjustForTerminal(float v, float d, float m, uint32_t multivisit) {
+void Node::AdjustForTerminal(double v, double d, float m, double divisor,
+                             uint32_t multivisit) {
   assert(static_cast<uint32_t>(multivisit) <= n_);
 
   // Recompute Q.
-  wl_ += multivisit * v / n_;
-  d_ += multivisit * d / n_;
-  m_ += multivisit * m / n_;
+  wl_ += multivisit * v * divisor;
+  d_ += multivisit * d * divisor;
+  m_ += multivisit * m * static_cast<float>(divisor);
 
   assert(WLDMInvariantsHold());
 }
@@ -610,10 +616,10 @@ void Node::SortEdges() const {
   low_node_->SortEdges();
 }
 
-static constexpr float wld_tolerance = 0.000001f;
+static constexpr double wld_tolerance = 0.000001f;
 static constexpr float m_tolerance = 0.000001f;
 
-static bool WLDMInvariantsHold(float wl, float d, float m) {
+static bool WLDMInvariantsHold(double wl, double d, float m) {
   return -(1.0f + wld_tolerance) < wl && wl < (1.0f + wld_tolerance) &&  //
          -(0.0f + wld_tolerance) < d && d < (1.0f + wld_tolerance) &&    //
          -(0.0f + m_tolerance) < m &&                                    //
