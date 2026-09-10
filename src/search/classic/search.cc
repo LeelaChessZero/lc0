@@ -33,6 +33,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <numeric>
 #include <sstream>
 #include <thread>
 
@@ -1285,6 +1286,83 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
                            params.GetMaxCollisionVisitsScalingStart()),
                       params.GetMaxCollisionVisitsScalingPower()));
 }
+
+using FloatArray = std::array<float, 256>;
+void PolicyDecay(const SearchParams& params, const Node* node,
+                 FloatArray& policy, const FloatArray& value, int last_visited,
+                 float visited_pol) {
+  const float maximum_policy_decay = params.GetPolicyDecayValueShare();
+  const uint32_t policy_decay_visits = params.GetPolicyDecayVisits();
+  const uint32_t policy_decay_reduction_delay =
+      params.GetPolicyDecayReductionDelay();
+  const uint32_t policy_decay_parent_visits =
+      params.GetPolicyDecayParentVisits();
+  const float inv_policy_decay_parent_visits =
+      1.0f / policy_decay_parent_visits;
+  const float kNoUncertaintyPolicyValue = 0.0f;
+  std::array<float, 256> new_policy;
+  const float epsilon = 1e-9f;
+
+  if (maximum_policy_decay == 0.0f || last_visited < 0) return;
+
+  int i;
+
+  // Scale Q to [0, 1] range if it is smaller range.
+  auto [min_iter, max_iter] =
+      std::minmax_element(value.begin(), value.begin() + last_visited + 1);
+  const float policy_exponent = params.GetPolicyValueExponent();
+  const float policy_base = params.GetPolicyValueBase();
+
+  float sum = 0.0f;
+  const float offset = *min_iter - epsilon;
+  const float scale =
+      std::max(1.0f / (std::max(*max_iter - *min_iter, epsilon)), 1.0f);
+  // Calculate decay target policy as softmax of values.
+  for (i = 0; i <= last_visited; i++) {
+    if (policy[i] == 0.0f) {
+      new_policy[i] = kNoUncertaintyPolicyValue;
+      continue;
+    }
+    // new_policy = pow(Q, E) + B = exp(E * log(Q)) + B
+    new_policy[i] =
+        FastExp(policy_exponent * FastLog((value[i] - offset) * scale)) +
+        policy_base;
+    sum += new_policy[i];
+  }
+  // Calculate the scaling factor to let the new policy sum to 1.
+  const float inv_sum = 1.0f / std::max(sum, epsilon) * visited_pol;
+  i = 0;
+
+  // Calculate parent visit decay share from the parent visits.
+  const uint32_t n_p = node->GetN();
+  const float parent_decay_share =
+      std::min(n_p, policy_decay_parent_visits) *
+      (inv_policy_decay_parent_visits * maximum_policy_decay);
+
+  // Interpolate from prior policy to decay target policy based on child visit
+  // count.
+  for (const auto* child : node->VisitedNodes()) {
+    const float new_policy_value = new_policy[i] * inv_sum;
+    const bool is_reducing = new_policy_value < policy[i];
+    const float reduction_delay = policy_decay_reduction_delay * policy[i];
+    // Scale the child based decay share by prior policy. It also allows search
+    // a little extra time before decay starts to reduce the prior policy. It
+    // avoids problem cases where the early value estimate is worse than policy.
+    if (is_reducing && child->GetN() <= reduction_delay) {
+      i++;
+      continue;
+    }
+    const float n =
+        is_reducing ? child->GetN() - reduction_delay : child->GetN();
+    const float visit_limit = policy_decay_visits * policy[i];
+    // Decay share is the lower from child visit decay and parent visit decay.
+    const float decay_share =
+        std::min(n, visit_limit) * maximum_policy_decay / visit_limit;
+    policy[i] = std::lerp(policy[i], new_policy_value,
+                          std::min(decay_share, parent_decay_share));
+    i++;
+  }
+}
 }  // namespace
 
 void SearchWorker::GatherMinibatch() {
@@ -1701,8 +1779,9 @@ void SearchWorker::PickNodesToExtendTask(
                                    : even_draw_score;
       m_evaluator.SetParent(node);
       float visited_pol = 0.0f;
+      int index = -1;
       for (Node* child : node->VisitedNodes()) {
-        int index = child->Index();
+        index = child->Index();
         visited_pol += current_pol[index];
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
@@ -1714,6 +1793,7 @@ void SearchWorker::PickNodesToExtendTask(
           current_util[i] = fpu + m_evaluator.GetDefaultMUtility();
         }
       }
+      PolicyDecay(params_, node, current_pol, current_util, index, visited_pol);
 
       const float cpuct = ComputeCpuct(params_, node->GetN(), is_root_node);
       const float puct_mult =
