@@ -812,7 +812,13 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     CERR << "Latest version of CUDA supported by the driver: "
          << nv_version(driver_version);
     if (driver_version < runtime_version) {
-      CERR << "WARNING: The CUDA driver version is older than the runtime version.";
+      if (provider_ == OnnxProvider::TRT) {
+        throw Exception(
+            "ERROR: The CUDA driver version is older than the runtime version. "
+            "TensorRT requires an up-to-date driver.");
+      } else {
+        CERR << "WARNING: The CUDA driver version is older than the runtime version.";
+      }
     }
     cudaDeviceProp deviceProp = {};
     if (!cudaGetDeviceProperties(&deviceProp, gpu_)) {
