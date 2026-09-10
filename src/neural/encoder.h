@@ -54,7 +54,7 @@ InputPlanes EncodePositionForNN(
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     std::span<const Position> positions, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out);
+    FillEmptyHistory fill_empty_history, int* transform_out, bool swap_colors);
 
 bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format);
 bool IsCanonicalArmageddonFormat(

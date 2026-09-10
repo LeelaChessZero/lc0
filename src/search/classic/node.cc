@@ -167,9 +167,26 @@ void Edge::SetP(float p) {
   p_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
 }
 
+void Edge::SetP_frozen(float p) {
+  assert(0.0f <= p && p <= 1.0f);
+  constexpr int32_t roundings = (1 << 11) - (3 << 28);
+  int32_t tmp;
+  std::memcpy(&tmp, &p, sizeof(float));
+  tmp += roundings;
+  p_frozen_ = (tmp < 0) ? 0 : static_cast<uint16_t>(tmp >> 12);
+}
+
 float Edge::GetP() const {
   // Reshift into place and set the assumed-set exponent bits.
   uint32_t tmp = (static_cast<uint32_t>(p_) << 12) | (3 << 28);
+  float ret;
+  std::memcpy(&ret, &tmp, sizeof(uint32_t));
+  return ret;
+}
+
+float Edge::GetP_frozen() const {
+  // Reshift into place and set the assumed-set exponent bits.
+  uint32_t tmp = (static_cast<uint32_t>(p_frozen_) << 12) | (3 << 28);
   float ret;
   std::memcpy(&ret, &tmp, sizeof(uint32_t));
   return ret;
@@ -314,6 +331,30 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
     // comparable to another non-loss choice. Force this by clearing the policy.
     if (GetParent() != nullptr) GetOwnEdge()->SetP(0.0f);
   }
+}
+
+void Node::SetNodeLimitFrozen(bool value) {
+     node_limit_frozen_ = value;
+}
+
+void Node::SetNodeLimitFrozenLock(bool value) {
+     node_limit_frozen_lock_ = value;
+}
+
+bool Node::GetNodeLimitFrozen() {
+     return node_limit_frozen_;
+}
+
+bool Node::GetNodeLimitFrozenLock() {
+     return node_limit_frozen_lock_;
+}
+
+uint8_t Node::GetVisitedNumberOfEdges() {
+	return num_visited_edges_;
+}
+
+void Node::SetVisitedNumberOfEdges(int value) {
+	num_visited_edges_ = value;
 }
 
 void Node::MakeNotTerminal() {
