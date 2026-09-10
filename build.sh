@@ -27,7 +27,7 @@ else
   "${MESON}" setup "${BUILDDIR}" --buildtype "${BUILDTYPE}" --prefix "${INSTALL_PREFIX:-/usr/local}" "$@"
 fi
 
-"${MESON}" compile -C "${BUILDDIR}"
+"${MESON}" compile -C "${BUILDDIR}" lc0
 
 if [ -n "${INSTALL_PREFIX}" ]
 then
