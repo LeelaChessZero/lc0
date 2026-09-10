@@ -308,9 +308,9 @@ InputsOutputs::InputsOutputs(OnnxNetwork* network)
 OnnxNetwork::~OnnxNetwork() {
 #ifdef USE_ONNX_CUDART
   if (provider_ == OnnxProvider::TRT || provider_ == OnnxProvider::CUDA) {
-    if (compute_stream_) cudaStreamDestroy(compute_stream_);
-    if (upload_stream_) cudaStreamDestroy(upload_stream_);
-    if (download_stream_) cudaStreamDestroy(download_stream_);
+    if (compute_stream_) ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
+    if (upload_stream_) ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
+    if (download_stream_) ReportCUDAErrors(cudaStreamDestroy(download_stream_));
   }
 #endif
 }
