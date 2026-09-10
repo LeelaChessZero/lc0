@@ -1959,6 +1959,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
 #ifdef USE_CUTLASS
   if (use_fused_mha_) {
     // TODO: check if we need skip in a different tensor than same tensor as
+    // output!
     fusedMHA<DataType>(buffer2, mha_q, mha_k, mha_v,
                        has_smolgen_ ? buffer2 : nullptr, N, encoder_heads_,
                        depth, stream);
