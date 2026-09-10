@@ -483,6 +483,42 @@ void SELayer<half>::LoadWeights(float* w1, float* b1, float* w2, float* b2,
   }
 }
 
+#if LC0_CUDA_BF16_SUPPORTED
+template <>
+void SELayer<__nv_bfloat16>::LoadWeights(float* w1, float* b1, float* w2,
+                                         float* b2, float* prevLayerBias,
+                                         void* scratch) {
+  const size_t num_weights1 = C * numFc1Out_;
+  size_t weight_size1 = sizeof(float) * num_weights1;
+
+  const size_t num_weights2 = 2 * num_weights1;
+  size_t weight_size2 = 2 * weight_size1;
+
+  assert(scratch);
+  ReportCUDAErrors(
+      cudaMemcpy(scratch, w1, weight_size1, cudaMemcpyHostToDevice));
+  copyTypeConverted((__nv_bfloat16*)w1_, (float*)scratch, (int)num_weights1, 0);
+
+  ReportCUDAErrors(
+      cudaMemcpy(scratch, w2, weight_size2, cudaMemcpyHostToDevice));
+  copyTypeConverted((__nv_bfloat16*)w2_, (float*)scratch, (int)num_weights2, 0);
+
+  ReportCUDAErrors(cudaMemcpy(scratch, b1, numFc1Out_ * sizeof(float),
+                              cudaMemcpyHostToDevice));
+  copyTypeConverted((__nv_bfloat16*)b1_, (float*)scratch, numFc1Out_, 0);
+
+  ReportCUDAErrors(
+      cudaMemcpy(scratch, b2, 2 * C * sizeof(float), cudaMemcpyHostToDevice));
+  copyTypeConverted((__nv_bfloat16*)b2_, (float*)scratch, 2 * C, 0);
+
+  if (prevLayerBias) {
+    ReportCUDAErrors(cudaMemcpy(scratch, prevLayerBias, C * sizeof(float),
+                                cudaMemcpyHostToDevice));
+    copyTypeConverted((__nv_bfloat16*)bPrev_, (float*)scratch, C, 0);
+  }
+}
+#endif
+
 template <>
 void SELayer<float>::Eval(int N, float* output, const float* input,
                           const float* /*input2*/, void* scratch,
@@ -561,6 +597,44 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
   }
 }
 
+#if LC0_CUDA_BF16_SUPPORTED
+template <>
+void SELayer<__nv_bfloat16>::Eval(int N, __nv_bfloat16* output,
+                                  const __nv_bfloat16* input,
+                                  const __nv_bfloat16* input2, void* scratch,
+                                  size_t scratch_size, cudnnHandle_t /*cudnn*/,
+                                  cublasHandle_t cublas, cudaStream_t stream,
+                                  __nv_bfloat16***) {
+  assert(output == input2);
+  __nv_bfloat16* op1 = (__nv_bfloat16*)scratch;
+  __nv_bfloat16* op2 =
+      (__nv_bfloat16*)scratch + scratch_size / sizeof(__nv_bfloat16) / 2;
+
+  // 1. Global avg pooling
+  globalAvgPool(N, C, op2, input, bPrev_, false, stream);
+
+  // 2. First fully connected layer
+  float alpha = 1.0f, beta = 0.0f;
+  ReportCUBLASErrors(cublasGemmEx(
+      cublas, CUBLAS_OP_T, CUBLAS_OP_N, numFc1Out_, N, C, &alpha, w1_,
+      CUDA_R_16BF, C, op2, CUDA_R_16BF, C, &beta, op1, CUDA_R_16BF, numFc1Out_,
+      CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
+  addVectors(op1, b1_, op1, numFc1Out_ * N, numFc1Out_, numFc1Out_ * N, act_,
+             stream);
+
+  // 3. Second fully connected layer
+  ReportCUBLASErrors(cublasGemmEx(
+      cublas, CUBLAS_OP_T, CUBLAS_OP_N, 2 * C, N, numFc1Out_, &alpha, w2_,
+      CUDA_R_16BF, numFc1Out_, op1, CUDA_R_16BF, numFc1Out_, &beta, op2,
+      CUDA_R_16BF, 2 * C, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
+  addVectors(op2, b2_, op2, 2 * C * N, 2 * C, 2 * C * N, ACTIVATION_NONE,
+             stream);
+
+  // 4. Global scale
+  globalScale(N, C, output, input, op2, bPrev_, false, act_, stream);
+}
+#endif
+
 template <typename DataType>
 FCLayer<DataType>::FCLayer(BaseLayer<DataType>* ip, int C, int H, int W,
                            bool bias, ActivationFunction activation)
@@ -605,6 +679,36 @@ void FCLayer<half>::LoadWeights(float* cpuWeight, float* cpuBias,
   }
 }
 
+#if LC0_CUDA_BF16_SUPPORTED
+template <>
+void FCLayer<__nv_bfloat16>::LoadWeights(float* cpuWeight, float* cpuBias,
+                                         void* scratch) {
+  const size_t num_weights =
+      C * H * W * input_->GetC() * input_->GetH() * input_->GetW();
+  const size_t weight_size = sizeof(float) * num_weights;
+  const size_t num_biases = C * H * W;
+  const size_t bias_size = sizeof(float) * num_biases;
+
+  assert(scratch);
+  ReportCUDAErrors(
+      cudaMemcpy(scratch, cpuWeight, weight_size, cudaMemcpyHostToDevice));
+
+  if (nhwc_) {
+    convertNCHWtoNHWC((__nv_bfloat16*)weights_, (float*)scratch, (int)num_biases,
+                      input_->GetC(), (int)num_biases, input_->GetC(),
+                      input_->GetH(), input_->GetW(), 0);
+  } else {
+    copyTypeConverted((__nv_bfloat16*)weights_, (float*)scratch, (int)num_weights, 0);
+  }
+
+  if (cpuBias) {
+    ReportCUDAErrors(
+        cudaMemcpy(scratch, cpuBias, bias_size, cudaMemcpyHostToDevice));
+    copyTypeConverted((__nv_bfloat16*)biases_, (float*)scratch, (int)num_biases, 0);
+  }
+}
+#endif
+
 template <>
 void FCLayer<float>::LoadWeights(float* cpuWeight, float* cpuBias,
                                  void* /*scratch*/) {
@@ -645,6 +749,32 @@ void FCLayer<half>::Eval(int N, half* output_tensor, const half* input_tensor,
                num_outputs, num_outputs * N, act_, stream);
   }
 }
+
+#if LC0_CUDA_BF16_SUPPORTED
+template <>
+void FCLayer<__nv_bfloat16>::Eval(int N, __nv_bfloat16* output_tensor,
+                                  const __nv_bfloat16* input_tensor,
+                                  const __nv_bfloat16* /*input2*/,
+                                  void* /*scratch*/, size_t /*scratch_size*/,
+                                  cudnnHandle_t /*cudnn*/,
+                                  cublasHandle_t cublas, cudaStream_t stream,
+                                  __nv_bfloat16***) {
+  const int num_outputs = C * H * W;
+  const int num_inputs = input_->GetC() * input_->GetH() * input_->GetW();
+
+  float alpha = 1.0f, beta = 0.0f;
+  ReportCUBLASErrors(cublasGemmEx(
+      cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, N, num_inputs, &alpha,
+      weights_, CUDA_R_16BF, num_inputs, input_tensor, CUDA_R_16BF, num_inputs,
+      &beta, output_tensor, CUDA_R_16BF, num_outputs, CUBLAS_COMPUTE_32F,
+      CUBLAS_GEMM_DEFAULT));
+
+  if (use_bias_ || (act_ != ACTIVATION_NONE)) {
+    addVectors(output_tensor, biases_, output_tensor, num_outputs * N,
+               num_outputs, num_outputs * N, act_, stream);
+  }
+}
+#endif
 
 template <>
 void FCLayer<float>::Eval(int N, float* output_tensor,
@@ -918,6 +1048,20 @@ void BaseLayer<half>::cublasRowMajorMatrixMul(const half* A, const half* B,
       batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
 }
 
+#if LC0_CUDA_BF16_SUPPORTED
+template <>
+void BaseLayer<__nv_bfloat16>::cublasRowMajorMatrixMul(
+    const __nv_bfloat16* A, const __nv_bfloat16* B, __nv_bfloat16* Out, int M,
+    int N, int K, int batchSize, cublasHandle_t cublas) {
+  float floatOne = 1.0f;
+  float floatZero = 0.0f;
+  ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+      cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_16BF, N,
+      N * K, A, CUDA_R_16BF, K, K * M, &floatZero, Out, CUDA_R_16BF, N, N * M,
+      batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+}
+#endif
+
 template <>
 void BaseLayer<float>::cublasRowMajorMatrixMul(const float* A, const float* B,
                                                float* Out, int M, int N, int K,
@@ -1086,6 +1230,21 @@ void Conv1Layer<half>::cublasSpecialMatrixMul(const half* A, const half* B,
       N * K, A, CUDA_R_16F, K, 0, &halfZero, Out, CUDA_R_16F, N, N * M,
       batchSize, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
 }
+
+#if LC0_CUDA_BF16_SUPPORTED
+template <>
+void Conv1Layer<__nv_bfloat16>::cublasSpecialMatrixMul(
+    const __nv_bfloat16* A, const __nv_bfloat16* B, __nv_bfloat16* Out, int M,
+    int N, int K, int batchSize, cublasHandle_t cublas) {
+  float floatOne = 1.0f;
+  float floatZero = 0.0f;
+
+  ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+      cublas, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &floatOne, B, CUDA_R_16BF, N,
+      N * K, A, CUDA_R_16BF, K, 0, &floatZero, Out, CUDA_R_16BF, N, N * M,
+      batchSize, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+}
+#endif
 
 template <>
 void Conv1Layer<float>::cublasSpecialMatrixMul(const float* A, const float* B,
@@ -1590,14 +1749,22 @@ static void cublasXgemm(cublasHandle_t handle, cublasOperation_t transa,
                         float alpha, const DataType* A, int lda,
                         const DataType* B, int ldb, float beta, DataType* C,
                         int ldc) {
-  const bool fp16 = std::is_same<half, DataType>::value;
-  if (fp16) {
+  if constexpr (std::is_same<half, DataType>::value) {
     unsigned short alpha_h = FP32toFP16(alpha);
     unsigned short beta_h = FP32toFP16(beta);
     ReportCUBLASErrors(cublasHgemm(
         handle, transa, transb, m, n, k, (const half*)&alpha_h, (const half*)A,
         lda, (const half*)B, ldb, (const half*)&beta_h, (half*)C, ldc));
-  } else {
+  }
+#if LC0_CUDA_BF16_SUPPORTED
+  else if constexpr (std::is_same<__nv_bfloat16, DataType>::value) {
+    ReportCUBLASErrors(cublasGemmEx(
+        handle, transa, transb, m, n, k, &alpha, A, CUDA_R_16BF, lda, B,
+        CUDA_R_16BF, ldb, &beta, C, CUDA_R_16BF, ldc, CUBLAS_COMPUTE_32F,
+        CUBLAS_GEMM_DEFAULT));
+  }
+#endif
+  else {
     ReportCUBLASErrors(cublasSgemm(handle, transa, transb, m, n, k, &alpha,
                                    (const float*)A, lda, (const float*)B, ldb,
                                    &beta, (float*)C, ldc));
@@ -1611,15 +1778,23 @@ static void cublasXGemmStridedBatched(
     long long int strideA, const void* B, int ldb, long long int strideB,
     float beta, void* C, int ldc, long long int strideC, int batchCount,
     bool use_gemm_ex) {
-  const bool fp16 = std::is_same<half, DataType>::value;
-  if (fp16) {
+  if constexpr (std::is_same<half, DataType>::value) {
     unsigned short alpha_h = FP32toFP16(alpha);
     unsigned short beta_h = FP32toFP16(beta);
     ReportCUBLASErrors(cublasGemmStridedBatchedEx(
         handle, transa, transb, m, n, k, &alpha_h, A, CUDA_R_16F, lda, strideA,
         B, CUDA_R_16F, ldb, strideB, &beta_h, C, CUDA_R_16F, ldc, strideC,
         batchCount, CUDA_R_16F, CUBLAS_GEMM_DEFAULT));
-  } else {
+  }
+#if LC0_CUDA_BF16_SUPPORTED
+  else if constexpr (std::is_same<__nv_bfloat16, DataType>::value) {
+    ReportCUBLASErrors(cublasGemmStridedBatchedEx(
+        handle, transa, transb, m, n, k, &alpha, A, CUDA_R_16BF, lda, strideA,
+        B, CUDA_R_16BF, ldb, strideB, &beta, C, CUDA_R_16BF, ldc, strideC,
+        batchCount, CUDA_R_32F, CUBLAS_GEMM_DEFAULT));
+  }
+#endif
+  else {
     if (use_gemm_ex) {
       ReportCUBLASErrors(cublasGemmStridedBatchedEx(
           handle, transa, transb, m, n, k, &alpha, A, CUDA_R_32F, lda, strideA,
@@ -1640,14 +1815,22 @@ static void cublasXGemmBatched(cublasHandle_t handle, cublasOperation_t transa,
                                float alpha, DataType** A, int lda, DataType** B,
                                int ldb, float beta, DataType** C, int ldc,
                                int batchCount) {
-  const bool fp16 = std::is_same<half, DataType>::value;
-  if (fp16) {
+  if constexpr (std::is_same<half, DataType>::value) {
     unsigned short alpha_h = FP32toFP16(alpha);
     unsigned short beta_h = FP32toFP16(beta);
     ReportCUBLASErrors(cublasHgemmBatched(
         handle, transa, transb, m, n, k, (const half*)&alpha_h, (half**)A, lda,
         (half**)B, ldb, (const half*)&beta_h, (half**)C, ldc, batchCount));
-  } else {
+  }
+#if LC0_CUDA_BF16_SUPPORTED
+  else if constexpr (std::is_same<__nv_bfloat16, DataType>::value) {
+    ReportCUBLASErrors(cublasGemmBatchedEx(
+        handle, transa, transb, m, n, k, &alpha, (const void**)A, CUDA_R_16BF,
+        lda, (const void**)B, CUDA_R_16BF, ldb, &beta, (void**)C, CUDA_R_16BF,
+        ldc, batchCount, CUBLAS_COMPUTE_32F, CUBLAS_GEMM_DEFAULT));
+  }
+#endif
+  else {
     ReportCUBLASErrors(cublasSgemmBatched(
         handle, transa, transb, m, n, k, &alpha, (float**)A, lda, (float**)B,
         ldb, &beta, (float**)C, ldc, batchCount));
@@ -1777,8 +1960,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   if (use_fused_mha_) {
     // TODO: check if we need skip in a different tensor than same tensor as
     // output!
-    fusedMHA(buffer2, mha_q, mha_k, mha_v, has_smolgen_ ? buffer2 : nullptr, N,
-             encoder_heads_, depth, stream);
+    fusedMHA<DataType>(buffer2, mha_q, mha_k, mha_v,
+                       has_smolgen_ ? buffer2 : nullptr, N, encoder_heads_,
+                       depth, stream);
   } else
 #endif
   // matmul_qk = tf.matmul(q, k, transpose_b=True)
@@ -2451,6 +2635,18 @@ template class EmbeddingLayer<float>;
 
 template class ValueHead<half>;
 template class ValueHead<float>;
+
+#if LC0_CUDA_BF16_SUPPORTED
+template class FCLayer<__nv_bfloat16>;
+template class SELayer<__nv_bfloat16>;
+template class PolicyMapLayer<__nv_bfloat16>;
+template class Conv1Layer<__nv_bfloat16>;
+template class AttentionPolicyHead<__nv_bfloat16>;
+template class EncoderBlock<__nv_bfloat16>;
+template class AttentionBody<__nv_bfloat16>;
+template class EmbeddingLayer<__nv_bfloat16>;
+template class ValueHead<__nv_bfloat16>;
+#endif
 
 // Misc error handling stuff.
 #ifdef USE_CUDNN

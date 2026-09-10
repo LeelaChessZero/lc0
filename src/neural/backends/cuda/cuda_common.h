@@ -35,6 +35,13 @@
 #define NS_BACKEND cudnn_backend
 #define BACKEND_NAME "CUDA"
 #define BACKEND_NAME_LC "cuda"
+
+#if CUDART_VERSION >= 11000
+#include <cuda_bf16.h>
+#define LC0_CUDA_BF16_SUPPORTED 1
+#else
+#define LC0_CUDA_BF16_SUPPORTED 0
+#endif
 #endif
 
 #include "utils/fp16_utils.h"
