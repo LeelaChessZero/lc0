@@ -507,9 +507,11 @@ std::vector<std::string> Search::GetVerboseStats(const Node* node) const {
       print(oss, "(D: ", d, ") ", 5, 3);
       print(oss, "(M: ", n->GetM(), ") ", 4, 1);
       print(oss, "(Q: ", wl + draw_score * d, ") ", 8, 5);
+      print(oss, "(X: ", sign * n->GetX(), ") ", 8, 5);
     } else {
       *oss << "(WL:  -.-----) (D: -.---) (M:  -.-) ";
       print(oss, "(Q: ", fpu, ") ", 8, 5);
+      *oss << "(X:  -.-----) ";
     }
   };
   auto print_tail = [&](auto* oss, const auto* n) {
@@ -1719,6 +1721,54 @@ void SearchWorker::PickNodesToExtendTask(
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       int cache_filled_idx = -1;
+      // Route minimax fraction of visits to the best-X child.
+      const float minimax_fraction = params_.GetMinimaxFraction();
+      if (minimax_fraction > 0.0f && cur_limit > 1) {
+        int minimax_visits = static_cast<int>(minimax_fraction * cur_limit);
+        if (minimax_visits > 0) {
+          int best_x_idx = -1;
+          float best_x = std::numeric_limits<float>::lowest();
+          for (Node* child : node->VisitedNodes()) {
+            float x = child->GetX();
+            if (x > best_x) {
+              best_x = x;
+              best_x_idx = child->Index();
+            }
+          }
+          if (best_x_idx >= 0) {
+            // Find the edge iterator for best_x_idx.
+            auto mm_iter = node->Edges();
+            for (int i = 0; i < best_x_idx; i++) ++mm_iter;
+            // Pre-assign minimax visits in vtp array.
+            auto* vtp_array = visits_to_perform.back().get()->data();
+            std::fill(vtp_array, vtp_array + best_x_idx + 1, 0);
+            (*visits_to_perform.back())[best_x_idx] = minimax_visits;
+            vtp_last_filled.back() = best_x_idx;
+            cur_limit -= minimax_visits;
+            // Spawn node and handle n_in_flight.
+            Node* child_node = mm_iter.GetOrSpawnNode(/* parent */ node);
+            EnsureNodeTwoFoldCorrectForDepth(
+                child_node, current_path.size() + base_depth + 1 - 1);
+            if (child_node->TryStartScoreUpdate()) {
+              minimax_visits -= 1;
+              if (child_node->GetN() > 0 && !child_node->IsTerminal()) {
+                child_node->IncrementNInFlight(minimax_visits);
+              }
+              if (child_node->GetN() == 0 || child_node->IsTerminal()) {
+                (*visits_to_perform.back())[best_x_idx] -= 1;
+                receiver->push_back(NodeToProcess::Visit(
+                    child_node, static_cast<uint16_t>(current_path.size() + 1 +
+                                                      base_depth)));
+                completed_visits++;
+                receiver->back().moves_to_visit.reserve(
+                    moves_to_path.size() + 1);
+                receiver->back().moves_to_visit = moves_to_path;
+                receiver->back().moves_to_visit.push_back(mm_iter.GetMove());
+              }
+            }
+          }
+        }
+      }
       while (cur_limit > 0) {
         // Perform UCT for current node.
         float best = std::numeric_limits<float>::lowest();
@@ -2236,8 +2286,22 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float m_delta = 0.0f;
   uint32_t solid_threshold =
       static_cast<uint32_t>(params_.GetSolidTreeThreshold());
+  float prev_old_x = 0, prev_new_x = 0;
+  bool x_changed = false;
   for (Node *n = node, *p; n != search_->root_node_->GetParent(); n = p) {
     p = n->GetParent();
+
+    // Update minimax x.
+    float old_x = n->GetX();
+    if (n == node) {
+      n->SetX(v);
+      x_changed = (old_x != v);
+    } else if (x_changed) {
+      x_changed = n->IsTerminal() ? false
+                                   : n->UpdateX(prev_old_x, prev_new_x);
+    }
+    prev_old_x = old_x;
+    prev_new_x = n->GetX();
 
     // Current node might have become terminal from some other descendant, so
     // backup the rest of the way with more accurate values.
