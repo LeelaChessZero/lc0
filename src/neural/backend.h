@@ -79,6 +79,8 @@ class BackendComputation {
   enum AddInputResult {
     ENQUEUED_FOR_EVAL = 0,    // Will be computed during ComputeBlocking();
     FETCHED_IMMEDIATELY = 1,  // Was in cache, the result is already populated.
+    FETCHED_DELAYED = 2,      // Was already queued for evaluation but results
+                              // aren't available yet.
   };
   virtual AddInputResult AddInput(
       const EvalPosition& pos,    // Input position.

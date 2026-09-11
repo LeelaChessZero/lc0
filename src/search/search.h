@@ -80,6 +80,8 @@ class SearchBase {
         "Training data generation is not supported for this search algorithm.");
   }
 
+  virtual float GetMaxOutOfOrderFactor() const = 0;
+
  protected:
   UciResponder* uci_responder_ = nullptr;
   Backend* backend_ = nullptr;

@@ -72,6 +72,10 @@ class ClassicSearch : public SearchBase {
     if (search_) search_->Abort();
   }
 
+  float GetMaxOutOfOrderFactor() const override {
+    return options_->Get<float>(BaseSearchParams::kMaxOutOfOrderEvalsFactorId);
+  }
+
   const OptionsDict* options_;
   std::unique_ptr<TimeManager> time_manager_;
   std::unique_ptr<Search> search_;
