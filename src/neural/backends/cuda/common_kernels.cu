@@ -1144,54 +1144,34 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
 
   int threadInGroup = threadIdx.y * 24 + threadIdx.x;
 
-  // phase 1 : compute promotion_offsets by multiplying keys and ppo matrices
+  // Phase 1: cooperatively compute the 4x8 promotion-offset matrix. The 192
+  // threads form 32 groups of 6 workers, one group per output dot product.
   const T* keys_start =
       keys + n * 64 * C + C * 56;  // we are interested only in last 8 out of 64
                                    // 'rows' of keys matrix
-  __shared__ float promotion_offsets[4][8];
+  constexpr int kPromotionOffsets = 4 * 8;
+  constexpr int kWorkersPerOffset = 6;
+  __shared__ float promotion_partials[kPromotionOffsets][kWorkersPerOffset];
 
-  // only 32 threads out of 192 in the group are active in this phase, and each
-  // thread computes one element of the promotion_offsets matrix
-  // TODO: opt idea1, can use more threads to reduce the length of the loop for
-  // the matrix multiply (do parallel reduction of partial sums later)
-  //       opt idea2, the below loop for matrix mul has very poor memory access
-  //       pattern, can do the loop over 32, and do parallel reductions
-  if (threadInGroup < 32) {
-    int x = threadInGroup % 4;
-    int y = threadInGroup / 4;
+  const int offset = threadInGroup / kWorkersPerOffset;
+  const int worker = threadInGroup % kWorkersPerOffset;
+  const int ppo_row = offset % 4;
+  const int keys_row = offset / 4;
 
-    float S = 0;
-    for (int i = 0; i < C;
-         i++) {  // TODO: modify to loop over 32 instead of C (doing parallel
-                 // reductions for the 32 sums)
-      float a = (float)keys_start[y * C + i];
-      float b =
-          (float)ppo[x * C + i];  // weight matrix is transposed (col major)
-      S += a * b;
-    }
-
-    // write the product (promotion_offsets) in shared memory
-    promotion_offsets[x][y] = S;
+  float partial = 0;
+  for (int i = worker; i < C; i += kWorkersPerOffset) {
+    const float a = (float)keys_start[keys_row * C + i];
+    const float b = (float)ppo[ppo_row * C + i];
+    partial += a * b;
   }
+  // This layout makes the 192 worker writes contiguous in linear thread order.
+  promotion_partials[offset][worker] = partial;
 
   lc0SyncThreads();
 
-  // phase 2: add the last "row" to the other 3
-  // #knight offset is added to the other three
-  // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4,
-  // :]
-  // Only 24 threads in the group are active in this phase
-  if (threadInGroup < 32) {
-    int x = threadInGroup % 4;
-    int y = threadInGroup / 4;
-    if (x < 3) {
-      promotion_offsets[x][y] += promotion_offsets[3][y];
-    }
-  }
-
-  lc0SyncThreads();
-
-  // phase 3: add 8x8 chunk of policy_attn_logits matrix to promotion offsets
+  // Add the knight offset while consuming the promotion offsets, avoiding a
+  // separate shared-memory update phase and block-wide synchronization.
+  // Then add the 8x8 chunk of policy_attn_logits to the resulting offsets.
   //          the output is 3x8x8 (written as 8 * 24)
   // All threads are active in this phase and they compute one element each
   int w = x / 3;
@@ -1201,7 +1181,16 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   // 7 to rank 8
   float n_promo_logit =
       (float)policy_attn_logits[n * output_stride + (48 + y) * 64 + (56 + w)];
-  float promo_offset = promotion_offsets[c][w];
+  const int promotion_offset = w * 4 + c;
+  const int knight_offset = w * 4 + 3;
+  float promotion_sum = 0;
+  float knight_sum = 0;
+#pragma unroll
+  for (int i = 0; i < kWorkersPerOffset; i++) {
+    promotion_sum += promotion_partials[promotion_offset][i];
+    knight_sum += promotion_partials[knight_offset][i];
+  }
+  float promo_offset = promotion_sum + knight_sum;
 
   float op = n_promo_logit + promo_offset;
 
