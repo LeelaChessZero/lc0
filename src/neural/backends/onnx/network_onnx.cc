@@ -679,10 +679,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       int major, minor, patch;
       iss >> major >> dot >> minor >> dot >> patch;
       if (major == 1 && minor >= 27) {
-        CERR << "WARNING: onnxruntime 1.27 has a bug which uses FP32 compute "
-                "instead of FP16 when using TensorRT 10. If you have "
-                "performance problems, downgrade to onnxruntime 1.26 or "
-                "earlier.";
+        CERR << "WARNING: onnxruntime 1.27 or newer has a bug with TensorRT "
+                "10 and uses FP32 compute instead of FP16. If you notice bad "
+                "performance, downgrade to onnxruntime 1.26 or earlier.";
       }
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
