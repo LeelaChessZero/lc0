@@ -26,6 +26,7 @@
 */
 
 #include "trainingdata/trainingdata.h"
+#include <numeric>
 
 namespace lczero {
 
@@ -112,10 +113,10 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
 }
 
 void V6TrainingDataArray::Add(
-    const classic::Node* node, const PositionHistory& history,
-    classic::Eval best_eval, classic::Eval played_eval, bool best_is_proven,
-    Move best_move, Move played_move, std::span<Move> legal_moves,
-    const std::optional<EvalResult>& nneval, float policy_softmax_temp) {
+    const classic::Node* node, const PositionHistory& history, classic::Eval best_eval,
+    classic::Eval played_eval, bool best_is_proven, Move best_move,
+    Move played_move, const std::vector<std::tuple<float, float>>& visits,
+    std::span<Move> legal_moves, const std::optional<EvalResult>& nneval) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -133,14 +134,6 @@ void V6TrainingDataArray::Add(
     plane = ReverseBitsInBytes(planes[plane_idx++].mask);
   }
 
-  // Populate probabilities.
-  auto total_n = node->GetChildrenVisits();
-  // Prevent garbage/invalid training data from being uploaded to server.
-  // It's possible to have N=0 when there is only one legal move in position
-  // (due to smart pruning).
-  if (total_n == 0 && node->GetNumEdges() != 1) {
-    throw Exception("Search generated invalid data!");
-  }
   // Set illegal moves to have -1 probability.
   std::fill(std::begin(result.probabilities), std::end(result.probabilities),
             -1);
@@ -148,23 +141,31 @@ void V6TrainingDataArray::Add(
   // Compute Kullback-Leibler divergence in nats (between policy and visits).
   float kld_sum = 0;
   float total = 0.0;
-  for (const auto& child : node->Edges()) {
-    const Move move = child.GetMove();
-    float fracv = total_n > 0 ? child.GetN() / static_cast<float>(total_n) : 1;
-    if (nneval) {
-      size_t move_idx =
-          std::find(legal_moves.begin(), legal_moves.end(), move) -
-          legal_moves.begin();
-      // Undo any softmax temperature in the cached data.
-      float P = std::pow(nneval->p[move_idx], policy_softmax_temp);
-      if (fracv > 0) {
-        kld_sum += fracv * std::log(fracv / P);
-      }
-      total += P;
+  float total_n = std::accumulate(visits.begin(), visits.end(), 0.0f,
+                                  [](float sum, const auto& child) {
+                                    return sum + std::get<0>(child);
+                                  });
+  // Prevent garbage/invalid training data from being uploaded to server.
+  // It's possible to have N=0 when there is only one legal move in position
+  // (due to smart pruning).
+  if (total_n == 0 && node->GetNumEdges() != 1) {
+    throw Exception("Search generated invalid data!");
+  }
+  auto move_iter = legal_moves.begin();
+  for (const auto& child : visits) {
+    if (move_iter == legal_moves.end()) {
+      throw Exception("More visited children than legal moves");
     }
+    const Move move = *move_iter++;
+    const float fracv = std::get<0>(child) / total_n;
+    const float P = std::get<1>(child);
+    if (fracv > 0 && P > 0) {
+      kld_sum += fracv * std::log(fracv / P);
+    }
+    total += P;
     result.probabilities[MoveToNNIndex(move, transform)] = fracv;
   }
-  if (nneval) {
+  if (total > 0) {
     // Add small epsilon for backward compatibility with earlier value of 0.
     auto epsilon = std::numeric_limits<float>::min();
     kld_sum = std::max(kld_sum + std::log(total), 0.0f) + epsilon;

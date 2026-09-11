@@ -47,6 +47,9 @@ class Random {
   template <class RandomAccessIterator>
   void Shuffle(RandomAccessIterator s, RandomAccessIterator e);
 
+  template <typename T>
+  int GetDiscrete(T first, T last);
+
  private:
   Random();
 
@@ -58,6 +61,13 @@ template <class RandomAccessIterator>
 void Random::Shuffle(RandomAccessIterator s, RandomAccessIterator e) {
   Mutex::Lock lock(mutex_);
   std::shuffle(s, e, gen_);
+}
+
+template <typename T>
+int Random::GetDiscrete(T first, T last) {
+  std::discrete_distribution<int> dist(first, last);
+  Mutex::Lock lock(mutex_);
+  return dist(gen_);
 }
 
 }  // namespace lczero
