@@ -1455,27 +1455,45 @@ void SearchWorker::ProcessPickedTask(int start_idx, int end_idx,
 
     // If node is already known as terminal (win/loss/draw according to rules
     // of the game), it means that we already visited this node before.
-    if (picked_node.IsExtendable()) {
-      // Node was never visited, extend it.
-      ExtendNode(node, picked_node.depth, picked_node.moves_to_visit, &history);
-      if (!node->IsTerminal()) {
-        picked_node.nn_queried = true;
-        MoveList legal_moves;
-        legal_moves.reserve(node->GetNumEdges());
-        std::transform(node->Edges().begin(), node->Edges().end(),
-                       std::back_inserter(legal_moves),
-                       [](const auto& edge) { return edge.GetMove(); });
-        picked_node.eval->p.resize(legal_moves.size());
-        picked_node.is_cache_hit = computation_->AddInput(
-                                       EvalPosition{
-                                           .pos = history.GetPositions(),
-                                           .legal_moves = legal_moves,
-                                       },
-                                       picked_node.eval->AsPtr()) ==
-                                   BackendComputation::FETCHED_IMMEDIATELY;
+    for (int cache_piercing_remaining = params_.GetCachePiercing();;) {
+      if (picked_node.IsExtendable()) {
+        // Node was never visited, extend it.
+        ExtendNode(node, picked_node.depth, picked_node.moves_to_visit,
+                   &history);
+        if (!node->IsTerminal()) {
+          picked_node.nn_queried = true;
+          MoveList legal_moves;
+          legal_moves.reserve(node->GetNumEdges());
+          std::transform(node->Edges().begin(), node->Edges().end(),
+                         std::back_inserter(legal_moves),
+                         [](const auto& edge) { return edge.GetMove(); });
+          picked_node.eval->p.resize(legal_moves.size());
+          picked_node.is_cache_hit = computation_->AddInput(
+                                         EvalPosition{
+                                             .pos = history.GetPositions(),
+                                             .legal_moves = legal_moves,
+                                         },
+                                         picked_node.eval->AsPtr()) ==
+                                     BackendComputation::FETCHED_IMMEDIATELY;
+        }
       }
+      if (!picked_node.is_cache_hit || cache_piercing_remaining-- <= 0) break;
+      // Cache piercing: materialize node from cache, continue deeper.
+      FetchSingleNodeResult(&picked_node);
+      node->SetCachedValue(picked_node.eval->q, picked_node.eval->d,
+                           picked_node.eval->m);
+      auto best_edge = node->Edges().begin();
+      Node* child = best_edge.GetOrSpawnNode(node);
+      child->TryStartScoreUpdate();
+      picked_node.moves_to_visit.push_back(best_edge.GetMove());
+      picked_node.depth++;
+      picked_node.node = child;
+      picked_node.nn_queried = false;
+      picked_node.is_cache_hit = false;
+      node = child;
     }
-    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder()) {
+    if (params_.GetOutOfOrderEval() && picked_node.CanEvalOutOfOrder() &&
+        !(params_.GetCachePiercing() > 0 && picked_node.is_cache_hit)) {
       // Perform out of order eval for the last entry in minibatch_.
       FetchSingleNodeResult(&picked_node);
       picked_node.ooo_completed = true;
@@ -2230,6 +2248,9 @@ void SearchWorker::DoBackupUpdateSingleNode(
   float v = node_to_process.eval->q;
   float d = node_to_process.eval->d;
   float m = node_to_process.eval->m;
+  const int multivisit = node_to_process.multivisit;
+  int extra_multivisit = 0;
+  const auto cp_backprop = params_.GetCachePiercingBackprop();
   int n_to_fix = 0;
   float v_delta = 0.0f;
   float d_delta = 0.0f;
@@ -2246,7 +2267,42 @@ void SearchWorker::DoBackupUpdateSingleNode(
       d = n->GetD();
       m = n->GetM();
     }
-    n->FinalizeScoreUpdate(v, d, m, node_to_process.multivisit);
+    // Handle cache-pierced intermediate nodes according to backprop mode.
+    if (n->GetN() == 0 && n != node) {
+      using M = CachePiercingBackpropMode;
+      switch (cp_backprop) {
+        case M::kNone:
+          n->FinalizeScoreUpdate(v, d, m, multivisit + extra_multivisit);
+          break;
+        case M::kAccumulate:
+          if (extra_multivisit > 0) n->IncrementNInFlight(extra_multivisit);
+          n->MakeCachedVisitReal();
+          n->FinalizeScoreUpdate(v, d, m, multivisit + extra_multivisit);
+          v = n->GetWL();
+          d = n->GetD();
+          m = n->GetM();
+          extra_multivisit++;
+          break;
+        case M::kNode:
+          v = n->GetWL();
+          d = n->GetD();
+          m = n->GetM();
+          n->MakeCachedVisitReal();
+          n->CancelScoreUpdate(multivisit);
+          break;
+        case M::kBlend:
+          v = 0.5f * v + 0.5f * static_cast<float>(n->GetWL());
+          d = 0.5f * d + 0.5f * n->GetD();
+          m = 0.5f * m + 0.5f * n->GetM();
+          n->SetCachedValue(v, d, m);
+          n->MakeCachedVisitReal();
+          n->CancelScoreUpdate(multivisit);
+          break;
+      }
+    } else {
+      if (extra_multivisit > 0) n->IncrementNInFlight(extra_multivisit);
+      n->FinalizeScoreUpdate(v, d, m, multivisit + extra_multivisit);
+    }
     if (n_to_fix > 0 && !n->IsTerminal()) {
       n->AdjustForTerminal(v_delta, d_delta, m_delta, n_to_fix);
     }
@@ -2291,11 +2347,11 @@ void SearchWorker::DoBackupUpdateSingleNode(
           search_->GetBestChildNoTemperature(search_->root_node_, 0);
     }
   }
-  search_->total_playouts_ += node_to_process.multivisit;
+  search_->total_playouts_ += multivisit + extra_multivisit;
   if (node_to_process.nn_queried && !node_to_process.is_cache_hit) {
     search_->network_evaluations_++;
   }
-  search_->cum_depth_ += node_to_process.depth * node_to_process.multivisit;
+  search_->cum_depth_ += node_to_process.depth * multivisit;
   search_->max_depth_ = std::max(search_->max_depth_, node_to_process.depth);
 }
 
