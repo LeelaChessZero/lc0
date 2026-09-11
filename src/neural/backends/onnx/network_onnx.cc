@@ -685,7 +685,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
-      std::string cache_dir = CommandLine::BinaryDirectory() + "/trt_cache";
+      std::string cache_dir = "trt_cache";
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
       trt_options["trt_builder_optimization_level"] = std::to_string(std::clamp(optimize, 0, 5));
@@ -698,7 +698,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
       trt_options["trt_dump_ep_context_model"] = ep_context_path ? "1" : "0";
-      trt_options["trt_ep_context_embed_mode"] = "1";
+      trt_options["trt_ep_context_embed_mode"] = "0";
       // We need the batch size as well as the hash, as it is set after loading.
       std::ostringstream oss;
       oss << std::hex << hash;
@@ -757,6 +757,18 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
 #endif
       options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
       api.ReleaseTensorRTProviderOptions(trt_options_v2);
+
+      if (ep_context_path && std::filesystem::exists(cache_dir)) {
+        for (const auto& entry : std::filesystem::directory_iterator(cache_dir)) {
+          if (entry.is_regular_file()) {
+            const auto& filename = entry.path().filename().string();
+            if (filename.find(cache_prefix) == 0) {
+              std::filesystem::remove(entry.path());
+            }
+          }
+        }
+      }
+
       break;
     }
     case OnnxProvider::ROCM: {
@@ -1047,10 +1059,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
 
   if (w->has_onnx_model()) {
     const auto& md = w->onnx_model();
-    if (md.is_ep_context()) {
-      return std::make_unique<OnnxNetwork>(*w, opts, kProvider, true);
-    }
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, false);
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, md.is_ep_context());
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);
