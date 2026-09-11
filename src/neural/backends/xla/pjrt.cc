@@ -112,7 +112,7 @@ std::string PjrtCommon::GetErrorMessage(PJRT_Error* error) const {
   return std::string(args.message, args.message_size);
 }
 void PjrtCommon::DestroyErrorMessage(PJRT_Error* error) const {
-  assert(error);
+  if (!error) return;
   auto args = MakeStruct<PJRT_Error_Destroy_Args>();
   args.error = error;
   api_->PJRT_Error_Destroy(&args);
@@ -140,9 +140,11 @@ PjrtExecutable::PjrtExecutable(const PJRT_Api* api,
 }
 
 PjrtExecutable::~PjrtExecutable() {
+  if (!executable_) return;
   auto args = MakeStruct<PJRT_LoadedExecutable_Destroy_Args>();
   args.executable = executable_;
   CheckError(api_->PJRT_LoadedExecutable_Destroy(&args));
+  executable_ = nullptr;
 }
 
 size_t PjrtExecutable::GetNumOutputs() const { return num_outputs_; }
@@ -168,13 +170,15 @@ std::vector<std::unique_ptr<PjrtDeviceBuffer>> PjrtExecutable::ExecuteBlocking(
 
   std::vector<PJRT_Buffer*> outputs(num_outputs_);
   PJRT_Buffer** outputs_ptr = outputs.data();
-  PJRT_Event* event_ptr;
+  PJRT_Event* event_ptr = nullptr;
   args.output_lists = &outputs_ptr;
   args.device_complete_events = &event_ptr;
   CheckError(api_->PJRT_LoadedExecutable_Execute(&args));
 
-  PjrtEvent event(api_, event_ptr);
-  event.Await();
+  if (event_ptr) {
+    PjrtEvent event(api_, event_ptr);
+    event.Await();
+  }
 
   std::vector<std::unique_ptr<PjrtDeviceBuffer>> output_buffers;
   output_buffers.reserve(num_outputs_);
@@ -204,9 +208,11 @@ PjrtClient::PjrtClient(const PJRT_Api* api, PJRT_Client* client)
     : PjrtCommon(api), client_(client) {}
 
 PjrtClient::~PjrtClient() {
+  if (!client_) return;
   auto args = MakeStruct<PJRT_Client_Destroy_Args>();
   args.client = client_;
   CheckError(api_->PJRT_Client_Destroy(&args));
+  client_ = nullptr;
 }
 
 std::unique_ptr<PjrtExecutable> PjrtClient::CompileHlo(
@@ -243,12 +249,15 @@ PjrtEvent::PjrtEvent(const PJRT_Api* api, PJRT_Event* event)
     : PjrtCommon(api), event_(event) {}
 
 PjrtEvent::~PjrtEvent() {
+  if (!event_) return;
   auto args = MakeStruct<PJRT_Event_Destroy_Args>();
   args.event = event_;
   CheckError(api_->PJRT_Event_Destroy(&args));
+  event_ = nullptr;
 }
 
 void PjrtEvent::Await() {
+  if (!event_) return;
   auto args = MakeStruct<PJRT_Event_Await_Args>();
   args.event = event_;
   CheckError(api_->PJRT_Event_Await(&args));
@@ -258,9 +267,11 @@ PjrtDeviceBuffer::PjrtDeviceBuffer(const PJRT_Api* api, PJRT_Buffer* buffer)
     : PjrtCommon(api), buffer_(buffer) {}
 
 PjrtDeviceBuffer::~PjrtDeviceBuffer() {
+  if (!buffer_) return;
   auto args = MakeStruct<PJRT_Buffer_Destroy_Args>();
   args.buffer = buffer_;
   CheckError(api_->PJRT_Buffer_Destroy(&args));
+  buffer_ = nullptr;
 }
 
 size_t PjrtDeviceBuffer::GetSize() const {
@@ -362,13 +373,17 @@ Pjrt::Pjrt(const char* library_path) : PjrtCommon(nullptr) {
                             std::string(library_path));
   }
   auto [major, minor] = ApiVersion();
-  if (major != PJRT_API_MAJOR || minor < PJRT_API_MINOR) {
+  if (major != PJRT_API_MAJOR) {
     throw PjrtException(
         PjrtErrorCode::INVALID_ARGUMENT,
         "PJRT library " + std::string(library_path) +
-            " has incompatible API version: " + std::to_string(major) + "." +
-            std::to_string(minor) + " vs " + std::to_string(PJRT_API_MAJOR) +
-            "." + std::to_string(PJRT_API_MINOR));
+            " has incompatible API major version: " + std::to_string(major) +
+            " vs " + std::to_string(PJRT_API_MAJOR));
+  }
+  if (minor < PJRT_API_MINOR) {
+    CERR << "Warning: PJRT library " << library_path << " minor version "
+         << minor << " is older than compiled " << PJRT_API_MINOR
+         << ". Proceeding with backwards compatibility.";
   }
   Initialize();
 }
