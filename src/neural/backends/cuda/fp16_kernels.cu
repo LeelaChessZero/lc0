@@ -25,19 +25,22 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <cassert>
+
 #include "cuda_common.h"
 #include "neural/tables/activation_function.h"
 #include "utils/exception.h"
 
-// Allow building on an old architecture.
+// Native fp16 arithmetic requires compute capability 5.3+; guard the fp16 device
+// bodies so lc0 still builds for older architectures.
 // CoreX/ivcore11: device __CUDA_ARCH__ reports 300.
-#if !defined(__ILUVATAR__) && (__CUDA_ARCH__ < 530)
-#define SKIP_FP16_BITS 1
+#if __CUDA_ARCH__ >= 530 || defined(__ILUVATAR__)
+#define HAS_FP16_SUPPORT 1
 #endif
 #include "winograd_helper.inc"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 /////////////////////////////////////////////////////////////////////////////
 //          fp16-specific kernels used by certain layers                   //
@@ -58,7 +61,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
                               const half* w1, const half* b1, const half* w2,
                               const half* b2, const half* bPrev,
                               ActivationFunction activation) {
-#if defined(__ILUVATAR__) || (__CUDA_ARCH__ >= 530)
+#ifdef HAS_FP16_SUPPORT
   const int elementsPerThread = 64;  // 8x8 board
   const int se_K = K;
 
@@ -87,7 +90,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
   half avg = S / (half)elementsPerThread;
   sharedData[c] = avg;
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // 2. First fully connected layer.
   if (c < K) {
@@ -104,7 +107,7 @@ __global__ void SE_Layer_NHWC(half* output, const half* skip, const half* input,
 
     sharedData[c] = S;
   }
-  __syncthreads();
+  lc0SyncThreads();
 
   // 3. Second fully connected layer.
   S = 0;
@@ -229,7 +232,7 @@ __global__ __launch_bounds__(
                                                         const half* b1,
                                                         const half* w2,
                                                         const half* b2) {
-#if defined(__ILUVATAR__) || (__CUDA_ARCH__ >= 530)
+#ifdef HAS_FP16_SUPPORT
   int k = threadIdx.x;
   int n = blockIdx.x;
 
@@ -282,7 +285,7 @@ __global__ __launch_bounds__(
 
   int lane = k & 0x1F;
   int warp = k >> 5;
-  __syncthreads();
+  lc0SyncThreads();
 
   // First fully-connected layer for SE
 
@@ -297,7 +300,7 @@ __global__ __launch_bounds__(
     val = warpReduce(val);
     if (lane == 0) shared_sums[warp][i] = val;
   }
-  __syncthreads();
+  lc0SyncThreads();
   if (k < se_K) {
     S = 0;
     for (int i = 0; i < C / 32; i++) S += shared_sums[i][k];
@@ -307,7 +310,7 @@ __global__ __launch_bounds__(
     shared_data[k] = S;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // Second fully-connected layer for SE
   S = 0;
@@ -453,6 +456,9 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
       cudaFuncSetAttribute(
+#if defined(USE_HIP)
+          (const void*)
+#endif
           OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
                                                       use_skip>,
           cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * C * sizeof(half));

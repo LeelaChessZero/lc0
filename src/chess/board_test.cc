@@ -2250,6 +2250,43 @@ TEST(ChessBoard, QueenMoveFromEnPassantFlagBug) {
   EXPECT_EQ(board.GenerateLegalMoves(), legal_moves);
 }
 
+// Multi-check positions (triple check, dual pawns, dual knights) must only
+// generate king evasions and not allow non-king pieces to capture one attacker.
+TEST(ChessBoard, MultiCheckDefensiveHandling) {
+  // Triple check: White king on c3 attacked by b1 knight, b2 bishop, e3 queen.
+  {
+    ChessBoard board;
+    board.SetFromFen("4k3/8/PP1p1n2/R1prP3/N3p3/pPK1q3/pbp1p3/Qn4B1 w - - 0 1");
+    auto legal_moves = board.GenerateLegalMoves();
+    EXPECT_FALSE(legal_moves.empty());
+    for (const auto& m : legal_moves) {
+      EXPECT_EQ(BitBoard::FromSquare(m.from()), board.kings() & board.ours());
+    }
+  }
+
+  // Dual pawn check: White king on e4 attacked by d5 and f5 pawns.
+  {
+    ChessBoard board;
+    board.SetFromFen("Q7/8/8/3p1p2/4K3/8/8/7k w - - 0 1");
+    auto legal_moves = board.GenerateLegalMoves();
+    EXPECT_FALSE(legal_moves.empty());
+    for (const auto& m : legal_moves) {
+      EXPECT_EQ(BitBoard::FromSquare(m.from()), board.kings() & board.ours());
+    }
+  }
+
+  // Dual knight check: White king on e4 attacked by d6 and f6 knights.
+  {
+    ChessBoard board;
+    board.SetFromFen("Q7/8/3n1n2/8/4K3/8/8/7k w - - 0 1");
+    auto legal_moves = board.GenerateLegalMoves();
+    EXPECT_FALSE(legal_moves.empty());
+    for (const auto& m : legal_moves) {
+      EXPECT_EQ(BitBoard::FromSquare(m.from()), board.kings() & board.ours());
+    }
+  }
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
