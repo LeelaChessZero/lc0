@@ -105,6 +105,10 @@ class OnnxBuilder {
                     std::initializer_list<int> ends);
   std::string Concat(const std::string& name,
                      const std::vector<std::string>& input, int axis);
+  std::string RMSNormalization(const std::string& name,
+                               const std::string& input,
+                               const OnnxConst& scale, int axis,
+                               float epsilon = 1e-6);
   std::string LayerNormalization(const std::string& name,
                                  const std::string& input,
                                  const OnnxConst& scale, const OnnxConst& bias,

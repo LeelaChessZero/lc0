@@ -937,6 +937,11 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);
+    converter_options.opset = opts.GetOrDefault<int>(
+        "opset", converter_options.data_type ==
+                         WeightsToOnnxConverterOptions::DataType::kBFloat16
+                     ? 22
+                     : 17);
     converter_options.alt_mish = opts.GetOrDefault<bool>(
         "alt_mish",
         kProvider == OnnxProvider::CPU || kProvider == OnnxProvider::COREML
@@ -949,6 +954,10 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
                     pblczero::NetworkFormat::ACTIVATION_RELU_2
             ? true
             : false);
+    converter_options.alt_rmsnorm = opts.GetOrDefault<bool>(
+        "alt_rmsnorm",
+        kProvider != OnnxProvider::CPU || converter_options.opset < 23 ? true
+                                                                       : false);
     converter_options.no_shape = opts.GetOrDefault<bool>("no_shape", false);
     converter_options.policy_head =
         opts.GetOrDefault<std::string>("policy_head", "vanilla");
@@ -976,11 +985,6 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
     }
     converter_options.data_type =
         WeightsToOnnxConverterOptions::StringToDataType(datatype);
-    converter_options.opset = opts.GetOrDefault<int>(
-        "opset", converter_options.data_type ==
-                         WeightsToOnnxConverterOptions::DataType::kBFloat16
-                     ? 22
-                     : 17);
 
     auto converted = ConvertWeightsToOnnx(*w, converter_options);
     return std::make_unique<OnnxNetwork>(converted, opts, kProvider, true);
