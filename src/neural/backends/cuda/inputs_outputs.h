@@ -83,7 +83,7 @@ template <typename DataType>
 struct InputsOutputs {
   InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
-                bool cublasDisableTensorCores = false) {
+                [[maybe_unused]] bool cublasDisableTensorCores = false) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -160,14 +160,11 @@ struct InputsOutputs {
             cudaMemsetAsync(mem, 0, tensor_mem_size, compute_stream_));
       }
       ReportCUBLASErrors(cublasCreate(&cublas_));
-#if !defined(USE_HIP)
-      // No hipBLAS equivalent for the TF32/tensor-op math-mode toggle; hipBLAS
-      // picks its default precision (see network_cuda.cc constructor).
+#if !defined(USE_HIP) && CUDART_VERSION < 11010
+      // See CudaNetwork constructor in network_cuda.cc.
       ReportCUBLASErrors(cublasSetMathMode(
           cublas_, cublasDisableTensorCores ? CUBLAS_PEDANTIC_MATH
                                             : CUBLAS_TENSOR_OP_MATH));
-#else
-      (void)cublasDisableTensorCores;
 #endif
       ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
     } else {

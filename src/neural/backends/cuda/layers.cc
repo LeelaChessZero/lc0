@@ -601,11 +601,11 @@ void SELayer<half>::Eval(int N, half* output, const half* input,
 template <>
 void SELayer<__nv_bfloat16>::Eval(int N, __nv_bfloat16* output,
                                   const __nv_bfloat16* input,
-                                  const __nv_bfloat16* input2, void* scratch,
-                                  size_t scratch_size, cudnnHandle_t /*cudnn*/,
+                                  const __nv_bfloat16* /*input2*/,
+                                  void* scratch, size_t scratch_size,
+                                  cudnnHandle_t /*cudnn*/,
                                   cublasHandle_t cublas, cudaStream_t stream,
                                   __nv_bfloat16***) {
-  assert(output == input2);
   __nv_bfloat16* op1 = (__nv_bfloat16*)scratch;
   __nv_bfloat16* op2 =
       (__nv_bfloat16*)scratch + scratch_size / sizeof(__nv_bfloat16) / 2;
