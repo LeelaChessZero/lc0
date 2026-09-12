@@ -226,6 +226,7 @@ class OnnxNetwork final : public Network {
 #endif
 
  private:
+  std::string cache_dir_;
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 };
@@ -685,7 +686,6 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
-      std::string cache_dir = "trt_cache";
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
       trt_options["trt_builder_optimization_level"] = std::to_string(std::clamp(optimize, 0, 5));
@@ -713,9 +713,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
         trt_options["trt_ep_context_file_path"] = cache_prefix + "ctx.onnx";
       }
       if (ep_context_path) *ep_context_path = trt_options["trt_ep_context_file_path"];
-      trt_options["trt_engine_cache_path"] = cache_dir;
+      trt_options["trt_engine_cache_path"] = cache_dir_;
       trt_options["trt_timing_cache_enable"] = "1";
-      trt_options["trt_timing_cache_path"] = cache_dir;
+      trt_options["trt_timing_cache_path"] = cache_dir_;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
       trt_options["trt_context_memory_sharing_enable"] = is_ep_context ? "0" : "1";
@@ -758,11 +758,11 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
       api.ReleaseTensorRTProviderOptions(trt_options_v2);
 
-      if (ep_context_path && std::filesystem::exists(cache_dir)) {
-        for (const auto& entry : std::filesystem::directory_iterator(cache_dir)) {
+      if (ep_context_path && std::filesystem::exists(cache_dir_)) {
+        for (const auto& entry : std::filesystem::directory_iterator(cache_dir_)) {
           if (entry.is_regular_file()) {
             const auto& filename = entry.path().filename().string();
-            if (filename.find(cache_prefix) == 0) {
+            if (filename.starts_with(cache_prefix)) {
               std::filesystem::remove(entry.path());
             }
           }
@@ -995,6 +995,22 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   bool dump_weights = provider_ == OnnxProvider::TRT && !is_ep_context &&
                      opts.Exists<std::string>("dump-embedded-weights") &&
                      !opts.Get<std::string>("dump-embedded-weights").empty();
+
+  cache_dir_ = CommandLine::BinaryDirectory() + "/trt_cache";
+  // setting trt_ep_context_embed_mode to 0 requires the cache_dir_ to be a relative path
+  
+  if (dump_weights) {
+    std::string output_file = opts.Get<std::string>("dump-embedded-weights");
+    std::filesystem::path out_path(output_file);
+    
+    if (out_path.has_parent_path() && out_path.parent_path() != ".") {
+      throw Exception(
+          "dump-embedded-weights must be a filename in the current working directory. "
+          "Got: " + output_file);
+    }
+    
+    cache_dir_ = output_file + "_cache_dir";
+  }
 
   std::vector<std::string> ctx_paths;
   if (dump_weights) ctx_paths.resize(steps_);
