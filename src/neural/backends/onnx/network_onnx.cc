@@ -48,11 +48,14 @@
 #include "neural/loader.h"
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
+#include "neural/shared_params.h"
 #include "onnxruntime_cxx_api.h"
+#include "proto/onnx.pb.h"
 #include "utils/bf16_utils.h"
 #include "utils/bititer.h"
 #include "utils/commandline.h"
 #include "utils/exception.h"
+#include "utils/files.h"
 #include "utils/fp16_utils.h"
 #include "utils/logging.h"
 #include "utils/trace.h"
@@ -170,7 +173,9 @@ class OnnxNetwork final : public Network {
   }
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
-  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash, int optimize);
+  Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash,
+                                 int optimize, bool is_ep_context,
+                                 std::string* ep_context_path = nullptr);
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
@@ -221,6 +226,7 @@ class OnnxNetwork final : public Network {
 #endif
 
  private:
+  std::string cache_dir_;
   std::mutex inputs_outputs_lock_;
   std::list<std::unique_ptr<InputsOutputs>> free_inputs_outputs_;
 };
@@ -625,7 +631,9 @@ void OnnxComputation<DataType>::ComputeBlocking() {
 }
 
 Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
-                                            uint64_t hash, int optimize) {
+                                            uint64_t hash, int optimize,
+                                            bool is_ep_context,
+                                            std::string* ep_context_path) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
   GraphOptimizationLevel level = GraphOptimizationLevel::ORT_DISABLE_ALL;
@@ -641,6 +649,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       break;
     default:
       level = GraphOptimizationLevel::ORT_ENABLE_ALL;
+      if (is_ep_context) {
+        level = GraphOptimizationLevel::ORT_DISABLE_ALL;
+      }
       break;
   }
   options.SetGraphOptimizationLevel(level);
@@ -685,7 +696,6 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       }
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
-      std::string cache_dir = CommandLine::BinaryDirectory() + "/trt_cache";
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
       trt_options["trt_builder_optimization_level"] = std::to_string(std::clamp(optimize, 0, 5));
@@ -697,21 +707,28 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       trt_options["trt_max_partition_iterations"] = "1000";
       trt_options["trt_min_subgraph_size"] = "1";
       trt_options["trt_engine_cache_enable"] = "1";
+      trt_options["trt_dump_ep_context_model"] = ep_context_path ? "1" : "0";
+      trt_options["trt_ep_context_embed_mode"] = "0";
       // We need the batch size as well as the hash, as it is set after loading.
       std::ostringstream oss;
       oss << std::hex << hash;
-      trt_options["trt_engine_cache_prefix"] =
+      std::string cache_prefix =
           "Lc0_ONNX_TRT_ORT_" + Ort::GetVersionString() + "_batch_" +
           (batch_size < 0 ? std::to_string(batch_size)
                           : std::to_string(batch_size - batch_size_ + 1) + "-" +
                                 std::to_string(batch_size)) +
           "_" + std::to_string(optimize) + "_" + oss.str() + "_";
-      trt_options["trt_engine_cache_path"] = cache_dir;
+      trt_options["trt_engine_cache_prefix"] = cache_prefix;
+      if (ep_context_path) {
+        trt_options["trt_ep_context_file_path"] = cache_prefix + "ctx.onnx";
+      }
+      if (ep_context_path) *ep_context_path = trt_options["trt_ep_context_file_path"];
+      trt_options["trt_engine_cache_path"] = cache_dir_;
       trt_options["trt_timing_cache_enable"] = "1";
-      trt_options["trt_timing_cache_path"] = cache_dir;
+      trt_options["trt_timing_cache_path"] = cache_dir_;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
-      trt_options["trt_context_memory_sharing_enable"] = "1";
+      trt_options["trt_context_memory_sharing_enable"] = is_ep_context ? "0" : "1";
       // Looks like we need I/O binding to enable this.
 #ifdef USE_ONNX_CUDART
       trt_options["has_user_compute_stream"] = "1";
@@ -750,6 +767,18 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
 #endif
       options.AppendExecutionProvider_TensorRT_V2(*trt_options_v2);
       api.ReleaseTensorRTProviderOptions(trt_options_v2);
+
+      if (ep_context_path && std::filesystem::exists(cache_dir_)) {
+        for (const auto& entry : std::filesystem::directory_iterator(cache_dir_)) {
+          if (entry.is_regular_file()) {
+            const auto& filename = entry.path().filename().string();
+            if (filename.starts_with(cache_prefix)) {
+              std::filesystem::remove(entry.path());
+            }
+          }
+        }
+      }
+
       break;
     }
     case OnnxProvider::ROCM: {
@@ -911,6 +940,38 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     mlh_head_ = outputs_.size();
     outputs_.emplace_back(md.output_mlh());
   }
+
+  const bool is_ep_context = md.is_ep_context();
+
+  if(is_ep_context && provider != OnnxProvider::TRT){
+    throw Exception(
+      "This network contains an embedded TensorRT engine and can only be "
+      "loaded with the onnx-trt backend.");
+  }
+
+  if (is_ep_context && provider == OnnxProvider::TRT) {
+    uint32_t stored_batch_size = md.has_trt_batch_size() ? md.trt_batch_size() : 0;
+    uint32_t stored_min_batch_size = md.has_trt_min_batch_size() ? md.trt_min_batch_size() : 0;
+    uint32_t stored_steps = md.has_trt_steps() ? md.trt_steps() : 0;
+    uint32_t requested_batch_size = batch_size_ > 0 ? batch_size_ : 0;
+    
+    if (md.has_trt_batch_size() &&
+        (stored_batch_size != requested_batch_size ||
+         stored_min_batch_size != static_cast<uint32_t>(min_batch_size_) ||
+         stored_steps != static_cast<uint32_t>(steps_))) {
+      throw Exception(
+          "The embedded TensorRT engine was built for a different "
+          "batch/steps configuration (batch=" +
+          std::to_string(stored_batch_size) +
+          ", min_batch=" + std::to_string(stored_min_batch_size) +
+          ", steps=" + std::to_string(stored_steps) +
+          ") than requested (batch=" + std::to_string(requested_batch_size) +
+          ", min_batch=" + std::to_string(min_batch_size_) +
+          ", steps=" + std::to_string(steps_) + ")." + 
+          "Rebuild the embedded TensorRT engine with the correct configuration.");
+    }
+  }
+
   uint64_t hash = 0;
   if (provider == OnnxProvider::TRT) {
     hash = std::hash<std::string_view>()(md.model());
@@ -931,10 +992,95 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       break;
   }
 
-  for (int step = 1; step <= steps_; step++)
-    session_.emplace_back(onnx_env_, file.onnx_model().model().data(),
-                          file.onnx_model().model().size(),
-                          GetOptions(threads, batch_size_ * step, hash, optimize));
+  if (opts.Exists<std::string>("dump-embedded-weights") &&
+      !opts.Get<std::string>("dump-embedded-weights").empty()) {
+        if (provider != OnnxProvider::TRT){
+          throw Exception(
+            "dump-embedded-weights requires the onnx-trt backend. "
+            "Got a different backend.");
+        }
+
+        if (is_ep_context){
+          throw Exception(
+            "Cannot dump embedded weights: "
+            "this network already contains an embedded TensorRT context.");
+        }
+  }
+
+  bool dump_weights = provider_ == OnnxProvider::TRT && !is_ep_context &&
+                     opts.Exists<std::string>("dump-embedded-weights") &&
+                     !opts.Get<std::string>("dump-embedded-weights").empty();
+
+  cache_dir_ = CommandLine::BinaryDirectory() + "/trt_cache";
+  // setting trt_ep_context_embed_mode to 0 requires the cache_dir_ to be a relative path
+  
+  if (dump_weights) {
+    std::string output_file = opts.Get<std::string>("dump-embedded-weights");
+    std::filesystem::path out_path(output_file);
+    
+    if (out_path.has_parent_path() && out_path.parent_path() != ".") {
+      throw Exception(
+          "dump-embedded-weights must be a filename in the current working directory. "
+          "Got: " + output_file);
+    }
+    
+    cache_dir_ = output_file + "_cache_dir";
+  }
+
+  std::vector<std::string> ctx_paths;
+  if (dump_weights) ctx_paths.resize(steps_);
+
+  bool multi_step_embedded = is_ep_context && md.step_models_size() > 0;
+  for (int step = 1; step <= steps_; step++) {
+    std::string_view model = multi_step_embedded
+                                  ? md.step_models(step - 1)
+                                  : std::string_view(file.onnx_model().model());
+    session_.emplace_back(
+        onnx_env_, model.data(), model.size(),
+        GetOptions(threads, batch_size_ * step, hash, optimize, is_ep_context,
+                  dump_weights && !multi_step_embedded ? &ctx_paths[step - 1] : nullptr));
+  }
+
+  if (dump_weights) {
+    std::string net_path = opts.Get<std::string>("dump-embedded-weights");
+    pblczero::Net out = file;
+    auto* md_out = out.mutable_onnx_model();
+
+    for (int step = 1; step <= steps_; step++) {
+      const std::string ctx = ReadFileToString(ctx_paths[step - 1]);
+      pblczero::ModelProto model;
+      model.ParseFromString(ctx);
+      
+      if (step == 1) {
+        for (const auto& output : model.graph().output()) {
+          const auto& name = output.name();
+          if (name == outputs_[policy_head_]) {
+            md_out->set_output_policy(name);
+          } else if (wdl_head_ != -1 && name == outputs_[wdl_head_]) {
+            md_out->set_output_wdl(name);
+          } else if (value_head_ != -1 &&
+                    name == outputs_[value_head_]) {
+            md_out->set_output_value(name);
+          } else if (mlh_head_ != -1 &&
+                    name == outputs_[mlh_head_]) {
+            md_out->set_output_mlh(name);
+          }
+        }
+        md_out->set_model(ctx);
+      }
+      md_out->add_step_models(ctx);
+    }
+
+    md_out->set_is_ep_context(true);
+    md_out->set_trt_batch_size(batch_size_ > 0 ? batch_size_ : 0);
+    md_out->set_trt_min_batch_size(min_batch_size_);
+    md_out->set_trt_steps(steps_);
+    WriteStringToGzFile(net_path, out.OutputAsString());
+  }
+
+  for (const auto& path : ctx_paths) {
+    if (!path.empty()) std::filesystem::remove(path);
+  }
 }
 
 template <OnnxProvider kProvider>
@@ -943,7 +1089,8 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
   if (w->has_onnx_model()) {
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, false);
+    const auto& md = w->onnx_model();
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, md.is_ep_context());
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);
