@@ -673,6 +673,16 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       break;
     }
     case OnnxProvider::TRT: {
+      auto version = OrtGetApiBase()->GetVersionString();
+      std::istringstream iss(version);
+      char dot;
+      int major, minor, patch;
+      iss >> major >> dot >> minor >> dot >> patch;
+      if (major == 1 && minor >= 27) {
+        CERR << "WARNING: onnxruntime 1.27 or newer has a bug with TensorRT "
+                "10 and uses FP32 compute instead of FP16. If you notice bad "
+                "performance, downgrade to onnxruntime 1.26 or earlier.";
+      }
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
 
       std::string cache_dir = CommandLine::BinaryDirectory() + "/trt_cache";
