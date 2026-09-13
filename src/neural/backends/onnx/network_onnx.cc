@@ -63,9 +63,9 @@ namespace onnx {
 namespace {
 
 void CleanCacheDirectory(const std::filesystem::path& cache_dir) {
-  constexpr auto kCleaupPeriod = std::chrono::months(6);
+  constexpr auto kCleanupPeriod = std::chrono::months(6);
   auto now = std::chrono::file_clock::now();
-  auto limit = now - kCleaupPeriod;
+  auto limit = now - kCleanupPeriod;
   if (!std::filesystem::exists(cache_dir)) {
     return;
   }
@@ -741,9 +741,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(
         trt_options["trt_ep_context_file_path"] = cache_prefix + "ctx.onnx";
         *ep_context_path = trt_options["trt_ep_context_file_path"];
       }
-      trt_options["trt_engine_cache_path"] = cache_dir;
+      trt_options["trt_engine_cache_path"] = cache_dir.string();
       trt_options["trt_timing_cache_enable"] = "1";
-      trt_options["trt_timing_cache_path"] = default_trt_cache;
+      trt_options["trt_timing_cache_path"] = default_trt_cache.string();
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
       trt_options["trt_context_memory_sharing_enable"] =

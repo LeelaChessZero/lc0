@@ -106,7 +106,7 @@ bool ConfigFile::ParseFile(std::string& filename) {
   // If no logfile was set on the command line, then the default is
   // to check in the binary directory.
   if (using_default_config) {
-    std::vector<std::string> config_dirs = {CommandLine::BinaryDirectory()};
+    std::vector<std::filesystem::path> config_dirs = {CommandLine::BinaryDirectory()};
     const auto user_config_path = GetUserConfigDirectory();
     if (!user_config_path.empty()) {
       config_dirs.emplace_back(user_config_path / "lc0");
@@ -116,7 +116,7 @@ bool ConfigFile::ParseFile(std::string& filename) {
     }
 
     for (const auto& dir : config_dirs) {
-      filename = dir + '/' + kDefaultConfigFile;
+      filename = dir / kDefaultConfigFile;
       input.open(filename);
       if (input.is_open()) break;
     }

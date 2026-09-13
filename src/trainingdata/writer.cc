@@ -43,10 +43,10 @@ std::filesystem::path GetLc0CacheDirectory() {
 
 TrainingDataWriter::TrainingDataWriter(int game_id) {
   using namespace std::string_literals;
-  static std::string directory =
+  static auto directory =
       GetLc0CacheDirectory() / ("data-"s + Random::Get().GetString(12));
   // It's fine if it already exists.
-  CreateDirectory(directory.c_str());
+  CreateDirectory(directory.string());
 
   std::ostringstream oss;
   oss << directory << '/' << "game_" << std::setfill('0') << std::setw(6)

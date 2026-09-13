@@ -230,7 +230,7 @@ std::optional<WeightsFile> LoadWeights(std::string_view location) {
 std::string DiscoverWeightsFile() {
   const int kMinFileSize = 500000;  // 500 KB
 
-  std::vector<std::string> data_dirs = {CommandLine::BinaryDirectory()};
+  std::vector<std::filesystem::path> data_dirs = {CommandLine::BinaryDirectory()};
   const auto user_data_path = GetUserDataDirectory();
   if (!user_data_path.empty()) {
     data_dirs.emplace_back(user_data_path / "lc0");
@@ -244,8 +244,8 @@ std::string DiscoverWeightsFile() {
     // ones which are >= kMinFileSize are candidates.
     std::vector<std::pair<time_t, std::string> > time_and_filename;
     for (const auto& path : {"", "/networks"}) {
-      for (const auto& file : GetFileList(dir + path)) {
-        const std::string filename = dir + path + "/" + file;
+      for (const auto& file : GetFileList((dir / path).string())) {
+        const std::string filename = (dir / path / file).string();
         if (GetFileSize(filename) < kMinFileSize) continue;
         time_and_filename.emplace_back(GetFileTime(filename), filename);
       }
