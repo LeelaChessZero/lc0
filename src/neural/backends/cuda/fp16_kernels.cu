@@ -454,13 +454,14 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     // Use special kernel with reduced register pressure - only works on Ampere,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
-      ReportCUDAErrors(cudaFuncSetAttribute(
+      auto stauts = cudaFuncSetAttribute(
 #if defined(USE_HIP)
           (const void*)
 #endif
-          OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
-                                                      use_skip>,
-          cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * C * sizeof(half)));
+              OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
+                                                          use_skip>,
+          cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * C * sizeof(half));
+      ReportCUDAErrors(stauts);
       OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
                                                   use_skip>
           <<<N, C, 72 * C * sizeof(half), stream>>>(
