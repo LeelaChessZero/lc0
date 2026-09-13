@@ -94,20 +94,27 @@ bool CheckDir(const std::string& dirname) {
 }  // namespace
 
 std::filesystem::path GetUserCacheDirectory() {
+  constexpr auto kLc0DirName = "lc0";
+  std::filesystem::path rv;
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/Caches/";
 #else
   constexpr auto kLocalDir = ".cache/";
   const char *xdg_cache_home = std::getenv("XDG_CACHE_HOME");
   if (xdg_cache_home != NULL && CheckDir(xdg_cache_home)) {
-    return xdg_cache_home;
-  }
+    rv = xdg_cache_home;
+  } else
 #endif
-  const char *home = std::getenv("HOME");
-  if (home == NULL) return {};
-  const auto path = std::filesystem::path(home) / kLocalDir;
-  if (!CheckDir(path)) return {};
-  return path;
+  {
+    const char *home = std::getenv("HOME");
+    if (home == NULL) return {};
+    const auto path = std::filesystem::path(home) / kLocalDir;
+    if (!CheckDir(path)) return {};
+    rv = path;
+  }
+  rv /= kLc0DirName;
+  std::filesystem::create_directory(rv);
+  return rv;
 }
 
 std::filesystem::path GetUserConfigDirectory() {

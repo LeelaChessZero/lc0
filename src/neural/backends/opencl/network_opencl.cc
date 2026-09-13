@@ -251,10 +251,6 @@ class OpenCLNetwork : public Network {
       params_.tuner_file = options.Get<std::string>("tuner_file");
     } else {
       auto user_cache_path = GetUserCacheDirectory();
-      if (!user_cache_path.empty()) {
-        user_cache_path /= "lc0";
-        CreateDirectory(user_cache_path);
-      }
       params_.tuner_file = user_cache_path / "leelaz_opencl_tuning";
     }
 

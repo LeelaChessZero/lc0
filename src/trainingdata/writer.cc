@@ -36,10 +36,6 @@ namespace lczero {
 namespace {
 std::filesystem::path GetLc0CacheDirectory() {
   auto user_cache_path = GetUserCacheDirectory();
-  if (!user_cache_path.empty()) {
-    user_cache_path /= "lc0";
-    CreateDirectory(user_cache_path);
-  }
   return user_cache_path;
 }
 
