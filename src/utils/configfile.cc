@@ -116,7 +116,7 @@ bool ConfigFile::ParseFile(std::string& filename) {
     }
 
     for (const auto& dir : config_dirs) {
-      filename = dir / kDefaultConfigFile;
+      filename = (dir / kDefaultConfigFile).string();
       input.open(filename);
       if (input.is_open()) break;
     }
