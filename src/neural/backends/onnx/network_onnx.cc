@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <filesystem>
 #include <list>
 #include <memory>
@@ -58,6 +59,28 @@
 
 namespace lczero {
 namespace onnx {
+
+namespace {
+
+void CleanCacheDirectory(const std::filesystem::path& cache_dir) {
+  constexpr auto kCleaupPeriod = std::chrono::months(6);
+  auto now = std::chrono::file_clock::now();
+  auto limit = now - kCleaupPeriod;
+  if (!std::filesystem::exists(cache_dir)) {
+    return;
+  }
+
+  for (const auto& entry : std::filesystem::directory_iterator(cache_dir)) {
+    if (entry.is_regular_file()) {
+      auto ftime = entry.last_write_time();
+      if (ftime < limit) {
+        std::filesystem::remove(entry.path());
+      }
+    }
+  }
+}
+
+}  // namespace
 
 enum class OnnxProvider { CPU, CUDA, DML, ROCM, TRT, MIGRAPHX, COREML };
 
@@ -684,6 +707,9 @@ Ort::SessionOptions OnnxNetwork::GetOptions(
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
       const auto default_trt_cache = GetUserCacheDirectory() / "trt_cache";
+      static std::once_flag clean_flag;
+      std::call_once(clean_flag,
+                     [&] { CleanCacheDirectory(default_trt_cache); });
 
       auto cache_dir =
           trt_cache_dir.empty() ? default_trt_cache : trt_cache_dir;
@@ -789,6 +815,8 @@ Ort::SessionOptions OnnxNetwork::GetOptions(
       migraphx_options["migraphx_bf16_enable"] = optimize >= 7 ? "1" : "0";
       migraphx_options["migraphx_fp8_enable"] = optimize >= 8 ? "1" : "0";
       const auto cache_dir = GetUserCacheDirectory() / "migraphx_cache";
+      static std::once_flag clean_flag;
+      std::call_once(clean_flag, [&] { CleanCacheDirectory(cache_dir); });
 
       if (!std::filesystem::exists(cache_dir)) {
         std::filesystem::create_directories(cache_dir);
