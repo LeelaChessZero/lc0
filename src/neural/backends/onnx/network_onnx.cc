@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "onnx_conf.h"
+#include "utils/filesystem.h"
 
 #ifdef USE_ONNX_CUDART
 #include "cuda_runtime.h"
@@ -49,7 +50,6 @@
 #include "proto/onnx.pb.h"
 #include "utils/bf16_utils.h"
 #include "utils/bititer.h"
-#include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/files.h"
 #include "utils/fp16_utils.h"
@@ -170,8 +170,9 @@ class OnnxNetwork final : public Network {
   bool IsCpu() const override { return provider_ == OnnxProvider::CPU; }
 
   Ort::SessionOptions GetOptions(int threads, int batch_size, uint64_t hash,
-                                 int optimize, bool is_ep_context, const std::string& trt_cache_dir="",
-                                 std::string* ep_context_path = nullptr);
+                                 int optimize, bool is_ep_context,
+                                 const std::filesystem::path& trt_cache_dir,
+                                 std::string* ep_context_path);
 
   std::unique_ptr<InputsOutputs> GetInputsOutputs() {
     std::lock_guard<std::mutex> lock(inputs_outputs_lock_);
@@ -625,10 +626,10 @@ void OnnxComputation<DataType>::ComputeBlocking() {
   }
 }
 
-Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
-                                            uint64_t hash, int optimize,
-                                            bool is_ep_context, const std::string & trt_cache_dir,
-                                            std::string* ep_context_path) {
+Ort::SessionOptions OnnxNetwork::GetOptions(
+    int threads, int batch_size, uint64_t hash, int optimize,
+    bool is_ep_context, const std::filesystem::path& trt_cache_dir,
+    std::string* ep_context_path) {
   Ort::SessionOptions options;
   options.SetIntraOpNumThreads(threads);
   GraphOptimizationLevel level = GraphOptimizationLevel::ORT_DISABLE_ALL;
@@ -680,8 +681,10 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
     }
     case OnnxProvider::TRT: {
       options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+      const auto default_trt_cache = GetUserCacheDirectory() / "trt_cache";
 
-      std::string cache_dir = trt_cache_dir.empty() ? (CommandLine::BinaryDirectory() + "/trt_cache") : trt_cache_dir;
+      auto cache_dir =
+          trt_cache_dir.empty() ? default_trt_cache : trt_cache_dir;
       std::map<std::string, std::string> trt_options;
       trt_options["device_id"] = std::to_string(gpu_);
       trt_options["trt_builder_optimization_level"] = std::to_string(std::clamp(optimize, 0, 5));
@@ -711,7 +714,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       if (ep_context_path) *ep_context_path = trt_options["trt_ep_context_file_path"];
       trt_options["trt_engine_cache_path"] = cache_dir;
       trt_options["trt_timing_cache_enable"] = "1";
-      trt_options["trt_timing_cache_path"] = CommandLine::BinaryDirectory() + "/trt_cache";
+      trt_options["trt_timing_cache_path"] = default_trt_cache;
       trt_options["trt_layer_norm_fp32_fallback"] = "1";
       trt_options["trt_force_sequential_engine_build"] = "1";
       trt_options["trt_context_memory_sharing_enable"] = is_ep_context ? "0" : "1";
@@ -780,8 +783,7 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
       migraphx_options["migraphx_fp16_enable"] = optimize >= 6 ? "1" : "0";
       migraphx_options["migraphx_bf16_enable"] = optimize >= 7 ? "1" : "0";
       migraphx_options["migraphx_fp8_enable"] = optimize >= 8 ? "1" : "0";
-      std::filesystem::path cache_dir = CommandLine::BinaryDirectory();
-      cache_dir /= "migraphx_cache";
+      const auto cache_dir = GetUserCacheDirectory() / "migraphx_cache";
 
       if (!std::filesystem::exists(cache_dir)) {
         std::filesystem::create_directories(cache_dir);
