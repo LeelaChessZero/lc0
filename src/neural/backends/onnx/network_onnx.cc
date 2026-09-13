@@ -28,9 +28,6 @@
 #include <algorithm>
 #include <cassert>
 #include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <iterator>
 #include <list>
 #include <memory>
 #include <sstream>
@@ -48,7 +45,6 @@
 #include "neural/loader.h"
 #include "neural/network.h"
 #include "neural/onnx/converter.h"
-#include "neural/shared_params.h"
 #include "onnxruntime_cxx_api.h"
 #include "proto/onnx.pb.h"
 #include "utils/bf16_utils.h"
