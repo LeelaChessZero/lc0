@@ -107,12 +107,12 @@ bool ConfigFile::ParseFile(std::string& filename) {
   // to check in the binary directory.
   if (using_default_config) {
     std::vector<std::string> config_dirs = {CommandLine::BinaryDirectory()};
-    const std::string user_config_path = GetUserConfigDirectory();
+    const auto user_config_path = GetUserConfigDirectory();
     if (!user_config_path.empty()) {
-      config_dirs.emplace_back(user_config_path + "lc0");
+      config_dirs.emplace_back(user_config_path / "lc0");
     }
     for (const auto& dir : GetSystemConfigDirectoryList()) {
-      config_dirs.emplace_back(dir + (dir.back() == '/' ? "" : "/") + "lc0");
+      config_dirs.emplace_back(dir / "lc0");
     }
 
     for (const auto& dir : config_dirs) {
