@@ -491,15 +491,10 @@ void ConvertOnnxToLeela() {
     onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
   }
 
-  if (is_ctx) {
-    onnx->set_model(onnx_model);
-    onnx->set_is_ep_context(true);
+  if (!is_ctx && MaybeFixOnnx(model, dict, data_type)) {
+    onnx->set_model(model.OutputAsString());
   } else {
-    if (MaybeFixOnnx(model, dict, data_type)) {
-      onnx->set_model(model.OutputAsString());
-    } else {
-      onnx->set_model(onnx_model);
-    }
+    onnx->set_model(onnx_model);
   }
   
   if (dict.Get<bool>(kValidateModelId) &&
