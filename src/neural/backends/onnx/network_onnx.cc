@@ -812,6 +812,15 @@ Ort::SessionOptions OnnxNetwork::GetOptions(int threads, int batch_size,
   return options;
 }
 
+namespace {
+bool IsEpContext(const WeightsFile& file) {
+  for (const auto& ctx : file.backend_cache()) {
+    if (ctx.id() == "onnx-trt") return true;
+  }
+  return false;
+}
+}  // namespace
+
 OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
                          OnnxProvider provider, bool cpu_wdl)
     : onnx_env_(ORT_LOGGING_LEVEL_WARNING, "lc0"),
@@ -926,7 +935,7 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     outputs_.emplace_back(md.output_mlh());
   }
 
-  const bool is_ep_context = file.ep_context_size();
+  const bool is_ep_context = IsEpContext(file);
   std::vector<int> ep_context_idx;
 
   if(is_ep_context && provider != OnnxProvider::TRT){
@@ -941,16 +950,15 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     int32_t stored_steps = 0;
     int32_t requested_batch_size = batch_size_;
 
-    for (size_t i = 0; i < file.ep_context_size(); i++) {
-      const auto& ctx = file.ep_context(i);
+    for (size_t i = 0; i < file.backend_cache_size(); i++) {
+      const auto& ctx = file.backend_cache(i);
       if (ctx.has_id() && ctx.id() != "onnx-trt") continue;
       stored_steps++;
       ep_context_idx.emplace_back(i);
-      if (ctx.has_batch_size() && ctx.batch_size() < stored_batch_size)
-        stored_batch_size = ctx.batch_size();
-      if (ctx.has_min_batch_size() &&
-          ctx.min_batch_size() < stored_min_batch_size)
-        stored_min_batch_size = ctx.min_batch_size();
+      if (ctx.has_x() && ctx.x() < stored_batch_size)
+        stored_batch_size = ctx.x();
+      if (ctx.has_y() && ctx.y() < stored_min_batch_size)
+        stored_min_batch_size = ctx.y();
     }
 
     if (stored_batch_size != requested_batch_size ||
@@ -1026,10 +1034,10 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
     trt_cache_dir = output_file + "_cache_dir";
   }
 
-  bool multi_step_embedded = file.ep_context_size() > 0;
+  bool multi_step_embedded = IsEpContext(file);
   for (int step = 1; step <= steps_; step++) {
     std::string_view model =
-        multi_step_embedded ? file.ep_context(ep_context_idx[step - 1]).model()
+        multi_step_embedded ? file.backend_cache(ep_context_idx[step - 1]).val()
                             : std::string_view(file.onnx_model().model());
 
     session_.emplace_back(
@@ -1066,11 +1074,11 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
         }
         md_out->set_model(ctx);
       }
-      auto ep_context = out.add_ep_context();
+      auto ep_context = out.add_backend_cache();
       ep_context->set_id("onnx-trt");
-      ep_context->set_batch_size(batch_size_ * step);
-      ep_context->set_min_batch_size(min_batch);
-      ep_context->set_model(ctx);
+      ep_context->set_x(batch_size_ * step);
+      ep_context->set_y(min_batch);
+      ep_context->set_val(ctx);
       min_batch = batch_size_ * step + 1;
     }
     WriteStringToGzFile(net_path, out.OutputAsString());
@@ -1087,8 +1095,7 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
   if (!w) throw Exception("The ONNX backend requires a network file.");
 
   if (w->has_onnx_model()) {
-    return std::make_unique<OnnxNetwork>(*w, opts, kProvider,
-                                         w->ep_context_size() > 0);
+    return std::make_unique<OnnxNetwork>(*w, opts, kProvider, IsEpContext(*w));
   } else {
     WeightsToOnnxConverterOptions converter_options;
     converter_options.ir = opts.GetOrDefault<int>("ir", -1);

@@ -399,12 +399,13 @@ message OnnxModel {
   optional string output_mlh = 7;
 }
 
-message EPContext {
+// Backend can use these values in any way, except id that should be unique.
+message BackendCache {
   optional string id = 1;
-  optional int32 batch_size = 2;
-  optional int32 min_batch_size = 3;
-  // Model can be anything depending on the id value, e.g. onnx model for trt.
-  optional bytes model = 4;
+  optional float x = 2;
+  optional float y = 3;
+  optional float z = 4;
+  optional bytes val = 5;
 }
 
 message Net {
@@ -417,5 +418,5 @@ message Net {
   optional Weights weights = 10;
   optional OnnxModel onnx_model = 11;
   // Backend specific cached stuff, e.g. pre-compiled trt engines.
-  repeated EPContext ep_context = 12;
+  repeated BackendCache backend_cache = 12;
 }
