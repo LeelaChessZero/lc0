@@ -885,11 +885,32 @@ if get_option('build_backends')
       if get_option('sycl') == 'l0'
         message('Building SYCL for the L0 backend')
         add_project_arguments('-DMKL_ILP64', language : 'cpp')
-        deps += cc.find_library('mkl_sycl', required: true)
-        deps += cc.find_library('mkl_intel_ilp64', required: true)
-        deps += cc.find_library('mkl_sequential', required: true)
-        deps += cc.find_library('mkl_core', required: true)
-        deps += cc.find_library('OpenCL', required: true)
+        # layers.cc.dp.cpp includes <oneapi/mkl.hpp> directly, outside the
+        # -Dmkl BLAS-backend path, so it needs its own include directories
+        # (setvars.bat doesn't always populate INCLUDE with MKL headers).
+        # oneMKL 2024+ split the unified mkl_sycl into domain libraries, and
+        # oneAPI 2026.1 no longer ships mkl_sycl at all -- the GEMM symbols
+        # live in mkl_sycl_blas_dll there; the fallbacks keep older toolkits
+        # working.
+        foreach mkl_inc_dir : get_option('mkl_include')
+          if run_command('scripts/checkdir.py', mkl_inc_dir, check : false).returncode() == 0
+            includes += include_directories(mkl_inc_dir)
+          endif
+        endforeach
+        mkl_libdirs = get_option('mkl_libdirs')
+        opencl_libdirs = get_option('opencl_libdirs')
+        mkl_sycl_dep = cc.find_library('mkl_sycl_blas_dll', dirs: mkl_libdirs, required: false)
+        if not mkl_sycl_dep.found()
+          mkl_sycl_dep = cc.find_library('mkl_sycl', dirs: mkl_libdirs, required: false)
+          if not mkl_sycl_dep.found()
+            mkl_sycl_dep = cc.find_library('mkl_sycl_dll', dirs: mkl_libdirs, required: true)
+          endif
+        endif
+        deps += mkl_sycl_dep
+        deps += cc.find_library('mkl_intel_ilp64', dirs: mkl_libdirs, required: true)
+        deps += cc.find_library('mkl_sequential', dirs: mkl_libdirs, required: true)
+        deps += cc.find_library('mkl_core', dirs: mkl_libdirs, required: true)
+        deps += cc.find_library('OpenCL', dirs: opencl_libdirs, required: true)
       elif get_option('sycl') == 'amd'
         hip_libdirs = get_option('hip_libdirs')
         hip_args = []
