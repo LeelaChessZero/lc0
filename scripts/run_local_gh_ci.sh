@@ -20,6 +20,11 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+if ! docker image inspect "$ROCM_IMAGE" &> /dev/null; then
+    echo ">>> Container image $ROCM_IMAGE not found locally. Pulling image..."
+    docker pull "$ROCM_IMAGE"
+fi
+
 print_header() {
     echo -e "\n\033[1;34m===============================================================================\033[0m"
     echo -e "\033[1;32m  $1\033[0m"
