@@ -39,7 +39,7 @@ Building should be easier now than it was in the past. Please report any problem
 
 Building lc0 requires the Meson build system and at least one backend library for evaluating the neural network, as well as a few libraries. If your system already has these libraries installed, they will be used; otherwise Meson will generate its own copy (a "subproject"), which in turn requires that git is installed (yes, separately from cloning the actual lc0 repository). Meson also requires python and Ninja.
 
-Backend support includes (in theory) any CBLAS-compatible library for CPU usage, but OpenBLAS or Intel's DNNL are the main ones. For GPUs, the following are supported: CUDA (with optional cuDNN), various flavors of onnxruntime, and Apple's Metal Performance Shaders. There is also experimental SYCL support for AMD and Intel GPUs.
+Backend support includes (in theory) any CBLAS-compatible library for CPU usage, but OpenBLAS or Intel's DNNL are the main ones. For GPUs, the following are supported: CUDA (with optional cuDNN), HIP/ROCm for AMD GPUs, various flavors of onnxruntime, and Apple's Metal Performance Shaders. There is also experimental SYCL support for AMD and Intel GPUs.
 
 Finally, lc0 requires a compiler supporting C++20. Minimal versions tested are g++ v10.0, clang v12.0 and Visual Studio 2019 version 16.11.
 
@@ -51,7 +51,8 @@ Given those basics, the OS and backend specific instructions are below.
 
 1. Install backend (also read the detailed instructions in later sections):
     - If you want to use NVidia graphics cards Install [CUDA](https://developer.nvidia.com/cuda-zone) (and optionally [cuDNN](https://developer.nvidia.com/cudnn)).
-    - If you want to use AMD or Intel graphics cards you can try SYCL.
+    - If you want to use AMD graphics cards install [ROCm](https://rocm.docs.amd.com/) and build with the HIP backend.
+    - If you want to use Intel graphics cards you can try SYCL.
     - if you want BLAS install either OpenBLAS or DNNL.
 2. Install ninja build (`ninja-build`), meson, and (optionally) gtest (`libgtest-dev`).
 3. Go to `lc0/`
@@ -156,6 +157,22 @@ The first line is to initialize the build environment and is only needed once pe
 On windows you will have to build using `ninja`, this is provided by Visual Studio if you install the CMake component. We provide a `build-sycl.cmd` script that should build just fine for an Intel GPU. This script has not yet been tested with and AMD GPU, some editing will be required.
 
 You can also install the [oneAPI DPC++/C++ Compiler Runtime](https://www.intel.com/content/www/us/en/developer/articles/tool/compilers-redistributable-libraries-by-version.html) so you can run Lc0 without needing to initialize the build environment every time.
+
+### HIP (ROCm)
+
+The `hip`, `hip-fp16` and `hip-auto` backends run lc0's own CUDA NN-backend kernels (the cuBLAS + custom-kernel path) on AMD GPUs by compiling them with `hipcc`, so AMD users get a first-class ROCm path without the SYCL/DPC++ toolchain. This is distinct from the SYCL backend above (a different toolchain) and from `onnx-rocm` (which runs the network inside onnxruntime rather than lc0's own kernels). cuDNN/MIOpen and the optional CUTLASS fused-MHA are not used; the cuBLAS attention fallback runs in their place.
+
+You will need a [ROCm](https://rocm.docs.amd.com/) installation providing `hipcc` and hipBLAS. Enable the backend with `-Dhip=true`. The target GPU architecture is taken from `-Damd_gfx` (e.g. `-Damd_gfx=gfx90a`); if it is omitted, the first architecture reported by `rocm_agent_enumerator` is used, which needs meson 1.2.0 or newer. There is no default architecture: when nothing can be detected the build stops and asks for an explicit `-Damd_gfx`, rather than guessing an architecture the machine may not have. Use `hip_libdirs` and `hip_include` if the ROCm libraries and headers are not in the default search path. lc0's HIP build links the kernels objects (built by `hipcc`) into a non-LTO host build, so pass `-Db_lto=false`.
+
+A typical session on Linux:
+```shell
+meson setup build-hip -Dhip=true -Damd_gfx=gfx90a \
+  -Dplain_cuda=false -Dcudnn=false -Dcutlass=false -Dnvcc=false \
+  -Dgtest=true -Dblas=true -Db_lto=false \
+  -Dhip_libdirs=/opt/rocm/lib -Dhip_include=/opt/rocm/include
+ninja -C build-hip
+```
+Then select the backend at runtime with `--backend=hip` (or `hip-fp16` for the half-precision path). The HIP backends have been validated on Linux with ROCm on gfx90a (CDNA2) and gfx1100 (RDNA3).
 
 ### BLAS
 

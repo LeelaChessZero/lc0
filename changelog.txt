@@ -1,4 +1,64 @@
-﻿v0.32.0 (2025-08-21)
+﻿v0.33.0-rc0 (2026-09-05)
+~~~~~~~
+This release includes improvements across the cuda, onnx and demux backends,
+along with several search, benchmarking, and training-data fixes.
+* Several DAG search improvements: concurrent task workers, improved lock
+  contention, garbage collection, more accurate draw score as well as better
+  time keeping.
+* Added cuda backend graph support and cutlass fused multihead attention.
+* Refactored demux to reduce lock contention and improve batch handling.
+* Added support for preferred batch step selection in the cuda, onnx and xla
+  backends.
+* Added support for network evaluations per second in uci info, enabled by the
+  `--show-eps` command line switch or `UCI_ShowEPS` uci option.
+* Use cuda streams if possible in onnx, for more efficient memory transfers.
+* Switched onnx-trt to strongly typed graphs to avoid problematic type
+  conversions in TensorRT, added quantization control through the `optimize`
+  backend option and full bf16 support.
+* Added the onnx-coreml backend.
+* Also added the onnx-migraphx backend, with fixed batch sizes recommended for
+  best performance.
+* Allowed the rescorer to process v7 training data.
+* Added tracing support.
+* Search avoids allocating extra computations for better backend buffer reuse.
+* Improved backendbench statistics and added thread support.
+* Added back a threads option to the blas backend.
+* The master version of net.proto is now hosted by lc0 and includes support for
+  fp16 and fp32 weights encoding.
+* Notable bug fixes:
+  - Restored the `--history-fill` naming.
+  - Reverted ponder behavior changes.
+  - Fixed castling move display for FRC.
+  - Fixed multiplay issues.
+  - Fixed a DAG `n_in_flight` underflow bug.
+  - Defaulted cuda backend option `fused_mha` to false for networks with
+    `relu^2` activation.
+  - Fixed a segfault in Python bindings for transformer networks when calling
+    `Weights.filters()`.
+  - Fixed onnx locking.
+* Several build system updates.
+* Assorted small fixes and improvements.
+
+v0.32.1 (2025-11-23)
+~~~~~~~
+* Strict timing is applied only if `isready` was seen, for more accurate timing.
+* Better onnx-trt installation script that will download everything needed
+  without user intervention.
+* Improved transposition table memory use calculation for the memory limit.
+* A small speed improvement for dag-preview search.
+* Some important bug fixes:
+  - Two en-passant related bugs
+  - Guard against infinite fp16 input in cuda Softmax kernel.
+  - Changed the way the WDL draw value is calculated in some backends to avoid
+    underflows.
+  - The onnx backend WDL Softmax calculation was moved to the cpu for improved
+    accuracy (like other backends already do).
+  - Correct onnx moves left head final activation.
+  - Fix for cudnn attention policy with convolutional nets.
+  - A few more minor fixes.
+* Assorted build system improvements.
+
+v0.32.0 (2025-08-21)
 ~~~~~~~
 * Support for building with cuda 13.
 * README update.

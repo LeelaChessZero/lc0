@@ -35,7 +35,7 @@
 #include "utils/bit.h"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 
 inline void ToType(float& dst, float src) { dst = src; }
 inline void ToType(half& dst, float src) {
@@ -48,6 +48,16 @@ inline float FromType(half src) {
   uint16_t temp = bit_cast<uint16_t>(src);
   return FP16toFP32(temp);
 }
+
+#if LC0_CUDA_BF16_SUPPORTED
+inline void ToType(__nv_bfloat16& dst, float src) {
+  dst = __float2bfloat16(src);
+}
+
+inline float FromType(__nv_bfloat16 src) {
+  return __bfloat162float(src);
+}
+#endif
 
 template <typename DataType>
 struct CudaGraphCapture;
@@ -73,7 +83,7 @@ template <typename DataType>
 struct InputsOutputs {
   InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
-                bool cublasDisableTensorCores = false) {
+                [[maybe_unused]] bool cublasDisableTensorCores = false) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -150,9 +160,12 @@ struct InputsOutputs {
             cudaMemsetAsync(mem, 0, tensor_mem_size, compute_stream_));
       }
       ReportCUBLASErrors(cublasCreate(&cublas_));
+#if !defined(USE_HIP) && CUDART_VERSION < 11010
+      // See CudaNetwork constructor in network_cuda.cc.
       ReportCUBLASErrors(cublasSetMathMode(
           cublas_, cublasDisableTensorCores ? CUBLAS_PEDANTIC_MATH
                                             : CUBLAS_TENSOR_OP_MATH));
+#endif
       ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
     } else {
       multi_stream_ = false;
@@ -286,7 +299,7 @@ inline CudaGraphExec<DataType>& CudaGraphExec<DataType>::operator=(
     const CudaGraphCapture<DataType>& graph) {
   assert(graph_exec_ == nullptr);
   if (graph.graph_ == nullptr) {
-    throw Exception("Trying to instantiate an nullptr cuda graph");
+    throw Exception("Trying to instantiate an nullptr " BACKEND_NAME " graph");
   }
   ReportCUDAErrors(
       cudaGraphInstantiate(&graph_exec_, graph.graph_, nullptr, nullptr, 0));

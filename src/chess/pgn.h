@@ -291,7 +291,7 @@ class PgnReader {
         }
         Square to(File::FromIdx(c2), Rank::FromIdx(sr2));
         Move move_to_find = promotion ? Move::WhitePromotion(sq, to, *promotion)
-                            : enpassant && *enpassant == to
+                            : p == 0 && enpassant && *enpassant == to
                                 ? Move::WhiteEnPassant(sq, to)
                                 : Move::White(sq, to);
         if (std::find(plm.begin(), plm.end(), move_to_find) == plm.end()) {
@@ -324,8 +324,9 @@ class PgnReader {
     Square from(File::FromIdx(c1), Rank::FromIdx(r1));
     Square to(File::FromIdx(c2), Rank::FromIdx(r2));
     Move m = promotion ? Move::WhitePromotion(from, to, *promotion)
-             : enpassant && *enpassant == to ? Move::WhiteEnPassant(from, to)
-                                             : Move::White(from, to);
+             : p == 0 && enpassant && *enpassant == to
+                 ? Move::WhiteEnPassant(from, to)
+                 : Move::White(from, to);
     if (board.flipped()) m.Flip();
     return m;
   }

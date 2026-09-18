@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2021 The LCZero Authors
+  Copyright (C) 2026 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,37 +27,22 @@
 
 #pragma once
 
-#include "trainingdata/trainingdata.h"
-#include "trainingdata/trainingdata_v7.h"
+#include <pybind11/pytypes.h>
+#include <string>
+#include <vector>
 
 namespace lczero {
+namespace python {
+namespace python_chess {
 
-// Constructs InputPlanes from training data.
-//
-// NOTE: If the training data is a cannonical type, the canonicalization
-// transforms are reverted before returning, since it is assumed that the data
-// will be used with DecodeMoveFromInput or PopulateBoard which assume the
-// InputPlanes are not transformed.
-InputPlanes PlanesFromTrainingData(const V6TrainingData& data);
-InputPlanes PlanesFromTrainingData(const V7TrainingData& data);
-
-class TrainingDataReader {
- public:
-  // Opens the given file to read chunk data from.
-  TrainingDataReader(std::string filename);
-
-  ~TrainingDataReader();
-
-  // Reads a chunk. Returns true if a chunk was read.
-  bool ReadChunk(V6TrainingData* data);
-
-  // Gets full filename of the file being read.
-  std::string GetFileName() const { return filename_; }
-
- private:
-  std::string filename_;
-  gzFile fin_;
-  bool format_v6 = false;
+struct BoardData {
+    std::string fen;
+    bool is_c960 = false;
+    std::vector<std::string> moves;
 };
 
-}  // namespace lczero
+BoardData GetBoardData(const pybind11::handle& board);
+
+} // namespace python_chess
+} // namespace python
+} // namespace lczero

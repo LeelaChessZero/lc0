@@ -81,7 +81,8 @@ struct V6TrainingData {
   uint16_t best_idx;
   // Kullback-Leibler divergence between visits and policy (denominator)
   float policy_kld;
-  uint32_t reserved;
+  // Q standard deviation. Was uint32_t reserved in original v6.
+  float q_st;
 } PACKED_STRUCT;
 static_assert(sizeof(V6TrainingData) == 8356, "Wrong struct size");
 

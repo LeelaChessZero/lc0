@@ -195,38 +195,6 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
     max_eval_[0] = std::max(max_eval_[0], blacks_move ? best_l : best_w);
     max_eval_[1] = std::max(max_eval_[1], best_d);
     max_eval_[2] = std::max(max_eval_[2], blacks_move ? best_w : best_l);
-    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
-                                            kResignEarliestMoveId)) {
-      const float resignpct =
-          options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
-      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
-        auto threshold = 1.0f - resignpct;
-        if (best_w > threshold) {
-          game_result_ =
-              blacks_move ? GameResult::BLACK_WON : GameResult::WHITE_WON;
-          adjudicated_ = true;
-          break;
-        }
-        if (best_l > threshold) {
-          game_result_ =
-              blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
-          adjudicated_ = true;
-          break;
-        }
-        if (best_d > threshold) {
-          game_result_ = GameResult::DRAW;
-          adjudicated_ = true;
-          break;
-        }
-      } else {
-        if (eval < resignpct) {  // always false when resignpct == 0
-          game_result_ =
-              blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
-          adjudicated_ = true;
-          break;
-        }
-      }
-    }
 
     auto node = tree_[idx]->GetCurrentHead();
     classic::Eval played_eval = best_eval;
@@ -294,6 +262,39 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                          played_eval, best_is_proof, best_move, move,
                          legal_moves, nneval,
                          search_->GetParams().GetPolicySoftmaxTemp());
+    }
+
+    if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(
+                                            kResignEarliestMoveId)) {
+      const float resignpct =
+          options_[idx].uci_options->Get<float>(kResignPercentageId) / 100;
+      if (options_[idx].uci_options->Get<bool>(kResignWDLStyleId)) {
+        auto threshold = 1.0f - resignpct;
+        if (best_w > threshold) {
+          game_result_ =
+              blacks_move ? GameResult::BLACK_WON : GameResult::WHITE_WON;
+          adjudicated_ = true;
+          break;
+        }
+        if (best_l > threshold) {
+          game_result_ =
+              blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
+          break;
+        }
+        if (best_d > threshold) {
+          game_result_ = GameResult::DRAW;
+          adjudicated_ = true;
+          break;
+        }
+      } else {
+        if (eval < resignpct) {  // always false when resignpct == 0
+          game_result_ =
+              blacks_move ? GameResult::WHITE_WON : GameResult::BLACK_WON;
+          adjudicated_ = true;
+          break;
+        }
+      }
     }
     // Must reset the search before mutating the tree.
     search_.reset();

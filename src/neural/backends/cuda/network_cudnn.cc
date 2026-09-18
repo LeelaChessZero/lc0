@@ -44,7 +44,7 @@
 // #define DEBUG_RAW_NPS
 
 namespace lczero {
-using namespace cudnn_backend;
+using namespace NS_BACKEND;
 
 template <typename DataType>
 class CudnnNetwork;
@@ -679,13 +679,21 @@ class CudnnNetwork : public Network {
          << " bytes of GPU memory to run the network";
 #endif
 
+    // Make sure that weight upload has stopped using scratch memory before
+    // compute may use it.
+    ReportCUDAErrors(cudaDeviceSynchronize());
+
+    if (!options.GetOrDefault("capture_graphs_onload", true)) {
+      return;
+    }
+
     // pre-allocate cuda graphs for search threads
     auto allocateCudaGraphs = [&] {
       CudnnNetworkComputation<DataType> comp(this, wdl_, moves_left_);
       comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
       // Make sure cublas is initialized in this thread.
       comp.ComputeBlocking();
-      for (int i = 0; i < GetMiniBatchSize(); i++) {
+      for (int i = 1; i < GetMiniBatchSize(); i++) {
         comp.AddInput(InputPlanes{(size_t)kNumInputPlanes});
         auto lock = LockEval();
         comp.CaptureGraph(std::move(lock));
@@ -1180,7 +1188,7 @@ void CudnnNetworkComputation<DataType>::CaptureGraph(
 
 template <typename DataType>
 void CudnnNetworkComputation<DataType>::ComputeBlocking() {
-  assert(GetBatchSize() >= 1);
+  if (GetBatchSize() == 0) return;
   if (inputs_outputs_->cuda_graphs_[GetBatchSize() - 1]) {
     std::unique_lock<std::mutex> lock = network_->LockEval();
     network_->GraphLaunch(inputs_outputs_.get(), GetBatchSize());

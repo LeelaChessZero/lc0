@@ -111,14 +111,11 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
   }
 }
 
-void V6TrainingDataArray::Add(const classic::Node* node,
-                              const PositionHistory& history,
-                              classic::Eval best_eval,
-                              classic::Eval played_eval, bool best_is_proven,
-                              Move best_move, Move played_move,
-                              std::span<Move> legal_moves,
-                              const std::optional<EvalResult>& nneval,
-                              float policy_softmax_temp) {
+void V6TrainingDataArray::Add(
+    const classic::Node* node, const PositionHistory& history,
+    classic::Eval best_eval, classic::Eval played_eval, bool best_is_proven,
+    Move best_move, Move played_move, std::span<Move> legal_moves,
+    const std::optional<EvalResult>& nneval, float policy_softmax_temp) {
   V6TrainingData result;
   const auto& position = history.Last();
 
@@ -262,7 +259,7 @@ void V6TrainingDataArray::Add(const classic::Node* node,
   }
   result.best_idx = MoveToNNIndex(best_move, transform);
   result.played_idx = MoveToNNIndex(played_move, transform);
-  result.reserved = 0;
+  result.q_st = 0.0f;
 
   // Unknown here - will be filled in once the full data has been collected.
   result.plies_left = 0;
