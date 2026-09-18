@@ -20,8 +20,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install dependencies
         run: |
@@ -72,16 +70,14 @@ jobs:
     container:
       image: rocm/dev-ubuntu-22.04:latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install build tools
+      - name: Install Git & Base Build Tools
         run: |
           apt-get update
-          apt-get install -y python3-pip ninja-build zlib1g-dev git libopenblas-dev
+          apt-get install -y git python3-pip ninja-build zlib1g-dev libopenblas-dev
           pip3 install meson
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Configure with Meson (ROCm/HIP)
         run: |
@@ -116,8 +112,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Set up Python & Meson
         uses: actions/setup-python@v5
@@ -138,6 +132,7 @@ jobs:
             -Dgtest=false `
             -Dlc0=true `
             -Dblas=false `
+            -Dbuild_backends=false `
             -Dpopcnt=true
 
       - name: Compile lc0
@@ -159,8 +154,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Build Tools
         run: |
