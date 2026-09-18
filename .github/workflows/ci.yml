@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Linux Build, Unit Tests & Benchmark (Meson + OpenBLAS + GTest)
+  # Tier 1 Primary: Linux (Meson, OpenBLAS, Tests & Benchmark)
   # ---------------------------------------------------------------------------
   linux-build-test:
     name: Linux GCC (Meson, Tests & Benchmark)
@@ -106,3 +106,82 @@ jobs:
         with:
           name: lc0-linux-rocm-hip
           path: build/hip/lc0
+
+  # ---------------------------------------------------------------------------
+  # Downstream: Windows (MSVC + Meson / Ninja)
+  # ---------------------------------------------------------------------------
+  windows-downstream:
+    name: Windows Downstream (MSVC, Meson)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python & Meson
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Meson and Ninja
+        run: |
+          pip install meson ninja
+
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure with Meson
+        run: |
+          meson setup build `
+            --buildtype release `
+            -Dgtest=false `
+            -Dlc0=true `
+            -Dblas=false `
+            -Dpopcnt=true
+
+      - name: Compile lc0
+        run: |
+          ninja -C build
+
+      - name: Upload Windows Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-windows-x64
+          path: build/lc0.exe
+
+  # ---------------------------------------------------------------------------
+  # Downstream: macOS (Apple Silicon arm64)
+  # ---------------------------------------------------------------------------
+  macos-downstream:
+    name: macOS Downstream (Apple Silicon arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Build Tools
+        run: |
+          brew install meson ninja
+
+      - name: Configure with Meson
+        run: |
+          meson setup build \
+            --buildtype release \
+            -Dnative_arch=false \
+            -Dgtest=false \
+            -Dblas=true \
+            -Daccelerate=true \
+            -Dlc0=true
+
+      - name: Compile lc0
+        run: |
+          ninja -C build
+
+      - name: Upload macOS Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-macos-arm64
+          path: build/lc0
