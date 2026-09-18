@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # =============================================================================
-# scripts/run_local_ci.sh
-# Run GitHub Actions CI jobs locally in clean Docker containers.
-# Mirrors .github/workflows/ci.yml without pushing commits.
-# Supports running:
-#   1. 'linux'     (Ubuntu 24.04 Docker container: Meson + OpenBLAS + tests + benchmark)
-#   2. 'rocm'      (ROCm 22.04 Docker container: Meson + ROCm/HIP backend)
-#   3. 'downstream'(Ubuntu 24.04 Docker container: minimal backend-free build)
-#   4. 'all'       (all containerized jobs sequentially)
+# scripts/run_local_gh_ci.sh
+# Run GitHub Actions CI jobs locally in a single unified Docker container.
+# Uses rocm/dev-ubuntu-22.04:latest (which includes ROCm/HIP, GCC, and Linux dev
+# toolchains) so only one Docker image is needed across all test jobs.
+#
+# Usage:
+#   ./scripts/run_local_gh_ci.sh [linux|downstream|rocm|all]
 # =============================================================================
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:-all}"
+ROCM_IMAGE="rocm/dev-ubuntu-22.04:latest"
 
 if ! command -v docker &> /dev/null; then
     echo -e "\033[1;31mError: Docker is required to run isolated containerized CI builds.\033[0m" >&2
@@ -26,25 +26,23 @@ print_header() {
     echo -e "\033[1;34m===============================================================================\033[0m\n"
 }
 
-run_linux_container_ci() {
-    print_header "Running Linux GCC Meson CI (Docker: ubuntu:24.04)"
-    cd "$REPO_ROOT"
-
+run_linux_ci() {
+    print_header "Running Linux GCC Meson Build, Tests & Benchmark"
     docker run --rm \
         -v "$REPO_ROOT":/workspace \
         -w /workspace \
-        ubuntu:24.04 \
+        "$ROCM_IMAGE" \
         bash -c '
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
-            echo ">>> Installing dependencies inside Ubuntu 24.04 container..."
             apt-get update -qq
-            apt-get install -y -qq meson ninja-build ccache libopenblas-dev zlib1g-dev python3-pip git build-essential
+            apt-get install -y -qq git python3-pip ninja-build zlib1g-dev libopenblas-dev ccache
+            pip3 install -q meson
 
-            BUILD_DIR="build/docker-ci-linux"
+            BUILD_DIR="build/ci-linux"
             rm -rf "$BUILD_DIR"
 
-            echo ">>> Configuring Meson build..."
+            echo ">>> Configuring Meson build (Linux OpenBLAS)..."
             meson setup "$BUILD_DIR" \
                 --buildtype release \
                 -Dnative_arch=false \
@@ -52,35 +50,33 @@ run_linux_container_ci() {
                 -Dblas=true \
                 -Dlc0=true
 
-            echo ">>> Compiling with Ninja..."
+            echo ">>> Compiling lc0 & test suite with Ninja..."
             ninja -C "$BUILD_DIR"
 
             echo ">>> Running Unit Tests..."
             meson test -C "$BUILD_DIR" --print-errorlogs
 
-            echo ">>> Running Engine Benchmark (Sanity Check)..."
+            echo ">>> Running Engine Benchmark..."
             "./$BUILD_DIR/lc0" benchmark --backend=blas --num-positions=2 --movetime=2000
 
-            echo -e "\n\033[1;32m✓ Linux Meson Container CI Passed Successfully!\033[0m"
+            echo -e "\n\033[1;32m✓ Linux CI Job Passed Successfully!\033[0m"
         '
 }
 
-run_downstream_container_ci() {
-    print_header "Running Downstream Minimal Build (Docker: ubuntu:24.04)"
-    cd "$REPO_ROOT"
-
+run_downstream_ci() {
+    print_header "Running Downstream Minimal / Backend-Free Build"
     docker run --rm \
         -v "$REPO_ROOT":/workspace \
         -w /workspace \
-        ubuntu:24.04 \
+        "$ROCM_IMAGE" \
         bash -c '
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
-            echo ">>> Installing dependencies inside Ubuntu 24.04 container..."
             apt-get update -qq
-            apt-get install -y -qq meson ninja-build zlib1g-dev python3-pip git build-essential
+            apt-get install -y -qq git python3-pip ninja-build zlib1g-dev
+            pip3 install -q meson
 
-            BUILD_DIR="build/docker-ci-downstream"
+            BUILD_DIR="build/ci-downstream"
             rm -rf "$BUILD_DIR"
 
             echo ">>> Configuring Meson build without external backends (-Dbuild_backends=false)..."
@@ -91,33 +87,29 @@ run_downstream_container_ci() {
                 -Dblas=false \
                 -Dbuild_backends=false
 
-            echo ">>> Compiling lc0..."
+            echo ">>> Compiling minimal lc0..."
             ninja -C "$BUILD_DIR" lc0
 
-            echo ">>> Verifying built binary..."
+            echo ">>> Verifying binary execution..."
             "./$BUILD_DIR/lc0" --help > /dev/null
-            echo -e "\n\033[1;32m✓ Downstream Minimal Container Build Passed Successfully!\033[0m"
+            echo -e "\n\033[1;32m✓ Downstream Minimal Build Passed Successfully!\033[0m"
         '
 }
 
 run_rocm_ci() {
-    print_header "Running AMD ROCm / HIP CI (Docker: rocm/dev-ubuntu-22.04:latest)"
-    cd "$REPO_ROOT"
-
-    echo ">>> Launching ROCm container to build HIP backend..."
+    print_header "Running AMD ROCm / HIP Backend Build (hipcc + hipblas)"
     docker run --rm \
         -v "$REPO_ROOT":/workspace \
         -w /workspace \
-        rocm/dev-ubuntu-22.04:latest \
+        "$ROCM_IMAGE" \
         bash -c '
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
-            echo ">>> Installing dependencies inside ROCm container..."
             apt-get update -qq
             apt-get install -y -qq git python3-pip ninja-build zlib1g-dev libopenblas-dev
             pip3 install -q meson
 
-            BUILD_DIR="build/docker-ci-rocm"
+            BUILD_DIR="build/ci-rocm"
             rm -rf "$BUILD_DIR"
 
             echo ">>> Configuring Meson with ROCm/HIP backend..."
@@ -140,17 +132,17 @@ run_rocm_ci() {
 
 case "$TARGET" in
     linux)
-        run_linux_container_ci
+        run_linux_ci
         ;;
     downstream)
-        run_downstream_container_ci
+        run_downstream_ci
         ;;
     rocm)
         run_rocm_ci
         ;;
     all)
-        run_linux_container_ci
-        run_downstream_container_ci
+        run_linux_ci
+        run_downstream_ci
         run_rocm_ci
         ;;
     *)
@@ -159,4 +151,4 @@ case "$TARGET" in
         ;;
 esac
 
-print_header "All Docker Container CI Runs Completed Successfully!"
+print_header "All CI Jobs Completed Successfully in ROCm Container!"
