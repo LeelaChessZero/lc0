@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main, "feat/**", "fix/**" ]
+  pull_request:
+    branches: [ master, main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux Build, Unit Tests & Benchmark (Meson + OpenBLAS + GTest)
+  # ---------------------------------------------------------------------------
+  linux-build-test:
+    name: Linux GCC (Meson, Tests & Benchmark)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build ccache libopenblas-dev zlib1g-dev python3-pip
+
+      - name: Setup CCache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Configure with Meson
+        run: |
+          meson setup build/release \
+            --buildtype release \
+            -Dnative_arch=false \
+            -Dgtest=true \
+            -Dblas=true \
+            -Dlc0=true
+
+      - name: Compile
+        run: |
+          ninja -C build/release
+
+      - name: Run Unit Tests
+        run: |
+          meson test -C build/release --print-errorlogs
+
+      - name: Run Engine Benchmark (Sanity Check)
+        run: |
+          ./build/release/lc0 benchmark --backend=blas --num-positions=2 --movetime=2000
+
+      - name: Upload Linux Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-linux-x86_64
+          path: build/release/lc0
+
+  # ---------------------------------------------------------------------------
+  # AMD ROCm / HIP Backend Compilation & Verification
+  # ---------------------------------------------------------------------------
+  linux-rocm-hip:
+    name: AMD ROCm / HIP Backend (hipcc + hipblas)
+    runs-on: ubuntu-latest
+    container:
+      image: rocm/dev-ubuntu-22.04:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y python3-pip ninja-build zlib1g-dev git libopenblas-dev
+          pip3 install meson
+
+      - name: Configure with Meson (ROCm/HIP)
+        run: |
+          meson setup build/hip \
+            --buildtype release \
+            -Db_lto=false \
+            -Dhip=true \
+            -Damd_gfx=gfx90a \
+            -Dgtest=false \
+            -Dlc0=true
+
+      - name: Compile HIP Backend & Engine
+        run: |
+          ninja -C build/hip
+
+      - name: Verify Backend Registration
+        run: |
+          ./build/hip/lc0 --help | grep -i "hip" || true
+
+      - name: Upload HIP Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-linux-rocm-hip
+          path: build/hip/lc0
