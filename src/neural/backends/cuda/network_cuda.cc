@@ -241,7 +241,7 @@ class CudaNetwork : public Network {
       throw Exception("Invalid GPU Id: " + std::to_string(gpu_id_));
 
     cudaDeviceProp deviceProp = {};
-    cudaGetDeviceProperties(&deviceProp, gpu_id_);
+    ReportCUDAErrors(cudaGetDeviceProperties(&deviceProp, gpu_id_));
     showDeviceInfo(deviceProp, gpu_id_);
 
     l2_cache_size_ = deviceProp.l2CacheSize;
@@ -1246,7 +1246,7 @@ class CudaNetwork : public Network {
              << major << "." << minor << "." << pl;
       }
     }
-    cudaDriverGetVersion(&version);
+    ReportCUDAErrors(cudaDriverGetVersion(&version));
     major = version / 1000;
     minor = (version - major * 1000) / 10;
     pl = version - major * 1000 - minor * 10;
@@ -1419,8 +1419,7 @@ std::unique_ptr<Network> MakeCudaNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
-  // No error checking here, this will be repeated later.
-  cudaGetDeviceProperties(&deviceProp, gpu_id);
+  ReportCUDAErrors(cudaGetDeviceProperties(&deviceProp, gpu_id));
 
   // Check if the GPU supports FP16.
   if (deviceProp.major >= 7 ||
@@ -1437,7 +1436,7 @@ std::unique_ptr<Network> MakeCudaNetworkBf16(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
   cudaDeviceProp deviceProp = {};
-  cudaGetDeviceProperties(&deviceProp, gpu_id);
+  ReportCUDAErrors(cudaGetDeviceProperties(&deviceProp, gpu_id));
 
   // Check if the GPU supports bfloat16 (Compute Capability >= 8.0).
 #if !defined(USE_HIP)
