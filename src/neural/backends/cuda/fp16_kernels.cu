@@ -33,7 +33,8 @@
 
 // Native fp16 arithmetic requires compute capability 5.3+; guard the fp16 device
 // bodies so lc0 still builds for older architectures.
-#if __CUDA_ARCH__ >= 530
+// CoreX/ivcore11: device __CUDA_ARCH__ reports 300.
+#if __CUDA_ARCH__ >= 530 || defined(__ILUVATAR__)
 #define HAS_FP16_SUPPORT 1
 #endif
 #include "winograd_helper.inc"
