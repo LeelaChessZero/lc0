@@ -397,6 +397,11 @@ message OnnxModel {
   optional string output_wdl = 5;
   optional string output_policy = 6;
   optional string output_mlh = 7;
+  optional bool is_ep_context = 8;
+  optional uint32 trt_min_batch_size = 9;
+  optional uint32 trt_batch_size = 10;
+  optional uint32 trt_steps = 11;
+  repeated bytes step_models = 12;
 }
 
 message Net {
