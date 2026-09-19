@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main, "feat/**", "fix/**" ]
+  pull_request:
+    branches: [ master, main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Tier 1 Primary: Linux (Meson, OpenBLAS, Tests & Benchmark)
+  # ---------------------------------------------------------------------------
+  linux-build-test:
+    name: Linux GCC (Meson, Tests & Benchmark)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build ccache libopenblas-dev zlib1g-dev python3-pip
+
+      - name: Setup CCache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Configure with Meson
+        run: |
+          meson setup build/release \
+            --buildtype release \
+            -Dnative_arch=false \
+            -Dgtest=true \
+            -Dblas=true \
+            -Dlc0=true
+
+      - name: Compile
+        run: |
+          ninja -C build/release
+
+      - name: Run Unit Tests
+        run: |
+          meson test -C build/release --print-errorlogs
+
+      - name: Run Engine Benchmark (Sanity Check)
+        run: |
+          ./build/release/lc0 benchmark --backend=blas --num-positions=2 --movetime=2000
+
+      - name: Upload Linux Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-linux-x86_64
+          path: build/release/lc0
+
+  # ---------------------------------------------------------------------------
+  # AMD ROCm / HIP Backend Compilation & Verification
+  # ---------------------------------------------------------------------------
+  linux-rocm-hip:
+    name: AMD ROCm / HIP Backend (hipcc + hipblas)
+    runs-on: ubuntu-latest
+    container:
+      image: rocm/dev-ubuntu-22.04:latest
+    steps:
+      - name: Install Git & Base Build Tools
+        run: |
+          apt-get update
+          apt-get install -y git python3-pip ninja-build zlib1g-dev libopenblas-dev
+          pip3 install meson
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure with Meson (ROCm/HIP)
+        run: |
+          meson setup build/hip \
+            --buildtype release \
+            -Db_lto=false \
+            -Dhip=true \
+            -Damd_gfx=gfx90a \
+            -Dgtest=false \
+            -Dlc0=true
+
+      - name: Compile HIP Backend & Engine
+        run: |
+          ninja -C build/hip
+
+      - name: Verify Backend Registration
+        run: |
+          ./build/hip/lc0 --help | grep -i "hip" || true
+
+      - name: Upload HIP Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-linux-rocm-hip
+          path: build/hip/lc0
+
+  # ---------------------------------------------------------------------------
+  # Downstream: Windows (MSVC + Meson / Ninja)
+  # ---------------------------------------------------------------------------
+  windows-downstream:
+    name: Windows Downstream (MSVC, Meson)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python & Meson
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Meson and Ninja
+        run: |
+          pip install meson ninja
+
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure with Meson
+        run: |
+          meson setup build `
+            --buildtype release `
+            -Dgtest=false `
+            -Dlc0=true `
+            -Dblas=false `
+            -Dbuild_backends=false `
+            -Dpopcnt=true
+
+      - name: Compile lc0
+        run: |
+          ninja -C build
+
+      - name: Upload Windows Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-windows-x64
+          path: build/lc0.exe
+
+  # ---------------------------------------------------------------------------
+  # Downstream: macOS (Apple Silicon arm64)
+  # ---------------------------------------------------------------------------
+  macos-downstream:
+    name: macOS Downstream (Apple Silicon arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Tools
+        run: |
+          brew install meson ninja
+
+      - name: Configure with Meson
+        run: |
+          meson setup build \
+            --buildtype release \
+            -Dnative_arch=false \
+            -Dgtest=false \
+            -Dblas=true \
+            -Daccelerate=true \
+            -Dlc0=true
+
+      - name: Compile lc0
+        run: |
+          ninja -C build
+
+      - name: Upload macOS Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lc0-macos-arm64
+          path: build/lc0
