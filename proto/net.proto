@@ -402,9 +402,9 @@ message OnnxModel {
 // Backend can use these values in any way, except id that should be unique.
 message BackendCache {
   optional string id = 1;
-  optional float x = 2;
-  optional float y = 3;
-  optional float z = 4;
+  optional int32 x = 2;
+  optional int32 y = 3;
+  optional int32 z = 4;
   optional bytes val = 5;
 }
 

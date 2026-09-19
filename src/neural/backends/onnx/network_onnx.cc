@@ -945,8 +945,8 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
   }
 
   if (is_ep_context && provider == OnnxProvider::TRT) {
-    int32_t stored_batch_size = std::numeric_limits<std::uint32_t>::max();
-    int32_t stored_min_batch_size = std::numeric_limits<std::uint32_t>::max();
+    int32_t stored_batch_size = std::numeric_limits<int32_t>::max();
+    int32_t stored_min_batch_size = std::numeric_limits<int32_t>::max();
     int32_t stored_steps = 0;
     int32_t requested_batch_size = batch_size_;
 
@@ -1079,7 +1079,6 @@ OnnxNetwork::OnnxNetwork(const WeightsFile& file, const OptionsDict& opts,
       ep_context->set_x(batch_size_ * step);
       ep_context->set_y(min_batch);
       ep_context->set_val(ctx);
-      min_batch = batch_size_ * step + 1;
     }
     WriteStringToGzFile(net_path, out.OutputAsString());
   }
