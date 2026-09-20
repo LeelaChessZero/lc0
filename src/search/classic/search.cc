@@ -1708,7 +1708,13 @@ void SearchWorker::PickNodesToExtendTask(
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
         int index = child->Index();
-        visited_pol += cache.children[index].policy;
+        // Read the policy from the parent's live edge array rather than
+        // from the capped cache copy: a visited child whose index is beyond
+        // max_policy_entries_needed would otherwise read a stale ChildCache
+        // slot left by a previous level and corrupt visited_pol/FPU.
+        // (Same fix as dag_classic's child->GetP(); classic's Node does not
+        // expose GetP, so go through the parent by the child's edge index.)
+        visited_pol += node->GetEdgeP(index);
         float q = child->GetQ(draw_score);
         cache.children[index].utility = q + m_evaluator.GetMUtility(child, q);
       }
