@@ -1,0 +1,65 @@
+name: BLAS Backend Build
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Update submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build curl binutils python3-pip
+          pip3 install meson==1.3.2
+          meson --version
+      - name: Install BLAS Dependencies
+        run: |
+          sudo apt-get install -y libblas-dev libopenblas-dev
+      - name: Remove Build Directory
+        run: |
+          echo "Cleaning old build..."
+          rm -rf build
+      - name: Configure Meson and Build BLAS
+        run: |
+          meson setup --buildtype release build -Dblas=true \
+                      -Dgtest=false -Dnative_arch=false
+          ninja -C build -v
+      - name: Upload Meson Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: build-logs-${{ inputs.artifact_name }}
+          path: build
+      - name: Download Network
+        if: success()
+        run: |
+          cd build
+          curl -L https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -o T79.pb.gz
+          touch -t 201801010000.00 T79.pb.gz
+      - name: Run tests
+        if: success()
+        run: |
+          ./build/lc0 benchmark --backend=blas --num-positions=2 --task-workers=3 --minibatch-size=7 --threads=2
+      - name: Upload a Build Artifact
+        if: success()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: lc0-${{ inputs.artifact_name }}
+          path: |
+            build/lc0
+            build/T79.pb.gz
