@@ -212,7 +212,7 @@ const OptionId BaseSearchParams::kCpuctFactorAtRootId{
 // training server stops sending it.
 const OptionId BaseSearchParams::kRootHasOwnCpuctParamsId{
     {.long_flag = "root-has-own-cpuct-params",
-     .uci_option = "RootHasOwnCpuctParams",
+     .uci_option = "RootHasOwnCPuctParams",
      .help_text =
          "If enabled, cpuct parameters for root node are taken from *AtRoot "
          "parameters. Otherwise, they are the same as for the rest of nodes. "
@@ -539,6 +539,57 @@ const OptionId SearchParams::kSolidTreeThresholdId{
     "solid-tree-threshold", "SolidTreeThreshold",
     "Only nodes with at least this number of visits will be considered for "
     "solidification for improved cache locality."};
+const OptionId SearchParams::kUsePolicyPostProcessingId{
+    {.long_flag = "use-policy-post-processing",
+     .uci_option = "UsePolicyPostProcessing",
+     .help_text = "Apply post-processing to the policy training targets."}};
+const OptionId SearchParams::kForcedExplorationVisitsId{
+    {.long_flag = "forced-exploration-visits",
+     .uci_option = "ForcedExplorationVisits",
+     .help_text =
+         "Force minimum this number of visits at root based on policy which "
+         "can include noise. This aims to overcome a problem if the first "
+         "visit to a child evaluates it incorrectly which would suppress "
+         "further visits even when noised policy wants to explore it."}};
+const OptionId SearchParams::kForcedExplorationMaxPolicyId{
+    {.long_flag = "forced-exploration-max-policy",
+     .uci_option = "ForcedExplorationMaxPolicy",
+     .help_text =
+         "Force minimum visits at root based on policy which can include "
+         "noise. This parameter scales down higher policy children visits to "
+         "avoid over exploration when policy would force enough exploration in "
+         "a normal search."}};
+const OptionId SearchParams::kSingleChildForcedBoostId{
+    {.long_flag = "single-child-forced-boost",
+     .uci_option = "SingleChildForcedBoost",
+     .help_text =
+         "Give one random low policy move extra forced visits. This parameter "
+         "defines the policy value this move gets for forced visits "
+         "only."}};
+const OptionId SearchParams::kPolicyPostProcessingUtilityAlphaId{
+    {.long_flag = "policy-post-processing-utility-alpha",
+     .uci_option = "PolicyPostProcessingUtilityAlpha",
+     .help_text = "Controls how sharp the resulting policy will be. Lower "
+                  "values result to a sharper policy. It should be changed "
+                  "together with weight temperature."}};
+const OptionId SearchParams::kPolicyPostProcessingWeightTemperatureId{
+    {.long_flag = "policy-post-processing-weight-temperature",
+     .uci_option = "PolicyPostProcessingWeightTemperature",
+     .help_text =
+         "Softmax temperature for weighted variance. It controls how "
+         "policy "
+         "sharpness is adjusted for different positions. Lower values mean "
+         "variance focuses more towards good moves. Lower values add extra "
+         "sharpness towards sharp positions."}};
+const OptionId SearchParams::kTemperatureSimulatedCpuctId{
+    {.long_flag = "temperature-simulated-cpuct",
+     .uci_option = "TemperatureSimulatedCPuct",
+     .help_text =
+         "When picking a move with temperature, use this cpuct value for "
+         "simulating the search behavior. It allows consistent blunder chances "
+         "with changing root CPuct. It is only used if ForcedExplorationFactor "
+         "is greater than zero.",
+     .visibility = OptionId::kProOnly}};
 
 void BaseSearchParams::Populate(OptionsParser* options) {
   // Here the uci optimized defaults" are set.
@@ -637,6 +688,15 @@ void SearchParams::Populate(OptionsParser* options) {
   BaseSearchParams::Populate(options);
   options->Add<IntOption>(kMaxPrefetchBatchId, 0, 1024) = DEFAULT_MAX_PREFETCH;
   options->Add<IntOption>(kSolidTreeThresholdId, 1, 2000000000) = 100;
+  options->Add<BoolOption>(kUsePolicyPostProcessingId) = true;
+  options->Add<IntOption>(kForcedExplorationVisitsId, 0, 100000) = 0;
+  options->Add<FloatOption>(kForcedExplorationMaxPolicyId, 0.0f, 100.0f) = 7.0f;
+  options->Add<FloatOption>(kSingleChildForcedBoostId, 0.0f, 100.0f) = 5.0f;
+  options->Add<FloatOption>(kPolicyPostProcessingUtilityAlphaId, 0.00001f,
+                            100.0f) = 0.42f;
+  options->Add<FloatOption>(kPolicyPostProcessingWeightTemperatureId, 0.0001f,
+                            1000.0f) = 0.07f;
+  options->Add<FloatOption>(kTemperatureSimulatedCpuctId, 0.0f, 100.0f) = 2.53f;
 }
 
 BaseSearchParams::BaseSearchParams(const OptionsDict& options)
@@ -729,6 +789,7 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
 
 SearchParams::SearchParams(const OptionsDict& options)
     : BaseSearchParams(options),
-      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)) {}
+      kSolidTreeThreshold(options.Get<int>(kSolidTreeThresholdId)),
+      kUsePolicyPostProcessing(options.Get<bool>(kUsePolicyPostProcessingId)) {}
 }  // namespace classic
 }  // namespace lczero

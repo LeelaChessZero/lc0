@@ -199,23 +199,81 @@ Search::Search(const NodeTree& tree, Backend* backend,
 }
 
 namespace {
-void ApplyDirichletNoise(Node* node, float eps, double alpha) {
+int SelectChildForExtraForcedVisits(Node* node, const SearchParams& params) {
+  const float child_boost = params.GetSingleChildForcedBoost();
+  if (child_boost == 0) {
+    return -1;
+  }
+  int rv = -1;
+  // Choose one low policy child to get extra exploration.
+  std::vector<float> policy;
+  bool has_nonzero_policy = false;
+  for (const auto& edge : node->Edges()) {
+    // Transform the policy to probability distribution and only considre
+    // policies which are less than 2.5%.
+    policy.push_back(std::max(0.0f, 1.0f / edge.GetP() - 40.0f));
+    has_nonzero_policy = has_nonzero_policy || policy.back() > 0.0f;
+  }
+
+  if (has_nonzero_policy) {
+    rv = Random::Get().GetDiscrete(policy.begin(), policy.end());
+  }
+  return rv;
+}
+
+std::vector<uint32_t> ComputeForcedVisits(Node* node,
+                                          const SearchParams& params) {
+  const float visits = params.GetForcedExplorationVisits();
+  if (visits <= 0 || node->GetNumEdges() <= 1) {
+    return {};
+  }
+  int forced_child = SelectChildForExtraForcedVisits(node, params);
+  float max_exploration_policy =
+      std::sqrt(params.GetForcedExplorationMaxPolicy());
+  std::vector<float> forced_visits(node->GetNumEdges(), 0);
+  float sum = 0.0f;
+  std::generate(forced_visits.begin(), forced_visits.end(),
+                [&, i = 0, edge = node->Edges()]() mutable {
+                  float share = std::sqrt(
+                      (i++ == forced_child) ? params.GetSingleChildForcedBoost()
+                                            : edge.GetP());
+                  ++edge;
+                  sum += share;
+                  return share;
+                });
+  std::transform(forced_visits.begin(), forced_visits.end(), node->Edges(),
+                 forced_visits.begin(),
+                 [sum, visits, max_exploration_policy](float v, auto edge) {
+                   float policy = std::sqrt(edge.GetP());
+                   float policy_adjust = policy > max_exploration_policy
+                                             ? max_exploration_policy / policy
+                                             : 1.0f;
+                   return policy_adjust * visits * v / sum;
+                 });
+  return {forced_visits.begin(), forced_visits.end()};
+}
+
+void ApplyDirichletNoise(Node* node, const SearchParams& params) {
   float total = 0;
   std::vector<float> noise;
-
+  const float eps = params.GetNoiseEpsilon();
+  const float alpha = params.GetNoiseAlpha();
   for (int i = 0; i < node->GetNumEdges(); ++i) {
     float eta = Random::Get().GetGamma(alpha, 1.0);
     noise.emplace_back(eta);
     total += eta;
   }
 
-  if (total < std::numeric_limits<float>::min()) return;
+  if (total < std::numeric_limits<float>::min()) {
+    return;
+  }
 
   int noise_idx = 0;
   for (const auto& child : node->Edges()) {
     auto* edge = child.edge();
     edge->SetP(edge->GetP() * (1 - eps) + eps * noise[noise_idx++] / total);
   }
+  return;
 }
 }  // namespace
 
@@ -446,12 +504,65 @@ inline float GetFpu(const SearchParams& params, const Node* node, bool is_root_n
 }
 
 inline float ComputeCpuct(const SearchParams& params, uint32_t N,
-                          bool is_root_node) {
-  const float init = params.GetCpuct(is_root_node);
+                          bool is_root_node, bool is_temperature = false) {
+  const float init = !is_temperature ? params.GetCpuct(is_root_node)
+                                     : params.GetTemperatureSimulatedCpuct();
   const float k = params.GetCpuctFactor(is_root_node);
   const float base = params.GetCpuctBase(is_root_node);
   return init + (k ? k * FastLog((N + base) / base) : 0.0f);
 }
+
+inline int64_t EstimateForcedVisits(const SearchParams& params,
+                                     const Node* node,
+                                     std::unique_ptr<Edge[]>& root_policy,
+                                     float draw_score, MEvaluator m_evaluator) {
+  if (node->GetN() <= 1) return 0;
+
+  const float U_coeff =
+      ComputeCpuct(params, node->GetN(), /* is_root_node= */ true) *
+      std::sqrt(std::max(node->GetChildrenVisits(), 1u));
+  float best_QM = -1.0f - params.GetMovesLeftMaxEffect();
+  EdgeAndNode best_edge;
+  for (const auto& edge : node->Edges()) {
+    if (edge.GetN() == 0) {
+      break;
+    }
+
+    float Q = edge.GetQ(0.0f, draw_score);
+    float M = m_evaluator.GetMUtility(edge, Q);
+    if (Q + M > best_QM) {
+      best_QM = Q + M;
+      best_edge = edge;
+    }
+  }
+
+  if (best_edge.IsTerminal()) {
+    // TODO: Implement an approximation how much extra visits the terminal
+    // should have been given.
+    return 0;
+  }
+
+  assert(best_edge.GetP() > 0.0f);
+
+  float best_S = best_QM + best_edge.GetU(U_coeff);
+
+  float sum = 0.0f;
+  Edge* iter = root_policy.get();
+  for (const auto& edge : node->Edges()) {
+    auto orig_edge = *iter++;
+    if (edge.GetN() == 0) {
+      break;
+    }
+
+    float Q = edge.GetQ(0.0f, draw_score);
+    float M = m_evaluator.GetMUtility(edge, Q);
+    float N = std::max(1.0f, orig_edge.GetP() * U_coeff / (best_S - Q - M) - 1.0f);
+
+    sum += edge.GetNStarted() - N;
+  }
+  return sum;
+}
+
 }  // namespace
 
 // Ignore the last tuple element when sorting in GetVerboseStats
@@ -674,6 +785,135 @@ std::int64_t Search::GetTotalPlayouts() const {
   return total_playouts_;
 }
 
+std::vector<std::tuple<float, float>> Search::GetVisitDistribution(
+    const std::vector<Move>& legal_moves) const {
+  std::vector<std::tuple<float, float>> distribution;
+  std::vector<std::tuple<Move, uint32_t, double>> visits;
+  visits.reserve(legal_moves.size());
+  distribution.reserve(legal_moves.size());
+  const float draw_score = GetDrawScore(false);
+  double QM_max = -std::numeric_limits<double>::infinity();
+  {
+    SharedMutex::SharedLock lock(nodes_mutex_);
+    float fpu = 0;
+    MEvaluator m_evaluator = backend_attributes_.has_mlh
+                                 ? MEvaluator(params_, root_node_)
+                                 : MEvaluator();
+    for (const auto& edge : root_node_->Edges()) {
+      const uint32_t N = edge.GetN();
+      const double Q = edge.GetQ(fpu, draw_score);
+      const double M = m_evaluator.GetMUtility(edge, Q);
+      const double QM =
+          edge.GetN() > 0 ? Q + M : std::numeric_limits<double>::lowest();
+      // TODO: Do we need to adjust QM if it is terminal?
+      visits.emplace_back(edge.GetMove(false), N, QM);
+      QM_max = std::max(QM_max, Q + M);
+    }
+  }
+  auto is_QM_valid = [](double QM) {
+    return QM != std::numeric_limits<double>::lowest();
+  };
+  std::optional<EvalResult> nneval = backend_->GetCachedEvaluation(
+      EvalPosition{played_history_.GetPositions(), legal_moves});
+  auto policy_iter =
+      nneval ? nneval->p.begin() : std::vector<float>::iterator();
+
+  // Use Softmax weighted variance to measure the spread of the move values.
+  // Alpha will be scaled based on the variance.
+  std::vector<double> softmax_weights;
+  softmax_weights.reserve(visits.size());
+  const double variance_weight_temp =
+      1.0 / params_.GetPolicyPostProcessingWeightTemperature();
+  double softmax_sum = 0.0;
+  for (const auto& v : visits) {
+    const double QM = std::get<2>(v);
+    if (!is_QM_valid(QM)) {
+      softmax_weights.emplace_back(0.0);
+      continue;
+    }
+    softmax_weights.emplace_back(
+        std::exp(variance_weight_temp * (QM - QM_max)));
+    softmax_sum += softmax_weights.back();
+  }
+
+  for (auto& w : softmax_weights) {
+    w /= softmax_sum;
+  }
+
+  double mean = 0.0;
+  for (size_t i = 0; i < visits.size(); ++i) {
+    const double QM = std::get<2>(visits[i]);
+    if (!is_QM_valid(QM)) continue;
+    mean += softmax_weights[i] * QM;
+  }
+  double variance = 0.0;
+  for (size_t i = 0; i < visits.size(); ++i) {
+    const double QM = std::get<2>(visits[i]);
+    if (!is_QM_valid(QM)) continue;
+    double diff = QM - mean;
+    variance += softmax_weights[i] * diff * diff;
+  }
+
+  const float policy_temp = params_.GetPolicySoftmaxTemp();
+  // Avoid division by zero and NaNs.
+  variance = std::max(variance, 1e-9);
+  // Scale alpha based on weighted variance to match old policy sharpness for
+  // different positions.
+  const double alpha_param = params_.GetPolicyPostProcessingUtilityAlpha();
+  const double alpha = alpha_param * std::sqrt(variance);
+  float policy_sum = 0.0f;
+  double N_sum = 0.0;
+  for (const auto& move : legal_moves) {
+    auto pos =
+        std::find_if(visits.begin(), visits.end(),
+                     [&move](const auto& m) { return std::get<0>(m) == move; });
+    if (pos == visits.end()) {
+      throw Exception("Legal moves don't match the root node.");
+    }
+
+    double QM = std::get<2>(*pos);
+    float nn_policy = 0.0f;
+
+    // Calculate visit count using uniform prior policy to control policy
+    // sharpness and value impact. If it causes training problems we would need
+    // to mix prior policy using KL divergence.
+    double N = params_.UsePolicyPostProcessing()
+                   ? is_QM_valid(QM) ? 1.0 / (alpha + QM_max - QM) : 0.0
+                   : std::get<1>(*pos);
+
+    if (nneval) {
+      if (policy_iter == nneval->p.end()) {
+        throw Exception("Not enough policy values returned by the network.");
+      }
+      // Undo the temperature that was applied to the policy.
+      nn_policy = std::pow(*policy_iter++, policy_temp);
+      policy_sum += nn_policy;
+    }
+    distribution.emplace_back(N, nn_policy);
+    N_sum += N;
+  }
+
+  if (nneval) {
+    double visited_pol = 0.0;
+    for (auto& [N, nn_policy] : distribution) {
+      nn_policy /= policy_sum;
+      if (N != 0) {
+        visited_pol += nn_policy;
+      }
+    }
+    // Preserve the policy for unvisited moves.
+    for (auto& [N, nn_policy] : distribution) {
+      if (N != 0) {
+        N = visited_pol * N / N_sum;
+      } else {
+        N = nn_policy;
+      }
+    }
+  }
+
+  return distribution;
+}
+
 void Search::ResetBestMove() {
   SharedMutex::Lock nodes_lock(nodes_mutex_);
   Mutex::Lock lock(counters_mutex_);
@@ -840,8 +1080,17 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
   float max_n = 0.0;
   const float offset = params_.GetTemperatureVisitOffset();
   float max_eval = -1.0f;
+  float best_S = 0.0f;
   const float fpu =
       GetFpu(params_, root_node_, /* is_root= */ true, draw_score);
+  MEvaluator m_evaluator = backend_attributes_.has_mlh
+                               ? MEvaluator(params_, root_node_)
+                               : MEvaluator();
+  const float U_coeff =
+      ComputeCpuct(params_, root_node_->GetN(), /* is_root_node= */ true,
+                   true) *
+      std::sqrt(std::max(root_node_->GetChildrenVisits(), 1u));
+  Node::Iterator best_edge;
 
   for (auto& edge : root_node_->Edges()) {
     if (!root_move_filter_.empty() &&
@@ -852,6 +1101,62 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
     if (edge.GetN() + offset > max_n) {
       max_n = edge.GetN() + offset;
       max_eval = edge.GetQ(fpu, draw_score);
+      best_S = max_eval + m_evaluator.GetMUtility(edge, max_eval) +
+               edge.GetU(U_coeff);
+      best_edge = edge;
+    }
+  }
+
+  // Correct best_S if the best evaluation isn't the most visits.
+  if (!forced_exploration_visits_.empty() && !best_edge.IsZeroPolicy()) {
+    double best_QM = best_edge.GetQ(fpu, draw_score) +
+                     m_evaluator.GetMUtility(best_edge, max_eval);
+
+    for (auto& edge : root_node_->Edges()) {
+      if (!root_move_filter_.empty() &&
+          std::find(root_move_filter_.begin(), root_move_filter_.end(),
+                    edge.GetMove()) == root_move_filter_.end()) {
+        continue;
+      }
+      double Q = edge.GetQ(fpu, draw_score);
+      double M = m_evaluator.GetMUtility(edge, Q);
+      if (edge == best_edge || edge.IsZeroPolicy() || Q + M <= best_QM) {
+        continue;
+      }
+      // Q1 + M1 + P1 * U_coeff / (1 + (N1+N2)*x) ==
+      // Q2 + M2 + P2 * U_coeff / (1 + (N1+N2)*(1-x))
+      // C = Q1 - Q2 + M1 - M2
+      double C = Q + M - best_QM;
+      assert(C > 0);
+      // N = N1 + N2
+      double N = edge.GetN() + best_edge.GetN();
+      // Un = Pn * U_coeff
+      double U1 = edge.GetP() * U_coeff;
+      double U2 = best_edge.GetP() * U_coeff;
+      // C + U1 / (1 + N*x) == U2 / (1 + N*(1-x))
+      // Wolfram solved for x:
+      // xs = (-C N^2 + N U1 + N U2)^2
+      // xr = +-sqrt(xs - 4 C N^2 (C (-N) - C - N U1 - U1 + U2))
+      // x = (xr + C N^2 - N U1 - N U2)/(2 C N^2)
+      double xs = -C * N * N + N * U1 + N * U2;
+      xs *= xs;
+      double xrr = xs - 4 * C * N * N * (U2 - C * N - C - N * U1 - U1);
+      assert(xrr >= 0);
+      double xr = std::sqrt(xrr);
+      double xp = (xr + C * N * N - N * U1 - N * U2) / (2 * C * N * N);
+      double xm = (-xr + C * N * N - N * U1 - N * U2) / (2 * C * N * N);
+      double x = (xp >= 0.0 && xp <= 1.0) ? xp : xm;
+      assert(std::abs(C + U1 / (1 + N * x) - U2 / (1 + N * (1 - x))) < 1e-3);
+      assert(x > 0);
+      assert(x < 1);
+      float S = Q + M + edge.GetP() * U_coeff / (1.0f + N * x);
+      if (S > best_S) {
+        best_S = S;
+        if (x >= 0.5f) {
+          max_eval = Q;
+        }
+        max_n = N * std::max(x, 1.0f - x) + offset;
+      }
     }
   }
 
@@ -864,12 +1169,21 @@ EdgeAndNode Search::GetBestRootChildWithTemperature(float temperature) const {
                   edge.GetMove()) == root_move_filter_.end()) {
       continue;
     }
-    if (edge.GetQ(fpu, draw_score) < min_eval) continue;
+    float Q = edge.GetQ(fpu, draw_score);
+    if (Q < min_eval) continue;
+    float N = edge.GetN();
+    // remove forced visits from N
+    if (!forced_exploration_visits_.empty() && !best_edge.IsZeroPolicy() &&
+        !edge.IsZeroPolicy()) {
+      float M = m_evaluator.GetMUtility(edge, Q);
+      if (N > 0.0f) {
+        N = std::max(1.0f,
+                     std::ceil(edge.GetP() * U_coeff / (best_S - Q - M) - 1));
+      }
+    }
     sum += std::pow(
-        std::max(0.0f,
-                 (max_n <= 0.0f
-                      ? edge.GetP()
-                      : ((static_cast<float>(edge.GetN()) + offset) / max_n))),
+        std::max(0.0f, (max_n <= 0.0f ? edge.GetP()
+                                      : std::max((N + offset) / max_n, 0.0f))),
         1 / temperature);
     cumulative_sums.push_back(sum);
   }
@@ -938,7 +1252,14 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       nps_start_time_ = std::chrono::steady_clock::now();
     }
   }
-  stats->total_nodes = total_playouts_ + initial_visits_;
+  int64_t forced_visits =
+      forced_exploration_visits_.empty()
+          ? 0
+          : EstimateForcedVisits(
+                params_, root_node_, noised_policy_, GetDrawScore(false),
+                backend_attributes_.has_mlh ? MEvaluator(params_, root_node_)
+                                            : MEvaluator());
+  stats->total_nodes = total_playouts_ + initial_visits_ - forced_visits;
   stats->nodes_since_movestart = total_playouts_;
   stats->batches_since_movestart = total_batches_;
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
@@ -1285,6 +1606,26 @@ int CalculateCollisionsLeft(int64_t nodes, const SearchParams& params) {
                            params.GetMaxCollisionVisitsScalingStart()),
                       params.GetMaxCollisionVisitsScalingPower()));
 }
+
+int AddForcedExploration(Node::Iterator& iter, size_t idx,
+                         const std::vector<uint32_t>& visits, int nstarted) {
+  if (visits.empty()) {
+    return 0;
+  }
+
+  if (iter.GetN() > 0 && iter.IsTerminal()) {
+    return 0;
+  }
+
+  assert(idx < visits.size());
+  int minimum_visits = visits[idx];
+  if (minimum_visits <= nstarted) {
+    return 0;
+  } else {
+    return 1;
+  }
+}
+
 }  // namespace
 
 void SearchWorker::GatherMinibatch() {
@@ -1333,7 +1674,7 @@ void SearchWorker::GatherMinibatch() {
 
     int new_start = static_cast<int>(minibatch_.size());
 
-    PickNodesToExtend(
+    bool stop = PickNodesToExtend(
         std::min({collisions_left, target_minibatch_size_ - minibatch_size,
                   max_out_of_order_ - number_out_of_order_}));
 
@@ -1414,6 +1755,8 @@ void SearchWorker::GatherMinibatch() {
         }
       }
     }
+
+    if (stop) break;
 
     LCTRACE_FUNCTION_SCOPE;
     // Check for stop at the end so we have at least one node.
@@ -1504,7 +1847,7 @@ int SearchWorker::WaitForTasks() {
   }
 }
 
-void SearchWorker::PickNodesToExtend(int collision_limit) {
+bool SearchWorker::PickNodesToExtend(int collision_limit) {
   ResetTasks();
   if (task_workers_ > 0 && !search_->backend_attributes_.runs_on_cpu) {
     // While nothing is ready yet - wake the task runners so they are ready to
@@ -1517,8 +1860,9 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
   // Since the tasks perform work which assumes they have the lock, even though
   // actually this thread does.
   SharedMutex::Lock lock(search_->nodes_mutex_);
-  PickNodesToExtendTask(search_->root_node_, 0, collision_limit, empty_movelist,
-                        &minibatch_, &main_workspace_);
+  bool stop =
+      PickNodesToExtendTask(search_->root_node_, 0, collision_limit,
+                            empty_movelist, &minibatch_, &main_workspace_);
 
   WaitForTasks();
   for (int i = 0; i < static_cast<int>(picking_tasks_.size()); i++) {
@@ -1527,6 +1871,7 @@ void SearchWorker::PickNodesToExtend(int collision_limit) {
       minibatch_.emplace_back(std::move(picking_tasks_[i].results[j]));
     }
   }
+  return stop;
 }
 
 void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
@@ -1570,7 +1915,7 @@ void SearchWorker::EnsureNodeTwoFoldCorrectForDepth(Node* child_node,
   }
 }
 
-void SearchWorker::PickNodesToExtendTask(
+bool SearchWorker::PickNodesToExtendTask(
     Node* node, int base_depth, int collision_limit,
     const std::vector<Move>& moves_to_base,
     std::vector<NodeToProcess>* receiver,
@@ -1618,6 +1963,7 @@ void SearchWorker::PickNodesToExtendTask(
   auto m_evaluator = moves_left_support_ ? MEvaluator(params_) : MEvaluator();
 
   int max_limit = std::numeric_limits<int>::max();
+  bool stop = false;
 
   current_path.push_back(-1);
   while (current_path.size() > 0) {
@@ -1687,7 +2033,8 @@ void SearchWorker::PickNodesToExtendTask(
       // visited policy without having to cache it in the node (allowing the
       // node to stay at 64 bytes).
       int max_needed = node->GetNumEdges();
-      if (!is_root_node || root_move_filter.empty()) {
+      if (!is_root_node || (root_move_filter.empty() &&
+                            search_->forced_exploration_visits_.empty())) {
         max_needed = std::min(max_needed, node->GetNStarted() + cur_limit + 2);
       }
       node->CopyPolicy(max_needed, current_pol.data());
@@ -1719,15 +2066,18 @@ void SearchWorker::PickNodesToExtendTask(
       const float puct_mult =
           cpuct * std::sqrt(std::max(node->GetChildrenVisits(), 1u));
       int cache_filled_idx = -1;
+      bool has_forced_visits = false;
       while (cur_limit > 0) {
         // Perform UCT for current node.
         float best = std::numeric_limits<float>::lowest();
         int best_idx = -1;
+        int new_visits = 0;
         float best_without_u = std::numeric_limits<float>::lowest();
         float second_best = std::numeric_limits<float>::lowest();
         bool can_exit = false;
         best_edge.Reset();
-        for (int idx = 0; idx < max_needed; ++idx) {
+        for (int idx = has_forced_visits ? cache_filled_idx + 1 : 0;
+             idx < max_needed; ++idx) {
           if (idx > cache_filled_idx) {
             if (idx == 0) {
               cur_iters[idx] = node->Edges();
@@ -1761,6 +2111,43 @@ void SearchWorker::PickNodesToExtendTask(
                           cur_iters[idx].GetMove()) == root_move_filter.end()) {
               continue;
             }
+            if (!search_->forced_exploration_visits_.empty()) {
+              // Do forced visits before other visits.
+              new_visits = AddForcedExploration(
+                  cur_iters[idx], idx, search_->forced_exploration_visits_,
+                  current_nstarted[idx]);
+
+              if (!has_forced_visits && new_visits > 0) {
+                has_forced_visits = true;
+                second_best_edge.Reset();
+                stop = true;
+              }
+
+              if (has_forced_visits) {
+                int nstarted_root = node->GetNInFlight() - cur_limit;
+                new_visits = std::min<int>(
+                    new_visits, target_minibatch_size_ - nstarted_root);
+                if (idx + 1 == max_needed ||
+                    nstarted_root + new_visits == target_minibatch_size_) {
+                  // Stop node picking after forced visits has been distributed
+                  // for this batch.
+                  node->CancelScoreUpdate(cur_limit);
+                  cur_limit = 0;
+                  if (new_visits == 0) {
+                    break;
+                  }
+                }
+                if (new_visits == 0) {
+                  continue;
+                } else {
+                  // We expand the limit if we have forced visits.
+                  node->IncrementNInFlight(new_visits);
+                  best_idx = idx;
+                  best_edge = cur_iters[idx];
+                  break;
+                }
+              }
+            }
           }
 
           float score = current_score[idx];
@@ -1783,7 +2170,9 @@ void SearchWorker::PickNodesToExtendTask(
             can_exit = true;
           }
         }
-        int new_visits = 0;
+        if (best_idx == -1) {
+          break;
+        }
         if (second_best_edge) {
           int estimated_visits_to_change_best = std::numeric_limits<int>::max();
           if (best_without_u < second_best) {
@@ -1797,7 +2186,7 @@ void SearchWorker::PickNodesToExtendTask(
           second_best_edge.Reset();
           max_limit = std::min(max_limit, estimated_visits_to_change_best);
           new_visits = std::min(cur_limit, estimated_visits_to_change_best);
-        } else {
+        } else if (new_visits == 0) {
           // No second best - only one edge, so everything goes in here.
           new_visits = cur_limit;
         }
@@ -1807,7 +2196,9 @@ void SearchWorker::PickNodesToExtendTask(
                     vtp_array + best_idx + 1, 0);
         }
         (*visits_to_perform.back())[best_idx] += new_visits;
-        cur_limit -= new_visits;
+        if (!has_forced_visits) {
+          cur_limit -= new_visits;
+        }
         Node* child_node = best_edge.GetOrSpawnNode(/* parent */ node);
 
         // Probably best place to check for two-fold draws consistently.
@@ -1841,6 +2232,9 @@ void SearchWorker::PickNodesToExtendTask(
           receiver->back().moves_to_visit = moves_to_path;
           receiver->back().moves_to_visit.push_back(best_edge.GetMove());
         }
+        assert(!has_forced_visits ||
+               static_cast<int>(child_node->GetNInFlight()) <=
+                   search_->thread_count_.load(std::memory_order_relaxed));
         if (best_idx > vtp_last_filled.back() &&
             (*visits_to_perform.back())[best_idx] > 0) {
           vtp_last_filled.back() = best_idx;
@@ -1916,6 +2310,7 @@ void SearchWorker::PickNodesToExtendTask(
       vtp_last_filled.pop_back();
     }
   }
+  return stop;
 }
 
 void SearchWorker::ExtendNode(Node* node, int depth,
@@ -2156,6 +2551,17 @@ void SearchWorker::FetchMinibatchResults() {
   }
 }
 
+void Search::StoreOriginalPolicy(const Node* node,
+                                 std::unique_ptr<Edge[]>& dst) {
+  if (node != root_node_) return;
+
+  assert(!dst);
+
+  dst = std::make_unique<Edge[]>(node->GetNumEdges());
+
+  node->CopyPolicy(dst.get());
+}
+
 void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   if (node_to_process->IsCollision()) return;
   Node* node = node_to_process->node;
@@ -2189,10 +2595,15 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   }
   // Add Dirichlet noise if enabled and at root.
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
-    ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
-                        params_.GetNoiseAlpha());
+    ApplyDirichletNoise(node, params_);
   }
   node->SortEdges();
+  if (node == search_->root_node_) {
+    search_->forced_exploration_visits_ = ComputeForcedVisits(node, params_);
+    if (!search_->forced_exploration_visits_.empty()) {
+      search_->StoreOriginalPolicy(node, search_->noised_policy_);
+    }
+  }
 }
 
 // 6. Propagate the new nodes' information to all their parents in the tree.
