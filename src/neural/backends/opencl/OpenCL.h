@@ -36,6 +36,7 @@ using net_t = float;
 #include <string>
 #include <vector>
 
+#define CL_ENABLE_BETA_EXTENSIONS
 #if __has_include("CL/opencl.hpp")
 #include "CL/opencl.hpp"
 #elif __has_include("OpenCL/opencl.hpp")
@@ -244,6 +245,8 @@ class OpenCL {
   void initialize(const int channels, const OpenCLParams& params);
   std::string get_device_name();
 
+  bool graph_capture_enabled() const { return m_graph_capture_enabled; }
+
   std::vector<size_t> get_sgemm_tuners(void);
 
   cl::Device m_device;
@@ -265,6 +268,7 @@ class OpenCL {
   size_t m_wavefront_size{0};
   size_t m_max_workgroup_size{0};
   std::vector<size_t> m_max_workgroup_dims;
+  bool m_graph_capture_enabled{false};
   bool m_init_ok{false};
 };
 
