@@ -27,6 +27,8 @@
 
 #include "neural/loader.h"
 
+#include <absl/strings/numbers.h>
+#include <absl/strings/str_split.h>
 #include <zlib.h>
 
 #include <algorithm>
@@ -190,6 +192,92 @@ WeightsFile ParseWeightsProto(const std::string& buffer) {
   return net;
 }
 
+using FloatVector = std::vector<float>;
+using FloatVectors = std::vector<FloatVector>;
+
+FloatVectors LoadFloatsFromFile(absl::string_view buffer) {
+  FloatVectors result;
+
+  for (absl::string_view line :
+       absl::StrSplit(buffer, absl::ByAnyChar("\n\r"), absl::SkipEmpty())) {
+    FloatVector row;
+    float val;
+
+    for (absl::string_view token :
+         absl::StrSplit(line, absl::ByAnyChar(" \t"), absl::SkipEmpty())) {
+      if (!absl::SimpleAtof(token, &val)) {
+        throw Exception("Invalid weight file: malformed entry.");
+      }
+      row.push_back(val);
+    }
+    if (!row.empty()) result.push_back(std::move(row));
+  }
+  return result;
+}
+
+void PopulateLastIntoVector(FloatVectors* vecs, pblczero::Weights::Layer* out) {
+  if (vecs->empty()) throw Exception("Invalid weight file: too few entries.");
+  out->set_params(
+      std::string_view(reinterpret_cast<const char*>(vecs->back().data()),
+                       vecs->back().size() * sizeof(float)));
+  out->set_encoding(pblczero::Weights::Layer::FLOAT32);
+  vecs->pop_back();
+}
+
+void PopulateConvBlockWeights(FloatVectors* vecs,
+                              pblczero::Weights::ConvBlock* block) {
+  PopulateLastIntoVector(vecs, block->mutable_bn_stddivs());
+  PopulateLastIntoVector(vecs, block->mutable_bn_means());
+  PopulateLastIntoVector(vecs, block->mutable_biases());
+  PopulateLastIntoVector(vecs, block->mutable_weights());
+}
+
+WeightsFile ParseWeightsTxt(std::string& buffer) {
+  WeightsFile net;
+  net.set_magic(kWeightMagic);
+
+  net.mutable_min_version()->set_major(0);
+  net.mutable_min_version()->set_minor(17);
+  net.mutable_min_version()->set_patch(0);
+
+  FloatVectors vecs;
+  vecs = LoadFloatsFromFile(buffer);
+
+  // Header + input + heads are the absolute minimum.
+  if (vecs.size() < 13) throw Exception("Invalid weight file: too small.");
+
+  auto result = net.mutable_weights();
+
+  // Populating backwards.
+  PopulateLastIntoVector(&vecs, result->mutable_ip2_val_b());
+  PopulateLastIntoVector(&vecs, result->mutable_ip2_val_w());
+  PopulateLastIntoVector(&vecs, result->mutable_ip1_val_b());
+  PopulateLastIntoVector(&vecs, result->mutable_ip1_val_w());
+  PopulateConvBlockWeights(&vecs, result->mutable_value());
+
+  PopulateLastIntoVector(&vecs, result->mutable_ip_pol_b());
+  PopulateLastIntoVector(&vecs, result->mutable_ip_pol_w());
+  PopulateConvBlockWeights(&vecs, result->mutable_policy());
+
+  // Header + input + all the residual should be left.
+  if ((vecs.size() - 5) % 8 != 0) {
+    throw Exception("Invalid weight file: bad size.");
+  }
+
+  const int num_residual = (vecs.size() - 5) / 8;
+
+  for (int i = 0; i < num_residual; i++) result->add_residual();
+
+  for (int i = num_residual - 1; i >= 0; --i) {
+    auto residual = result->mutable_residual(i);
+    PopulateConvBlockWeights(&vecs, residual->mutable_conv2());
+    PopulateConvBlockWeights(&vecs, residual->mutable_conv1());
+  }
+  PopulateConvBlockWeights(&vecs, result->mutable_input());
+
+  FixOlderWeightsFile(&net);
+  return net;
+}
 }  // namespace
 
 WeightsFile LoadWeightsFromFile(const std::string& filename) {
@@ -203,9 +291,7 @@ WeightsFile LoadWeightsFromFile(const std::string& filename) {
     throw Exception("Invalid weight file: no longer supported.");
   }
   if (buffer[0] == '2' && buffer[1] == '\n') {
-    throw Exception(
-        "Text format weights files are no longer supported. Use a command line "
-        "tool to convert it to the new format.");
+    return ParseWeightsTxt(buffer);
   }
 
   return ParseWeightsProto(buffer);
