@@ -31,14 +31,16 @@
 
 #include "python/python_chess.h"
 
+namespace py = pybind11;
+
 namespace lczero {
 namespace python {
 namespace python_chess {
 
-BoardData GetBoardData(const pybind11::handle& board) {
+BoardData GetBoardData(const py::handle& board) {
     BoardData board_data;
     
-    pybind11::object board_copy = board.attr("copy")();
+    py::object board_copy = board.attr("copy")();
     auto move_stack = board.attr("move_stack");
     for (auto _ : move_stack) {
         board_copy.attr("pop")();
@@ -46,7 +48,7 @@ BoardData GetBoardData(const pybind11::handle& board) {
     
     board_data.fen = board_copy.attr("fen")().cast<std::string>();
   
-    board_data.is_c960 = pybind11::hasattr(board, "chess960") ? 
+    board_data.is_c960 = py::hasattr(board, "chess960") ? 
                          board.attr("chess960").cast<bool>() : false;
     
     for (auto move : move_stack) {
@@ -56,11 +58,11 @@ BoardData GetBoardData(const pybind11::handle& board) {
     return board_data;
 }
 
-pybind11::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves) {
-    pybind11::object chess_module = pybind11::module::import("chess");
-    pybind11::object Move = chess_module.attr("Move");
+py::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves) {
+    py::object chess_module = py::module::import("chess");
+    py::object Move = chess_module.attr("Move");
 
-    pybind11::list result;
+    py::list result;
     for (const auto& uci : uci_moves) {
         result.append(Move.attr("from_uci")(uci));
     }
