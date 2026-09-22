@@ -38,7 +38,7 @@ namespace python_chess {
 BoardData GetBoardData(const pybind11::handle& board) {
     BoardData board_data;
     
-    py::object board_copy = board.attr("copy")();
+    pybind11::object board_copy = board.attr("copy")();
     auto move_stack = board.attr("move_stack");
     for (auto _ : move_stack) {
         board_copy.attr("pop")();
@@ -54,6 +54,17 @@ BoardData GetBoardData(const pybind11::handle& board) {
     }
     
     return board_data;
+}
+
+pybind11::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves) {
+    pybind11::object chess_module = pybind11::module::import("chess");
+    pybind11::object Move = chess_module.attr("Move");
+
+    pybind11::list result;
+    for (const auto& uci : uci_moves) {
+        result.append(Move.attr("from_uci")(uci));
+    }
+    return result;
 }
 
 } // namespace python_chess

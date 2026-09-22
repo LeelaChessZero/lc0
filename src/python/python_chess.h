@@ -42,7 +42,8 @@ struct BoardData {
 };
 
 BoardData GetBoardData(const pybind11::handle& board);
+pybind11::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves);
 
-} // namespace python_chess
+} // namespace python_chess`
 } // namespace python
 } // namespace lczero

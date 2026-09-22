@@ -32,6 +32,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <sstream>
  
 #include "chess/bitboard.h"
 #include "python/weights.h"
@@ -53,6 +54,66 @@ PYBIND11_MODULE(backends, m) {
     }
   });
 
+  // Py Enum bindings so that the user does not get an int output
+  py::enum_<pblczero::NetworkFormat::InputFormat>(m, "InputFormat")
+      .value("INPUT_UNKNOWN", pblczero::NetworkFormat::INPUT_UNKNOWN)
+      .value("INPUT_CLASSICAL_112_PLANE", 
+             pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE)
+      .value("INPUT_112_WITH_CASTLING_PLANE",
+             pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE)
+      .value("INPUT_112_WITH_CANONICALIZATION",
+             pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION)
+      .value("INPUT_112_WITH_CANONICALIZATION_HECTOPLIES",
+             pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES)
+      .value("INPUT_112_WITH_CANONICALIZATION_V2",
+             pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2)
+      .export_values();
+
+  py::enum_<pblczero::NetworkFormat::PolicyFormat>(m, "PolicyFormat")
+      .value("POLICY_UNKNOWN", pblczero::NetworkFormat::POLICY_UNKNOWN)
+      .value("POLICY_CLASSICAL", pblczero::NetworkFormat::POLICY_CLASSICAL)
+      .value("POLICY_CONVOLUTION", pblczero::NetworkFormat::POLICY_CONVOLUTION)
+      .value("POLICY_ATTENTION", pblczero::NetworkFormat::POLICY_ATTENTION)
+      .export_values();
+
+  py::enum_<pblczero::NetworkFormat::ValueFormat>(m, "ValueFormat")
+      .value("VALUE_UNKNOWN", pblczero::NetworkFormat::VALUE_UNKNOWN)
+      .value("VALUE_CLASSICAL", pblczero::NetworkFormat::VALUE_CLASSICAL)
+      .value("VALUE_WDL", pblczero::NetworkFormat::VALUE_WDL)
+      .value("VALUE_PARAM", pblczero::NetworkFormat::VALUE_PARAM)
+      .export_values();
+
+  py::enum_<pblczero::NetworkFormat::MovesLeftFormat>(m, "MovesLeftFormat")
+      .value("MOVES_LEFT_NONE", pblczero::NetworkFormat::MOVES_LEFT_NONE)
+      .value("MOVES_LEFT_V1", pblczero::NetworkFormat::MOVES_LEFT_V1)
+      .export_values();
+
+  py::enum_<pblczero::NetworkFormat::OutputFormat>(m, "OutputFormat")
+      .value("OUTPUT_UNKNOWN", pblczero::NetworkFormat::OUTPUT_UNKNOWN)
+      .value("OUTPUT_CLASSICAL", pblczero::NetworkFormat::OUTPUT_CLASSICAL)
+      .value("OUTPUT_WDL", pblczero::NetworkFormat::OUTPUT_WDL)
+      .export_values();
+
+  py::enum_<pblczero::NetworkFormat::NetworkStructure>(m, "NetworkStructure")
+      .value("NETWORK_UNKNOWN", pblczero::NetworkFormat::NETWORK_UNKNOWN)
+      .value("NETWORK_CLASSICAL", pblczero::NetworkFormat::NETWORK_CLASSICAL)
+      .value("NETWORK_SE", pblczero::NetworkFormat::NETWORK_SE)
+      .value("NETWORK_CLASSICAL_WITH_HEADFORMAT", 
+             pblczero::NetworkFormat::NETWORK_CLASSICAL_WITH_HEADFORMAT)
+      .value("NETWORK_SE_WITH_HEADFORMAT", 
+             pblczero::NetworkFormat::NETWORK_SE_WITH_HEADFORMAT)
+      .value("NETWORK_ONNX", pblczero::NetworkFormat::NETWORK_ONNX)
+      .value("NETWORK_ATTENTIONBODY_WITH_HEADFORMAT",
+             pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT)
+      .value("NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT",
+             pblczero::NetworkFormat::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT)
+      .export_values();
+
+  py::enum_<pblczero::Format::Encoding>(m, "WeightsEncoding")
+      .value("UNKNOWN", pblczero::Format::UNKNOWN)
+      .value("LINEAR16", pblczero::Format::LINEAR16)
+      .export_values();
+
   // Weights
   py::class_<lczero::python::Weights> weights(m, "Weights");
   weights.def(py::init<const std::optional<std::string>&>(),
@@ -60,13 +121,49 @@ PYBIND11_MODULE(backends, m) {
   weights.def("filename", &lczero::python::Weights::filename);
   weights.def("license", &lczero::python::Weights::license);
   weights.def("min_version", &lczero::python::Weights::min_version);
-  weights.def("input_format", &lczero::python::Weights::input_format);
-  weights.def("policy_format", &lczero::python::Weights::policy_format);
-  weights.def("value_format", &lczero::python::Weights::value_format);
-  weights.def("moves_left_format",
-              &lczero::python::Weights::moves_left_format);
+  weights.def("input_format", [](const lczero::python::Weights& w) {
+    return static_cast<pblczero::NetworkFormat::InputFormat>(
+        w.input_format());
+  });
+  weights.def("policy_format", [](const lczero::python::Weights& w) {
+    return static_cast<pblczero::NetworkFormat::PolicyFormat>(
+        w.policy_format());
+  });
+  weights.def("value_format", [](const lczero::python::Weights& w) {
+    return static_cast<pblczero::NetworkFormat::ValueFormat>(
+        w.value_format());
+  });
+  weights.def("moves_left_format", [](const lczero::python::Weights& w) {
+    return static_cast<pblczero::NetworkFormat::MovesLeftFormat>(
+        w.moves_left_format());
+  });
+  
   weights.def("blocks", &lczero::python::Weights::blocks);
   weights.def("filters", &lczero::python::Weights::filters);
+  weights.def("__repr__", [](const lczero::python::Weights& w) {
+    std::ostringstream oss;
+    oss << "Weights(filename='" << w.filename() 
+        << "', input_format=" << w.input_format()
+        << ", policy_format=" << w.policy_format()
+        << ", value_format=" << w.value_format()
+        << ", moves_left_format=" << w.moves_left_format()
+        << ", blocks=" << w.blocks()
+        << ", filters=" << w.filters() << ")";
+    return oss.str();
+  });
+  weights.def("__eq__", [](const lczero::python::Weights& w1, const py::object& obj) {
+    if (!py::isinstance<lczero::python::Weights>(obj)) {
+      return false;
+    }
+    const auto& w2 = obj.cast<const lczero::python::Weights&>();
+    return w1.filename() == w2.filename() &&
+           w1.input_format() == w2.input_format() &&
+           w1.policy_format() == w2.policy_format() &&
+           w1.value_format() == w2.value_format() &&
+           w1.moves_left_format() == w2.moves_left_format() &&
+           w1.blocks() == w2.blocks() &&
+           w1.filters() == w2.filters();
+  });
 
   // Input
   py::class_<lczero::python::Input> input(m, "Input");
@@ -87,14 +184,49 @@ PYBIND11_MODULE(backends, m) {
   output.def("p_raw", &lczero::python::Output::p_raw, py::arg("samples"));
   output.def("p_softmax", &lczero::python::Output::p_softmax,
               py::arg("samples"));
+  output.def("__repr__", [](const lczero::python::Output& o) {
+    std::ostringstream oss;
+    oss << "Output(q=" << o.q() << ", d=" << o.d() << ", m=" << o.m() << ")";
+    return oss.str();
+  });
+  output.def("__eq__", [](const lczero::python::Output& o1, const py::object& obj) {
+    if (!py::isinstance<lczero::python::Output>(obj)) {
+      return false;
+    }
+    const auto& o2 = obj.cast<const lczero::python::Output&>();
+    const float epsilon = 1e-6f;
+    return std::abs(o1.q() - o2.q()) < epsilon &&
+           std::abs(o1.d() - o2.d()) < epsilon &&
+           std::abs(o1.m() - o2.m()) < epsilon;
+  });
 
   // BackendCapabilities
   py::class_<lczero::python::BackendCapabilities> backend_caps(
       m, "BackendCapabilities");
   backend_caps.def("input_format",
-                    &lczero::python::BackendCapabilities::input_format);
+                    [](const lczero::python::BackendCapabilities& bc) {
+                      return static_cast<pblczero::NetworkFormat::InputFormat>(
+                          bc.input_format());
+                    });
   backend_caps.def("moves_left_format",
-                    &lczero::python::BackendCapabilities::moves_left_format);
+                    [](const lczero::python::BackendCapabilities& bc) {
+                      return static_cast<pblczero::NetworkFormat::MovesLeftFormat>(
+                          bc.moves_left_format());
+                    });
+  backend_caps.def("__repr__", [](const lczero::python::BackendCapabilities& bc) {
+    std::ostringstream oss;
+    oss << "BackendCapabilities(input_format=" << bc.input_format()
+        << ", moves_left_format=" << bc.moves_left_format() << ")";
+    return oss.str();
+  });
+  backend_caps.def("__eq__", [](const lczero::python::BackendCapabilities& bc1, const py::object& obj) {
+    if (!py::isinstance<lczero::python::BackendCapabilities>(obj)) {
+      return false;
+    }
+    const auto& bc2 = obj.cast<const lczero::python::BackendCapabilities&>();
+    return bc1.input_format() == bc2.input_format() &&
+           bc1.moves_left_format() == bc2.moves_left_format();
+  });
 
   // Backend
   py::class_<lczero::python::Backend> backend(m, "Backend");
@@ -125,7 +257,9 @@ PYBIND11_MODULE(backends, m) {
     }), py::arg("board"));                  
   game_state.def("as_input", &lczero::python::GameState::as_input,
                   py::arg("backend"));
-  game_state.def("moves", &lczero::python::GameState::moves);
+  game_state.def("moves", [](const lczero::python::GameState& gs) {
+    return lczero::python::python_chess::UciMovesToChessMoves(gs.moves());
+  });
   game_state.def("policy_indices",
                   &lczero::python::GameState::policy_indices);
   game_state.def("as_string", &lczero::python::GameState::as_string);
