@@ -278,7 +278,7 @@ if get_option('build_backends')
   if get_option('blas')
     if get_option('mkl') and mkl_lib.found()
       mkl_inc = get_option('mkl_include')
-      if run_command('scripts/checkdir.py', mkl_inc, check : false).returncode() == 0
+      if fs.is_dir(mkl_inc)
         includes += include_directories(mkl_inc)
       endif
       if cc.has_header('mkl.h')
@@ -885,20 +885,15 @@ if get_option('build_backends')
       if get_option('sycl') == 'l0'
         message('Building SYCL for the L0 backend')
         add_project_arguments('-DMKL_ILP64', language : 'cpp')
-        # layers.cc.dp.cpp includes <oneapi/mkl.hpp> directly, outside the
-        # -Dmkl BLAS-backend path, so it needs its own include directories
-        # (setvars.bat doesn't always populate INCLUDE with MKL headers).
-        # oneMKL 2024+ split the unified mkl_sycl into domain libraries, and
-        # oneAPI 2026.1 no longer ships mkl_sycl at all -- the GEMM symbols
-        # live in mkl_sycl_blas_dll there; the fallbacks keep older toolkits
-        # working.
-        foreach mkl_inc_dir : get_option('mkl_include')
-          if run_command('scripts/checkdir.py', mkl_inc_dir, check : false).returncode() == 0
-            includes += include_directories(mkl_inc_dir)
-          endif
-        endforeach
+        # oneapi/mkl.hpp is not always found in the default icx headers.
+        mkl_include = get_option('mkl_include')
+        if not fs.is_dir(mkl_include)
+          error('mkl_include path does not exist: ' + mkl_include)
+        endif
+        includes += include_directories(mkl_include)
         mkl_libdirs = get_option('mkl_libdirs')
         opencl_libdirs = get_option('opencl_libdirs')
+        # Various sycl versions ship with different libraries.
         mkl_sycl_dep = cc.find_library('mkl_sycl_blas_dll', dirs: mkl_libdirs, required: false)
         if not mkl_sycl_dep.found()
           mkl_sycl_dep = cc.find_library('mkl_sycl', dirs: mkl_libdirs, required: false)
