@@ -140,6 +140,9 @@ PYBIND11_MODULE(backends, m) {
   
   weights.def("blocks", &lczero::python::Weights::blocks);
   weights.def("filters", &lczero::python::Weights::filters);
+  weights.def("is_transformer", &lczero::python::Weights::is_transformer);
+  weights.def("attention_heads", &lczero::python::Weights::attention_heads);
+  weights.def("embedding_size", &lczero::python::Weights::embedding_size);
   weights.def("__repr__", [](const lczero::python::Weights& w) {
     std::ostringstream oss;
     oss << "Weights(filename='" << w.filename() 
@@ -148,7 +151,10 @@ PYBIND11_MODULE(backends, m) {
         << ", value_format=" << w.value_format()
         << ", moves_left_format=" << w.moves_left_format()
         << ", blocks=" << w.blocks()
-        << ", filters=" << w.filters() << ")";
+        << ", filters=" << w.filters()
+        << ", blocks=" << w.is_transformer()
+        << ", blocks=" << w.attention_heads()
+        << ", blocks=" << w.embedding_size() << ")";
     return oss.str();
   });
   weights.def("__eq__", [](const lczero::python::Weights& w1, const py::object& obj) {
@@ -162,7 +168,10 @@ PYBIND11_MODULE(backends, m) {
            w1.value_format() == w2.value_format() &&
            w1.moves_left_format() == w2.moves_left_format() &&
            w1.blocks() == w2.blocks() &&
-           w1.filters() == w2.filters();
+           w1.filters() == w2.filters() &&
+           w1.is_transformer() == w2.is_transformer() &&
+           w1.attention_heads() == w2.attention_heads() &&
+           w1.embedding_size() == w2.embedding_size();
   });
 
   // Input
