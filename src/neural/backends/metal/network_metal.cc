@@ -168,8 +168,11 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
 }
 
 void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
-  // Metal is not thread-safe, so lock is needed.
-  lock_.lock();
+  // MPSGraphExecutable (compiled path, macOS 13+) is documented thread-safe for
+  // concurrent encodeToCommandBuffer calls, so we skip the lock in that case.
+  // The eager MPSGraph path is not thread-safe and still requires serialization.
+  std::unique_lock<std::mutex> lock(lock_, std::defer_lock);
+  if (!builder_->isCompiled()) lock.lock();
 
   if (moves_left_) {
     builder_->forwardEval(&io->input_val_mem_[0], &io->input_masks_mem_[0],
@@ -181,9 +184,6 @@ void MetalNetwork::forwardEval(InputsOutputs* io, int batchSize) {
                           batchSize,
                           {&io->op_policy_mem_[0], &io->op_value_mem_[0]});
   }
-
-  // The next thread can start using the GPU now.
-  lock_.unlock();
 }
 
 std::unique_ptr<Network> MakeMetalNetwork(const std::optional<WeightsFile>& w,

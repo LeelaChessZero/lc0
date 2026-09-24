@@ -54,6 +54,10 @@ class MetalNetworkBuilder {
   void forwardEval(float* values, uint64_t* masks, int batchSize,
                    std::vector<float*> output_mems);
 
+  // Returns true when the MPSGraphExecutable (compiled path) is ready.
+  // On macOS 13+, concurrent forwardEval calls are safe once compiled.
+  bool isCompiled() const;
+
  private:
   int gpu_id;
 };
