@@ -281,10 +281,9 @@ if get_option('build_backends')
       if fs.is_dir(mkl_inc)
         includes += include_directories(mkl_inc)
       endif
-      if cc.has_header('mkl.h')
-        add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
-        deps += [ mkl_lib ]
-      endif
+      cc.has_header('mkl.h', required: true, include_directories: includes)
+      add_project_arguments(['-DUSE_MKL', '-DUSE_BLAS'], language : 'cpp')
+      deps += [ mkl_lib ]
 
     elif get_option('dnnl') and dnnl_lib.found()
       add_project_arguments(['-DUSE_DNNL', '-DUSE_BLAS'], language : 'cpp')
@@ -887,25 +886,23 @@ if get_option('build_backends')
         add_project_arguments('-DMKL_ILP64', language : 'cpp')
         # oneapi/mkl.hpp is not always found in the default icx headers.
         mkl_include = get_option('mkl_include')
-        if not fs.is_dir(mkl_include)
-          error('mkl_include path does not exist: ' + mkl_include)
+        if fs.is_dir(mkl_include)
+          includes += include_directories(mkl_include)
         endif
-        includes += include_directories(mkl_include)
-        mkl_libdirs = get_option('mkl_libdirs')
-        opencl_libdirs = get_option('opencl_libdirs')
+        cc.has_header('oneapi/mkl.hpp', required: true, include_directories: includes)
         # Various sycl versions ship with different libraries.
-        mkl_sycl_dep = cc.find_library('mkl_sycl_blas_dll', dirs: mkl_libdirs, required: false)
+        mkl_sycl_dep = cc.find_library('mkl_sycl_blas_dll', required: false)
         if not mkl_sycl_dep.found()
-          mkl_sycl_dep = cc.find_library('mkl_sycl', dirs: mkl_libdirs, required: false)
+          mkl_sycl_dep = cc.find_library('mkl_sycl', required: false)
           if not mkl_sycl_dep.found()
-            mkl_sycl_dep = cc.find_library('mkl_sycl_dll', dirs: mkl_libdirs, required: true)
+            mkl_sycl_dep = cc.find_library('mkl_sycl_dll', required: true)
           endif
         endif
         deps += mkl_sycl_dep
-        deps += cc.find_library('mkl_intel_ilp64', dirs: mkl_libdirs, required: true)
-        deps += cc.find_library('mkl_sequential', dirs: mkl_libdirs, required: true)
-        deps += cc.find_library('mkl_core', dirs: mkl_libdirs, required: true)
-        deps += cc.find_library('OpenCL', dirs: opencl_libdirs, required: true)
+        deps += cc.find_library('mkl_intel_ilp64', required: true)
+        deps += cc.find_library('mkl_sequential', required: true)
+        deps += cc.find_library('mkl_core', required: true)
+        deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
         hip_libdirs = get_option('hip_libdirs')
         hip_args = []
