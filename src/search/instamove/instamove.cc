@@ -80,6 +80,10 @@ class InstamoveSearch : public SearchBase {
   }
   void StartClock() final {}
 
+  float GetMaxOutOfOrderFactor() const override {
+    return 0.0f;
+  }
+
   Move bestmove_;
   std::atomic<bool> responded_bestmove_{false};
   std::unique_ptr<Backend> batchsplit_backend_;

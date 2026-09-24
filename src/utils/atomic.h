@@ -26,36 +26,47 @@
 */
 
 #pragma once
-
-#include <gmock/gmock.h>
-
-#include "search/search.h"
+#include <atomic>
+#include <version>
+#if __cpp_lib_atomic_wait < 201907L
+#include <condition_variable>
+#include "utils/mutex.h"
+#endif
 
 namespace lczero {
 
-class MockSearch : public SearchBase {
- public:
-  using SearchBase::SearchBase;
-  UciResponder* GetUciResponder() const { return uci_responder_; }
-  MOCK_METHOD(void, SetBackend, (Backend * backend), (override));
-  MOCK_METHOD(void, SetSyzygyTablebase, (SyzygyTablebase * tb), (override));
-  MOCK_METHOD(void, NewGame, (), (override));
-  MOCK_METHOD(void, SetPosition, (const GameState&), (override));
-  MOCK_METHOD(void, StartSearch, (const GoParams&), (override));
-  MOCK_METHOD(void, StartClock, (), (override));
-  MOCK_METHOD(void, WaitSearch, (), (override));
-  MOCK_METHOD(void, StopSearch, (), (override));
-  MOCK_METHOD(void, AbortSearch, (), (override));
-  MOCK_METHOD(SearchArtifacts, GetArtifacts, (), (const, override));
-  MOCK_METHOD(float, GetMaxOutOfOrderFactor, (), (const, override));
-};
+#if __cpp_lib_atomic_wait >= 201907L
+template <typename T>
+using WaitableAtomic = std::atomic<T>;
+#else
+template <typename T>
+class WaitableAtomic : public std::atomic<T> {
+  using Base = std::atomic<T>;
 
-class MockSearchFactory : public SearchFactory {
  public:
-  MOCK_METHOD(std::string_view, GetName, (), (const, override));
-  MOCK_METHOD(void, PopulateParams, (OptionsParser*), (const, override));
-  MOCK_METHOD(std::unique_ptr<SearchBase>, CreateSearch,
-              (UciResponder*, const OptionsDict*), (const, override));
+  using Base::atomic;
+  using value_type = typename Base::value_type;
+
+  void wait(value_type old, std::memory_order order =
+                                std::memory_order_seq_cst) const noexcept {
+    Mutex::Lock lock(mutex_);
+    cv_.wait(lock.get_raw(), [this, old, order]() { return this->load(order) != old; });
+  }
+
+  void notify_one() noexcept {
+    Mutex::Lock lock(mutex_);
+    cv_.notify_one();
+  }
+
+  void notify_all() noexcept {
+    Mutex::Lock lock(mutex_);
+    cv_.notify_all();
+  }
+
+ private:
+  mutable Mutex mutex_;
+  mutable std::condition_variable cv_;
 };
+#endif
 
 }  // namespace lczero

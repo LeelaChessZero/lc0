@@ -74,7 +74,9 @@ void Benchmark::Run(bool run_shorter_benchmark) {
     auto option_dict = options.GetOptionsDict();
 
     auto backend = CreateMemCache(
-        BackendManager::Get()->CreateFromParams(option_dict), option_dict);
+        BackendManager::Get()->CreateFromParams(option_dict), option_dict,
+        option_dict.Get<float>(
+            classic::BaseSearchParams::kMaxOutOfOrderEvalsFactorId));
 
     const int visits = option_dict.Get<int>(kNodesId);
     const int movetime = option_dict.Get<int>(kMovetimeId);

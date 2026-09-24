@@ -332,6 +332,7 @@ class SearchWorker {
     bool nn_queried = false;
     bool is_tt_hit = false;
     bool is_cache_hit = false;
+    bool is_delayed_cache_hit = false;
     bool is_collision = false;
 
     // Details that are filled in as we go.
