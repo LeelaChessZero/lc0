@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "python/python_chess.h"
+#include "python/weights.h"
 
 namespace py = pybind11;
 
@@ -67,6 +68,19 @@ py::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves) {
         result.append(Move.attr("from_uci")(uci));
     }
     return result;
+}
+
+py::object ToBoard(const GameState& gs) {
+  py::object chess = py::module::import("chess");
+
+  py::object board = chess.attr("Board")(
+      gs.startpos().value_or(ChessBoard::kStartposFen));
+
+  for (const auto& move : gs.move_history()) {
+    board.attr("push_uci")(move);
+  }
+
+  return board;
 }
 
 } // namespace python_chess

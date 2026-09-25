@@ -262,7 +262,10 @@ class GameState {
  public:
   GameState(const std::optional<std::string> startpos,
             const std::vector<std::string>& moves,
-            const bool is_c960): is_c960_(is_c960) {
+            const bool is_c960)
+      : is_c960_(is_c960),
+        startpos_(startpos),
+        moves_(moves) {
     ChessBoard starting_board;
     int no_capture_ply;
     int full_moves;
@@ -317,9 +320,20 @@ class GameState {
     return board.DebugString();
   }
 
+  const std::optional<std::string>& startpos() const {
+    return startpos_;
+  }
+
+  const std::vector<std::string>& move_history() const {
+    return moves_;
+  }
+
  private:
   PositionHistory history_;
   bool is_c960_;
+
+  std::optional<std::string> startpos_;
+  std::vector<std::string> moves_;
 };
 
 }  // namespace python
