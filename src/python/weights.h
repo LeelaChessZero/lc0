@@ -320,6 +320,13 @@ class GameState {
     return board.DebugString();
   }
 
+  void push_uci(const std::string& move) {
+    auto board = history_.Last().GetBoard();
+    Move m = board.ParseMove(move);
+    history_.Append(m);
+    moves_.push_back(move);
+  }
+
   const std::optional<std::string>& startpos() const {
     return startpos_;
   }

@@ -272,5 +272,6 @@ PYBIND11_MODULE(backends, m) {
   game_state.def("policy_indices",
                   &lczero::python::GameState::policy_indices);
   game_state.def("as_string", &lczero::python::GameState::as_string);
+  game_state.def("push_uci", &lczero::python::GameState::push_uci, py::arg("move"));
   game_state.def("to_board", &lczero::python::python_chess::ToBoard);
 }

@@ -83,6 +83,10 @@ py::object ToBoard(const GameState& gs) {
   return board;
 }
 
+void PushMove(GameState& gs, const py::handle& move) {
+  gs.push_uci(move.attr("uci")().cast<std::string>());
+}
+
 } // namespace python_chess
 } // namespace python
 } // namespace lczero

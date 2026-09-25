@@ -49,6 +49,7 @@ struct BoardData {
 BoardData GetBoardData(const py::handle& board);
 py::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves);
 py::object ToBoard(const GameState& gs);
+void PushMove(GameState& gs, const py::handle& move);
 
 } // namespace python_chess
 } // namespace python
