@@ -69,6 +69,7 @@ class Weights {
   int moves_left_format() const {
     return weights_.format().network_format().moves_left();
   }
+  // ResNet API's
   int blocks() const { return weights_.weights().residual_size(); }
   int filters() const {
     if (weights_.weights().residual_size() == 0) {
@@ -76,6 +77,28 @@ class Weights {
     }
     return weights_.weights().residual(0).conv1().weights().params().size() /
            2304;
+  }
+  // Transformer API's
+  bool is_transformer() const {
+    return weights_.weights().encoder_size() > 0;
+  }
+
+  int attention_heads() const {
+    if (!is_transformer()) {
+      throw Exception("This network is not transformer based");
+    }
+    return weights_.weights().headcount();
+  }
+
+  int embedding_size() const {
+    if (!is_transformer()) {
+      throw Exception("This network is not transformer based");
+    }
+    const auto& emb_weights = weights_.weights().ip_emb_w();
+    if (emb_weights.dims_size() < 2) {
+      throw Exception("Invalid embedding weight dimensions");
+    }
+    return emb_weights.dims(1);
   }
 
   // Not exported methods.
@@ -239,7 +262,10 @@ class GameState {
  public:
   GameState(const std::optional<std::string> startpos,
             const std::vector<std::string>& moves,
-            const bool is_c960): is_c960_(is_c960) {
+            const bool is_c960)
+      : is_c960_(is_c960),
+        startpos_(startpos),
+        moves_(moves) {
     ChessBoard starting_board;
     int no_capture_ply;
     int full_moves;
@@ -294,9 +320,27 @@ class GameState {
     return board.DebugString();
   }
 
+  void push_uci(const std::string& move) {
+    auto board = history_.Last().GetBoard();
+    Move m = board.ParseMove(move);
+    history_.Append(m);
+    moves_.push_back(move);
+  }
+
+  const std::optional<std::string>& startpos() const {
+    return startpos_;
+  }
+
+  const std::vector<std::string>& move_history() const {
+    return moves_;
+  }
+
  private:
   PositionHistory history_;
   bool is_c960_;
+
+  std::optional<std::string> startpos_;
+  std::vector<std::string> moves_;
 };
 
 }  // namespace python
