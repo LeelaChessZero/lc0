@@ -1681,12 +1681,6 @@ void SearchWorker::PickNodesToExtendTask(
     receiver->reserve(receiver->size() + 30);
   }
 
-  // AoS picking cache (utility/uct_score/n_started/iter per child, keyed by
-  // original edge index), reused across levels and calls -- see
-  // CachedNodeData's comment in search.h. current_util is 'filled
-  // pre-emptively' (both fill loops below run unconditionally up to
-  // max_needed every level); uct_score/n_started/iter are 'filled on
-  // demand', gated by cache_filled_idx exactly as before.
   auto& cache = workspace->cache;
 
   Node::Iterator best_edge;

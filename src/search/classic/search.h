@@ -340,9 +340,7 @@ class SearchWorker {
     }
     static NodeToProcess Visit(Node* node, uint16_t depth) {
       NodeToProcess np(node, depth, false, 1, 0);
-      // Only visits are ever evaluated (collisions never touch eval -- every
-      // consumer is behind IsCollision/nn_queried guards), so allocate here
-      // rather than for every collision entry.
+      // Only visits are evaluated; collisions never read eval.
       np.eval = std::make_unique<EvalResult>();
       return np;
     }
@@ -357,6 +355,7 @@ class SearchWorker {
           is_collision(is_collision) {}
   };
 
+  // Per-child scratch: policy/utility filled pre-emptively, rest on demand.
   struct ChildCache {
     Node::Iterator iter;
     float policy = 0.0f;
@@ -365,18 +364,13 @@ class SearchWorker {
     int n_started = 0;
   };
 
-  // A lightweight, cache-friendly vector replacement with a spill path.
-  // This stack is indexed by DESCENT DEPTH within one gather task -- which
-  // nothing bounds at 256 (current_path/visits_to_perform are unbounded
-  // vectors, and deep lines occur in real reused trees). The old fixed
-  // array overflowed at push 257 (ASan-confirmed); entries
-  // past the inline capacity now spill to `overflow`, keeping the inline
-  // array hot for every ordinary tree.
+  // Stack indexed by descent depth; entries past kInlineCapacity spill to
+  // `overflow`.
   struct InlineDepthStack {
     static constexpr int kInlineCapacity = 256;
     int count = 0;
-    std::array<int, kInlineCapacity> data;  // gated by count; see cache notes
-    std::vector<int> overflow;              // depth > kInlineCapacity
+    std::array<int, kInlineCapacity> data;
+    std::vector<int> overflow;
 
     void clear() {
       count = 0;
@@ -398,40 +392,22 @@ class SearchWorker {
       }
     }
     int& back() {
-      // Callers only invoke this on a level whose -1 marker was pushed;
-      // the old silent data[-1] was UB, keep it an assertion in debug.
       assert(count > 0);
       return count > kInlineCapacity ? overflow[count - kInlineCapacity - 1]
                                      : data[count - 1];
     }
   };
 
-  // Helper struct to hold cached data during the traversal.
-  // Layout contract: `children` is not explicitly cleared between uses --
-  // every live entry is written before it is read (policy by the per-edge
-  // GetEdgeP() loop, utility by the fill loops, iterator/n_started/uct_score
-  // by the cache_filled_idx-gated precompute inside the UCT scan), and reads
-  // are bounded by max_policy_entries_needed/cache_filled_idx. The same
-  // gating discipline covers vtp_last_filled_cache (push -1 per level), and
-  // it holds whether this object is reused across levels within one call
-  // (always true) or across calls (true now that it lives in TaskWorkspace
-  // below instead of being a per-call local -- a bare local
-  // `CachedNodeData cache;` here does NOT skip construction despite the
-  // dropped `{}` -- every ChildCache scalar has an NSDMI, so the compiler
-  // still emits a ~14KB stack frame and a 256-entry init loop on every call
-  // regardless, confirmed by disassembling the release build. Living in the
-  // already-one-per-worker TaskWorkspace pays that cost once per worker
-  // instead of once per gather task).
+  // Per-level picking scratch, reused across levels and calls. Entries are
+  // written before they are read, so it is never cleared.
   struct alignas(64) CachedNodeData {
-    // 1. Hot scalars (fits into the 1st 64-byte chunk)
+    // Hot scalars first (one cache line).
     float puct_mult = 0.0f;
     int cache_filled_idx = -1;
     int max_policy_entries_needed = 0;
 
-    // 2. Inline Depth Stack
     InlineDepthStack vtp_last_filled_cache;
 
-    // 3. Packed Array of Structures
     std::array<ChildCache, 256> children;
 
     CachedNodeData() = default;
@@ -439,31 +415,13 @@ class SearchWorker {
 
   // Holds per task worker scratch data
   struct TaskWorkspace {
-    // Core search stacks.
-    // vtp arrays are recycled through vtp_buffer WITHOUT being cleared, and
-    // that is load-bearing, not an oversight: every read index is gated by
-    // the per-level InlineDepthStack (vtp_last_filled_cache), fresh ranges
-    // are zeroed by the targeted std::fill where a level first touches
-    // indices above its tracked last-filled, the split pass zeroes entries
-    // it hands off, and consumed-by-child entries are skipped by min_idx
-    // ordering. A path that leaves a nonzero above last-filled, or reads
-    // beyond it, would resurrect stale visits -- keep the invariant (see
-    // PickNodesToExtendTask) or add the fill back with a measurement.
     std::vector<std::unique_ptr<std::array<int, 256>>> vtp_buffer;
     std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
 
-    std::vector<int> current_path;  // which child index we took at each level
+    std::vector<int> current_path;
     std::vector<Move> moves_to_path;
     PositionHistory history;
 
-    // One per worker (this workspace is), reused across every gather task
-    // that worker runs -- see the comment on CachedNodeData above for why
-    // that matters. Same write-before-read gating that already covers reuse
-    // across levels within one call extends to reuse across calls: nothing
-    // reads cache_filled_idx/vtp_last_filled_cache without first resetting
-    // them for the current level (PickNodesToExtendTask does this at the
-    // top of every level's prep block), so a previous call's leftover
-    // contents are never observed.
     CachedNodeData cache;
 
     TaskWorkspace() {

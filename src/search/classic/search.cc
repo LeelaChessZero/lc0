@@ -1580,11 +1580,6 @@ void SearchWorker::PickNodesToExtendTask(
   // with tasks.
   // TODO: pre-reserve visits_to_perform for expected depth and likely maximum
   // width. Maybe even do so outside of lock scope.
-  // Cached per-level data lives in the workspace (one per worker), not a
-  // per-call local -- a local here paid a ~14KB stack frame +
-  // 256-entry NSDMI init on every call regardless of the dropped `{}`.
-  // Reused across calls the same way vtp_buffer/visits_to_perform below
-  // already are.
   auto& cache = workspace->cache;
   auto& vtp_buffer = workspace->vtp_buffer;
   auto& visits_to_perform = workspace->visits_to_perform;
@@ -1689,14 +1684,8 @@ void SearchWorker::PickNodesToExtendTask(
                      node->GetNStarted() + cur_limit + 2);
       }
 
-      // Write policy values straight into the AoS cache, one typed field
-      // access per edge -- no temp buffer, and no pointer arithmetic past
-      // the bounds of what CopyPolicy's old stride parameter was actually
-      // given.
       for (int i = 0; i < cache.max_policy_entries_needed; i++) {
         cache.children[i].policy = node->GetEdgeP(i);
-      }
-      for (int i = 0; i < cache.max_policy_entries_needed; i++) {
         cache.children[i].utility = std::numeric_limits<float>::lowest();
       }
       // Root depth is 1 here, while for GetDrawScore() it's 0-based, that's why
@@ -1708,12 +1697,8 @@ void SearchWorker::PickNodesToExtendTask(
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
         int index = child->Index();
-        // Read the policy from the parent's live edge array rather than
-        // from the capped cache copy: a visited child whose index is beyond
-        // max_policy_entries_needed would otherwise read a stale ChildCache
-        // slot left by a previous level and corrupt visited_pol/FPU.
-        // (Same fix as dag_classic's child->GetP(); classic's Node does not
-        // expose GetP, so go through the parent by the child's edge index.)
+        // Read from the edge: the cached policy only covers the first
+        // max_policy_entries_needed edges.
         visited_pol += node->GetEdgeP(index);
         float q = child->GetQ(draw_score);
         cache.children[index].utility = q + m_evaluator.GetMUtility(child, q);
@@ -1800,12 +1785,12 @@ void SearchWorker::PickNodesToExtendTask(
         if (second_best_edge) {
           int estimated_visits_to_change_best = std::numeric_limits<int>::max();
           if (best_without_u < second_best) {
-            // const auto n1 = cache.children[best_idx].n_started + 1;
+            const auto n1 = cache.children[best_idx].n_started + 1;
             estimated_visits_to_change_best = static_cast<int>(std::max(
                 1.0f,
                 std::min(cache.children[best_idx].policy * cache.puct_mult /
                                  (second_best - best_without_u) -
-                             (cache.children[best_idx].n_started + 1) + 1,
+                             n1 + 1,
                          1e9f)));
           }
           second_best_edge.Reset();

@@ -377,8 +377,7 @@ class SearchWorker {
     }
 
    private:
-    // Collision entries leave eval null: they are never evaluated (every
-    // consumer is behind IsCollision/nn_queried guards).
+    // Collisions are never evaluated, so eval stays null.
     NodeToProcess(const BackupPath& path, uint32_t multivisit,
                   uint32_t max_count)
         : path(path),
@@ -441,13 +440,8 @@ class SearchWorker {
   static_assert(sizeof(CurrentPath) == sizeof(uint32_t),
                 "CurrentPath must be packed into 32 bits");
 
-  // Per-child picking scratch, keyed by ORIGINAL edge index (not the sorted
-  // order visits_to_perform ends up in -- CurrentPath::index_ is what lets
-  // the two stay correlated after visits_to_perform is sorted by visit
-  // count). Ported from classic's AoS refactor: replaces
-  // four parallel std::array<float/int,256>/cur_iters arrays that were
-  // separately indexed by the same idx on every access in the UCT scan
-  // below, trading four scattered cache lines per child for one.
+  // Per-child scratch by edge index: utility filled pre-emptively, rest on
+  // demand.
   struct ChildCache {
     Node::Iterator iter;
     float utility = 0.0f;
@@ -455,18 +449,8 @@ class SearchWorker {
     int n_started = 0;
   };
 
-  // Picker scratch for one tree-descent level, reused across levels within
-  // one PickNodesToExtendTask call AND across calls on the same worker (it
-  // lives in TaskWorkspace, not a per-call/per-level local) -- same
-  // write-before-read-gated-by-cache_filled_idx/max_needed contract as
-  // classic's CachedNodeData, and the same reasoning applies for why reuse
-  // is safe: every live index this level touches gets written before this
-  // level ever reads it (current_util's two fill loops are unconditional up
-  // to max_needed; uct_score/n_started/iter are lazily filled up to
-  // cache_filled_idx, mirroring classic), and visits_to_perform is only
-  // ever read/sorted up to vtp_last_filled (<= max_needed), so a previous
-  // level's or previous call's stale entries beyond that bound are never
-  // observed.
+  // Per-level picking scratch, reused across levels and calls. Entries are
+  // written before they are read, so it is never cleared.
   struct CachedNodeData {
     std::array<ChildCache, 256> children;
     std::array<CurrentPath, kMaxMovesInPosition> visits_to_perform;
@@ -476,8 +460,6 @@ class SearchWorker {
   struct TaskWorkspace {
     std::vector<CurrentPath> current_path;
     BackupPath full_path;
-    // One per worker (this workspace is), reused across every gather task
-    // that worker runs -- see CachedNodeData's comment above.
     CachedNodeData cache;
     TaskWorkspace() {
       current_path.reserve(30);

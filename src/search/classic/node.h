@@ -180,24 +180,7 @@ class Node {
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   uint8_t GetNumEdges() const { return num_edges_; }
 
-  // Output must point to at least max_needed floats.
-  void CopyPolicy(int max_needed, float* output) const {
-    if (!edges_) return;
-    int loops = std::min(static_cast<int>(num_edges_), max_needed);
-    for (int i = 0; i < loops; i++) {
-      output[i] = edges_[i].GetP();
-    }
-  }
-
-  // Single-edge policy accessor, for callers writing into a non-contiguous
-  // (e.g. array-of-structs) destination where CopyPolicy's contiguous
-  // std::min(...)-bounded write doesn't fit. i must be < GetNumEdges().
-  // the previous strided CopyPolicy(..., stride) overload did
-  // char*-cast pointer arithmetic past the bounds of the single float
-  // subobject it was given to reach sibling array-of-structs elements --
-  // works on this compiler, but not standards-safe pointer provenance. This
-  // is the same one GetP() per edge, just typed and bounds-obvious at the
-  // call site instead.)
+  // Policy of edge i (i < GetNumEdges()).
   float GetEdgeP(int i) const { return edges_[i].GetP(); }
 
   // Makes the node terminal and sets it's score.
