@@ -122,7 +122,8 @@ inline SlotView GetSlot(void* base, uint32_t index) {
                index * server->slot_stride;
   auto* positions =
       reinterpret_cast<PositionRecord*>(slot + RoundUp(sizeof(SlotHeader)));
-  auto* results = reinterpret_cast<ResultRecord*>(positions + server->max_batch);
+  auto* results =
+      reinterpret_cast<ResultRecord*>(positions + server->max_batch);
   return {reinterpret_cast<SlotHeader*>(slot), positions, results};
 }
 

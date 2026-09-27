@@ -97,8 +97,8 @@ int main(int argc, const char** argv) {
       CommandLine::RegisterMode("bench", "Very quick benchmark");
       CommandLine::RegisterMode("backendbench",
                                 "Quick benchmark of backend only");
-      CommandLine::RegisterMode(
-          "backendserver", "Serve a backend to --backend=proxy clients");
+      CommandLine::RegisterMode("backendserver",
+                                "Serve a backend to --backend=proxy clients");
       CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
       CommandLine::RegisterMode("onnx2leela",
                                 "Convert ONNX network to Leela net.");

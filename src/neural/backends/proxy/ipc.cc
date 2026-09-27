@@ -69,10 +69,10 @@ SharedMemory SharedMemory::CreateOrAttach(const std::string& name,
   const std::string object_name = ObjectName(name);
 #ifdef _WIN32
   const uint64_t size64 = size;
-  HANDLE handle = CreateFileMappingA(
-      INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
-      static_cast<DWORD>(size64 >> 32), static_cast<DWORD>(size64),
-      object_name.c_str());
+  HANDLE handle =
+      CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+                         static_cast<DWORD>(size64 >> 32),
+                         static_cast<DWORD>(size64), object_name.c_str());
   if (!handle) throw Exception("CreateFileMapping failed: " + object_name);
   shm.handle_ = reinterpret_cast<intptr_t>(handle);
   shm.data_ = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size);
@@ -81,9 +81,8 @@ SharedMemory SharedMemory::CreateOrAttach(const std::string& name,
   if (fd < 0) throw Exception("shm_open failed: " + object_name);
   shm.handle_ = fd;
   struct stat st;
-  if (fstat(fd, &st) != 0 ||
-      (static_cast<size_t>(st.st_size) < size &&
-       ftruncate(fd, static_cast<off_t>(size)) != 0)) {
+  if (fstat(fd, &st) != 0 || (static_cast<size_t>(st.st_size) < size &&
+                              ftruncate(fd, static_cast<off_t>(size)) != 0)) {
     throw Exception("Cannot size shared memory: " + object_name);
   }
   void* data = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -113,8 +112,8 @@ SharedMemory SharedMemory::Open(const std::string& name) {
   shm.handle_ = fd;
   struct stat st;
   if (fstat(fd, &st) == 0 && st.st_size > 0) {
-    void* data = mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED,
-                      fd, 0);
+    void* data =
+        mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     shm.data_ = data == MAP_FAILED ? nullptr : data;
     shm.size_ = st.st_size;
   }

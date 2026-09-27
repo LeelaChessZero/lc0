@@ -46,8 +46,9 @@ namespace {
 using namespace proxy;
 
 const OptionId kServerNameId{
-    "server-name", "", "Name that clients connect to with --backend=proxy "
-                       "--backend-opts=name=<name>."};
+    "server-name", "",
+    "Name that clients connect to with --backend=proxy "
+    "--backend-opts=name=<name>."};
 const OptionId kSlotsId{
     "slots", "",
     "Batches evaluated concurrently, shared by all clients. Use at least the "
@@ -88,7 +89,8 @@ void ServeSlot(Backend* backend, void* base, uint32_t index,
   const uint32_t max_batch = static_cast<ServerHeader*>(base)->max_batch;
   while (true) {
     // Posts can outnumber requests after a restart; the seqs are the truth.
-    const uint64_t seq = slot.header->request_seq.load(std::memory_order_acquire);
+    const uint64_t seq =
+        slot.header->request_seq.load(std::memory_order_acquire);
     if (seq == slot.header->response_seq.load(std::memory_order_relaxed)) {
       request->Wait(-1);
       continue;
@@ -120,8 +122,8 @@ void RunBackendServer() {
       BackendManager::Get()->CreateFromParams(dict);
   const BackendAttributes attributes = backend->GetAttributes();
   const uint32_t num_slots = dict.Get<int>(kSlotsId);
-  const uint32_t max_batch = static_cast<uint32_t>(std::min(
-      dict.Get<int>(kMaxBatchId), attributes.maximum_batch_size));
+  const uint32_t max_batch = static_cast<uint32_t>(
+      std::min(dict.Get<int>(kMaxBatchId), attributes.maximum_batch_size));
 
   SharedMemory shm =
       SharedMemory::CreateOrAttach(name, RegionSize(num_slots, max_batch));
