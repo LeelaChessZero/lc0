@@ -137,6 +137,9 @@ common_files += [
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
   'src/neural/loader.cc',
+  'src/neural/backends/proxy/backend_server.cc',
+  'src/neural/backends/proxy/ipc.cc',
+  'src/neural/backends/proxy/proxy_backend.cc',
   'src/neural/register.cc',
   'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
@@ -214,6 +217,10 @@ deps += dependency('absl_flat_hash_map', 'absl', modules:['absl::flat_hash_map']
                    default_options : ['warning_level=0', 'cpp_std=c++20'])
 
 deps += dependency('threads')
+if host_machine.system() != 'windows'
+  # shm_open and sem_open for the backend proxy on glibc < 2.34.
+  deps += cc.find_library('rt', required : false)
+endif
 
 #############################################################################
 ## Platform specific files

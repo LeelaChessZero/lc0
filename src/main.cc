@@ -28,6 +28,7 @@
 #include "chess/board.h"
 #include "default_search.h"
 #include "engine.h"
+#include "neural/backends/proxy/backend_server.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
@@ -96,6 +97,8 @@ int main(int argc, const char** argv) {
       CommandLine::RegisterMode("bench", "Very quick benchmark");
       CommandLine::RegisterMode("backendbench",
                                 "Quick benchmark of backend only");
+      CommandLine::RegisterMode(
+          "backendserver", "Serve a backend to --backend=proxy clients");
       CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
       CommandLine::RegisterMode("onnx2leela",
                                 "Convert ONNX network to Leela net.");
@@ -126,6 +129,8 @@ int main(int argc, const char** argv) {
       // Backend Benchmark mode.
       BackendBenchmark benchmark;
       benchmark.Run();
+    } else if (CommandLine::ConsumeCommand("backendserver")) {
+      RunBackendServer();
     } else if (CommandLine::ConsumeCommand("leela2onnx")) {
       lczero::ConvertLeelaToOnnx();
     } else if (CommandLine::ConsumeCommand("onnx2leela")) {
