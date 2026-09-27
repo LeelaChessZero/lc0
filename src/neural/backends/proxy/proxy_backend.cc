@@ -74,6 +74,7 @@ class ProxyBackend : public Backend {
       requests_.push_back(NamedSemaphore::Open(RequestName(name_, i)));
       responses_.push_back(NamedSemaphore::Open(ResponseName(name_, i)));
     }
+    slot_results_.resize(header_->num_slots);
     pid_ = CurrentProcessId();
     CERR << "Connected to backend server " << name_ << " (pid "
          << header_->server_pid.load() << ", " << header_->num_slots
@@ -149,6 +150,12 @@ class ProxyBackend : public Backend {
 
   SlotView Slot(uint32_t index) const { return GetSlot(shm_->data(), index); }
 
+  // Kept across batches so a batch allocates nothing once warmed up. Only
+  // the computation that owns the slot touches its entry.
+  std::vector<EvalResultPtr>& SlotResults(uint32_t index) {
+    return slot_results_[index];
+  }
+
  private:
   std::string name_;
   int timeout_ms_;
@@ -158,6 +165,7 @@ class ProxyBackend : public Backend {
   ServerHeader* header_;
   std::vector<NamedSemaphore> requests_;
   std::vector<NamedSemaphore> responses_;
+  std::vector<std::vector<EvalResultPtr>> slot_results_;
 };
 
 class ProxyComputation : public BackendComputation {
@@ -169,12 +177,18 @@ class ProxyComputation : public BackendComputation {
     if (slot_ >= 0 && !in_flight_) backend_->ReleaseSlot(slot_);
   }
 
-  size_t UsedBatchSize() const override { return results_.size(); }
+  size_t UsedBatchSize() const override {
+    return results_ ? results_->size() : 0;
+  }
 
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
-    if (slot_ < 0) slot_ = backend_->AcquireSlot();
-    if (results_.size() >= backend_->max_batch()) {
+    if (slot_ < 0) {
+      slot_ = backend_->AcquireSlot();
+      results_ = &backend_->SlotResults(slot_);
+      results_->clear();
+    }
+    if (results_->size() >= backend_->max_batch()) {
       throw Exception("Batch is larger than the backend server allows");
     }
     if (pos.legal_moves.size() > kMaxLegalMoves) {
@@ -183,7 +197,7 @@ class ProxyComputation : public BackendComputation {
     // The encoder reads at most kMoveHistory positions.
     const auto history =
         pos.pos.last(std::min<size_t>(pos.pos.size(), kMoveHistory));
-    PositionRecord& record = backend_->Slot(slot_).positions[results_.size()];
+    PositionRecord& record = backend_->Slot(slot_).positions[results_->size()];
     record.history_size = history.size();
     record.num_moves = pos.legal_moves.size();
     record.want_policy = !result.p.empty();
@@ -191,20 +205,20 @@ class ProxyComputation : public BackendComputation {
                 history.size() * sizeof(Position));
     std::memcpy(record.moves, pos.legal_moves.data(),
                 pos.legal_moves.size() * sizeof(Move));
-    results_.push_back(result);
+    results_->push_back(result);
     return ENQUEUED_FOR_EVAL;
   }
 
   void ComputeBlocking() override {
-    if (results_.empty()) return;
+    if (!results_ || results_->empty()) return;
     const SlotView slot = backend_->Slot(slot_);
-    slot.header->batch_size = results_.size();
+    slot.header->batch_size = results_->size();
     in_flight_ = true;
     backend_->Run(slot_);
     in_flight_ = false;
-    for (size_t i = 0; i < results_.size(); ++i) {
+    for (size_t i = 0; i < results_->size(); ++i) {
       const ResultRecord& src = slot.results[i];
-      const EvalResultPtr& dst = results_[i];
+      const EvalResultPtr& dst = (*results_)[i];
       if (dst.q) *dst.q = src.q;
       if (dst.d) *dst.d = src.d;
       if (dst.m) *dst.m = src.m;
@@ -217,7 +231,7 @@ class ProxyComputation : public BackendComputation {
   ProxyBackend* const backend_;
   int slot_ = -1;
   bool in_flight_ = false;
-  std::vector<EvalResultPtr> results_;
+  std::vector<EvalResultPtr>* results_ = nullptr;
 };
 
 std::unique_ptr<BackendComputation> ProxyBackend::CreateComputation() {
