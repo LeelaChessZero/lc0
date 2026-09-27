@@ -57,7 +57,7 @@ namespace {
 #ifdef _WIN32
 std::string ObjectName(const std::string& name) { return "Local\\lc0-" + name; }
 #else
-// macOS limits these names to 31 characters, so keep server names short.
+// macOS limits these names to 31 characters, so keep proxy names short.
 std::string ObjectName(const std::string& name) { return "/lc0-" + name; }
 #endif
 
@@ -99,7 +99,7 @@ SharedMemory SharedMemory::Open(const std::string& name) {
 #ifdef _WIN32
   HANDLE handle =
       OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, object_name.c_str());
-  if (!handle) throw Exception("No backend server named " + name);
+  if (!handle) throw Exception("No backend process named " + name);
   shm.handle_ = reinterpret_cast<intptr_t>(handle);
   shm.data_ = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
   MEMORY_BASIC_INFORMATION info;
@@ -108,7 +108,7 @@ SharedMemory SharedMemory::Open(const std::string& name) {
   }
 #else
   const int fd = shm_open(object_name.c_str(), O_RDWR, 0);
-  if (fd < 0) throw Exception("No backend server named " + name);
+  if (fd < 0) throw Exception("No backend process named " + name);
   shm.handle_ = fd;
   struct stat st;
   if (fstat(fd, &st) == 0 && st.st_size > 0) {

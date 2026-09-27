@@ -25,9 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-// --backend=proxy: evaluates batches in a separate `lc0 backendserver`
-// process. Options: name=<server name>, timeout=<ms, 0 waits forever>,
-// restart-wait=<ms to wait for a crashed server to be restarted>.
+// --backend=proxy: evaluates batches in the separate process started by
+// `lc0 backendprocess`. Options:
+//   name=<proxy name>
+//   timeout=<ms, 0 waits forever>
+//   restart-wait=<ms to wait for a crashed backend process to be restarted>
 
 #include <algorithm>
 #include <chrono>
@@ -59,15 +61,15 @@ class ProxyBackend : public Backend {
     restart_wait_ms_ = proxy_options.GetOrDefault<int>("restart-wait", 30000);
 
     shm_ = std::make_unique<SharedMemory>(SharedMemory::Open(name_));
-    header_ = static_cast<ServerHeader*>(shm_->data());
-    if (shm_->size() < sizeof(ServerHeader) ||
+    header_ = static_cast<RegionHeader*>(shm_->data());
+    if (shm_->size() < sizeof(RegionHeader) ||
         header_->ready.load(std::memory_order_acquire) == 0) {
-      throw Exception("Backend server " + name_ + " is not ready");
+      throw Exception("Backend process " + name_ + " is not ready");
     }
     if (header_->magic != kMagic || header_->version != kVersion ||
         header_->position_size != sizeof(Position) ||
         shm_->size() < RegionSize(header_->num_slots, header_->max_batch)) {
-      throw Exception("Backend server " + name_ +
+      throw Exception("Backend process " + name_ +
                       " was built from a different lc0 version");
     }
     for (uint32_t i = 0; i < header_->num_slots; ++i) {
@@ -76,8 +78,8 @@ class ProxyBackend : public Backend {
     }
     slot_results_.resize(header_->num_slots);
     pid_ = CurrentProcessId();
-    CERR << "Connected to backend server " << name_ << " (pid "
-         << header_->server_pid.load() << ", " << header_->num_slots
+    CERR << "Connected to backend process " << name_ << " (pid "
+         << header_->backend_pid.load() << ", " << header_->num_slots
          << " slots, batch up to " << header_->max_batch << ").";
   }
 
@@ -92,7 +94,7 @@ class ProxyBackend : public Backend {
 
   uint32_t max_batch() const { return header_->max_batch; }
 
-  // Blocks until a slot is free. Slots are shared with other clients.
+  // Blocks until a slot is free. Slots are shared with other engines.
   uint32_t AcquireSlot() {
     for (uint32_t spin = 0;; ++spin) {
       for (uint32_t i = 0; i < header_->num_slots; ++i) {
@@ -116,7 +118,7 @@ class ProxyBackend : public Backend {
         .header->owner_pid.store(0, std::memory_order_release);
   }
 
-  // Posts the slot's batch and waits for the server to answer it.
+  // Posts the slot's batch and waits for the backend process to answer it.
   void Run(uint32_t index) {
     SlotHeader* slot = GetSlot(shm_->data(), index).header;
     const uint64_t seq = slot->request_seq.load(std::memory_order_relaxed) + 1;
@@ -131,20 +133,20 @@ class ProxyBackend : public Backend {
       const auto now = std::chrono::steady_clock::now();
       if (timeout_ms_ > 0 &&
           now - start > std::chrono::milliseconds(timeout_ms_)) {
-        throw Exception("Backend server " + name_ + " timed out");
+        throw Exception("Backend process " + name_ + " timed out");
       }
-      // A restarted server finds the pending batch and answers it, so a
-      // crash only costs the time until someone restarts the server.
-      if (IsProcessAlive(header_->server_pid.load())) {
+      // A restarted backend process finds the pending batch and answers
+      // it, so a crash only costs the time until someone restarts it.
+      if (IsProcessAlive(header_->backend_pid.load())) {
         last_alive = now;
         continue;
       }
       if (now - last_alive > std::chrono::milliseconds(restart_wait_ms_)) {
-        throw Exception("Backend server " + name_ + " died");
+        throw Exception("Backend process " + name_ + " died");
       }
     }
     if (slot->failed) {
-      throw Exception("Backend server " + name_ + " failed to evaluate");
+      throw Exception("Backend process " + name_ + " failed to evaluate");
     }
   }
 
@@ -162,7 +164,7 @@ class ProxyBackend : public Backend {
   int restart_wait_ms_;
   uint32_t pid_;
   std::unique_ptr<SharedMemory> shm_;
-  ServerHeader* header_;
+  RegionHeader* header_;
   std::vector<NamedSemaphore> requests_;
   std::vector<NamedSemaphore> responses_;
   std::vector<std::vector<EvalResultPtr>> slot_results_;
@@ -173,7 +175,8 @@ class ProxyComputation : public BackendComputation {
   explicit ProxyComputation(ProxyBackend* backend) : backend_(backend) {}
 
   ~ProxyComputation() override {
-    // If Run() threw, the server may still be reading the slot, so it leaks.
+    // If Run() threw, the backend process may still be reading the slot,
+    // so it leaks.
     if (slot_ >= 0 && !in_flight_) backend_->ReleaseSlot(slot_);
   }
 
@@ -189,7 +192,7 @@ class ProxyComputation : public BackendComputation {
       results_->clear();
     }
     if (results_->size() >= backend_->max_batch()) {
-      throw Exception("Batch is larger than the backend server allows");
+      throw Exception("Batch is larger than the backend process allows");
     }
     if (pos.legal_moves.size() > kMaxLegalMoves) {
       throw Exception("Too many legal moves for the backend proxy");

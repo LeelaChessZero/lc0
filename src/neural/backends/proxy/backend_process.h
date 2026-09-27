@@ -29,8 +29,8 @@
 
 namespace lczero {
 
-// `lc0 backendserver`: loads a backend once and serves batches to
-// --backend=proxy clients in other processes. Runs until killed.
-void RunBackendServer();
+// `lc0 backendprocess`: loads a backend once and evaluates batches for
+// --backend=proxy engines in other processes. Runs until killed.
+void RunBackendProcess();
 
 }  // namespace lczero

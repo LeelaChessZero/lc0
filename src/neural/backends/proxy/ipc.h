@@ -38,7 +38,7 @@ namespace proxy {
 class SharedMemory {
  public:
   // Attaches to an existing region of that name if there is one, so a
-  // restarted server keeps the clients that are still mapped.
+  // restarted backend process keeps the engines that are still mapped.
   static SharedMemory CreateOrAttach(const std::string& name, size_t size);
   static SharedMemory Open(const std::string& name);
 

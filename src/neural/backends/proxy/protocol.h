@@ -25,11 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-// Shared memory layout between `lc0 backendserver` and --backend=proxy.
+// Shared memory layout between `lc0 backendprocess` and --backend=proxy.
 //
-// [ServerHeader][slot 0][slot 1]...  Each slot carries one batch at a time:
+// [RegionHeader][slot 0][slot 1]...  Each slot carries one batch at a time:
 // [SlotHeader][PositionRecord x max_batch][ResultRecord x max_batch], with a
-// request/response semaphore pair. A client claims a slot, writes positions,
+// request/response semaphore pair. An engine claims a slot, writes positions,
 // posts the request and waits for the response whose seq matches its own.
 
 #pragma once
@@ -52,13 +52,13 @@ constexpr uint32_t kVersion = 1;
 constexpr uint32_t kMaxLegalMoves = 256;
 
 // Positions cross the boundary as raw bytes, so both sides must be the same
-// build; ServerHeader::position_size is a cheap guard against mixing them.
+// build; RegionHeader::position_size is a cheap guard against mixing them.
 static_assert(std::is_trivially_copyable_v<Position>);
 static_assert(std::is_trivially_copyable_v<Move>);
 static_assert(std::atomic<uint32_t>::is_always_lock_free);
 static_assert(std::atomic<uint64_t>::is_always_lock_free);
 
-struct ServerHeader {
+struct RegionHeader {
   uint32_t magic;
   uint32_t version;
   uint32_t position_size;
@@ -66,15 +66,15 @@ struct ServerHeader {
   uint32_t max_batch;
   uint64_t slot_stride;
   BackendAttributes attributes;
-  std::atomic<uint32_t> server_pid;
+  std::atomic<uint32_t> backend_pid;
   std::atomic<uint32_t> ready;
 };
 
 struct SlotHeader {
   std::atomic<uint32_t> owner_pid;  // 0 when free.
   uint32_t batch_size;
-  // A request is pending while these differ, so a restarted server picks up
-  // the batch its predecessor died on.
+  // A request is pending while these differ, so a restarted backend
+  // process picks up the batch its predecessor died on.
   std::atomic<uint64_t> request_seq;
   std::atomic<uint64_t> response_seq;
   uint32_t failed;
@@ -107,7 +107,7 @@ inline size_t SlotStride(uint32_t max_batch) {
 }
 
 inline size_t RegionSize(uint32_t num_slots, uint32_t max_batch) {
-  return RoundUp(sizeof(ServerHeader)) + num_slots * SlotStride(max_batch);
+  return RoundUp(sizeof(RegionHeader)) + num_slots * SlotStride(max_batch);
 }
 
 struct SlotView {
@@ -117,13 +117,13 @@ struct SlotView {
 };
 
 inline SlotView GetSlot(void* base, uint32_t index) {
-  const auto* server = static_cast<const ServerHeader*>(base);
-  char* slot = static_cast<char*>(base) + RoundUp(sizeof(ServerHeader)) +
-               index * server->slot_stride;
+  const auto* header = static_cast<const RegionHeader*>(base);
+  char* slot = static_cast<char*>(base) + RoundUp(sizeof(RegionHeader)) +
+               index * header->slot_stride;
   auto* positions =
       reinterpret_cast<PositionRecord*>(slot + RoundUp(sizeof(SlotHeader)));
   auto* results =
-      reinterpret_cast<ResultRecord*>(positions + server->max_batch);
+      reinterpret_cast<ResultRecord*>(positions + header->max_batch);
   return {reinterpret_cast<SlotHeader*>(slot), positions, results};
 }
 

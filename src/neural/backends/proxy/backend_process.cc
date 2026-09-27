@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/backends/proxy/backend_server.h"
+#include "neural/backends/proxy/backend_process.h"
 
 #include <algorithm>
 #include <span>
@@ -45,16 +45,15 @@ namespace {
 
 using namespace proxy;
 
-const OptionId kServerNameId{
-    "server-name", "",
-    "Name that clients connect to with --backend=proxy "
-    "--backend-opts=name=<name>."};
+const OptionId kProxyNameId{"proxy-name", "",
+                            "Name that engines connect to with --backend=proxy "
+                            "--backend-opts=name=<name>."};
 const OptionId kSlotsId{
     "slots", "",
-    "Batches evaluated concurrently, shared by all clients. Use at least the "
-    "total number of search threads across clients."};
+    "Batches evaluated concurrently, shared by all engines. Use at least the "
+    "total number of search threads across engines."};
 const OptionId kMaxBatchId{"max-batch", "",
-                           "Largest batch a client may send in one request."};
+                           "Largest batch an engine may send in one request."};
 
 bool Evaluate(Backend* backend, const SlotView& slot, uint32_t max_batch) {
   const uint32_t batch_size = slot.header->batch_size;
@@ -83,10 +82,10 @@ bool Evaluate(Backend* backend, const SlotView& slot, uint32_t max_batch) {
   return true;
 }
 
-void ServeSlot(Backend* backend, void* base, uint32_t index,
-               NamedSemaphore* request, NamedSemaphore* response) {
+void RunSlot(Backend* backend, void* base, uint32_t index,
+             NamedSemaphore* request, NamedSemaphore* response) {
   const SlotView slot = GetSlot(base, index);
-  const uint32_t max_batch = static_cast<ServerHeader*>(base)->max_batch;
+  const uint32_t max_batch = static_cast<RegionHeader*>(base)->max_batch;
   while (true) {
     // Posts can outnumber requests after a restart; the seqs are the truth.
     const uint64_t seq =
@@ -103,21 +102,21 @@ void ServeSlot(Backend* backend, void* base, uint32_t index,
 
 }  // namespace
 
-void RunBackendServer() {
+void RunBackendProcess() {
   OptionsParser options;
   SharedBackendParams::Populate(&options);
-  options.Add<StringOption>(kServerNameId) = "default";
+  options.Add<StringOption>(kProxyNameId) = "default";
   options.Add<IntOption>(kSlotsId, 1, 256) = 16;
   options.Add<IntOption>(kMaxBatchId, 1, 65536) = 1024;
   if (!options.ProcessAllFlags()) return;
 
   const OptionsDict& dict = options.GetOptionsDict();
-  const std::string name = dict.Get<std::string>(kServerNameId);
+  const std::string name = dict.Get<std::string>(kProxyNameId);
   if (dict.Get<std::string>(SharedBackendParams::kBackendId) == "proxy") {
-    throw Exception("The backend server cannot itself use --backend=proxy");
+    throw Exception("The backend process cannot itself use --backend=proxy");
   }
-  // Loads the weights before the region exists, so clients never see a
-  // server that is not ready yet.
+  // Loads the weights before the region exists, so engines never see a
+  // backend process that is not ready yet.
   std::unique_ptr<Backend> backend =
       BackendManager::Get()->CreateFromParams(dict);
   const BackendAttributes attributes = backend->GetAttributes();
@@ -127,18 +126,18 @@ void RunBackendServer() {
 
   SharedMemory shm =
       SharedMemory::CreateOrAttach(name, RegionSize(num_slots, max_batch));
-  auto* header = static_cast<ServerHeader*>(shm.data());
+  auto* header = static_cast<RegionHeader*>(shm.data());
   if (header->magic == kMagic) {
-    // Replacing a server that died: its clients are still mapped and
+    // Replacing a backend process that died: its engines are still mapped and
     // waiting, so the layout has to stay exactly as it was.
-    if (IsProcessAlive(header->server_pid.load())) {
-      throw Exception("A backend server named " + name + " is running");
+    if (IsProcessAlive(header->backend_pid.load())) {
+      throw Exception("A backend process named " + name + " is running");
     }
     if (header->version != kVersion ||
         header->position_size != sizeof(Position) ||
         header->num_slots != num_slots || header->max_batch != max_batch) {
-      throw Exception("Backend server " + name +
-                      " left clients with a different layout; restart it "
+      throw Exception("Backend process " + name +
+                      " left engines with a different layout; restart it "
                       "with the same --slots and --max-batch");
     }
   } else {
@@ -156,7 +155,7 @@ void RunBackendServer() {
   for (uint32_t i = 0; i < num_slots; ++i) {
     requests.push_back(NamedSemaphore::CreateOrAttach(RequestName(name, i)));
     responses.push_back(NamedSemaphore::CreateOrAttach(ResponseName(name, i)));
-    // Free slots whose client died; their pending batch goes with them.
+    // Free slots whose owner died; their pending batch goes with them.
     SlotHeader* slot = GetSlot(shm.data(), i).header;
     const uint32_t owner = slot->owner_pid.load();
     if (owner != 0 && !IsProcessAlive(owner)) {
@@ -165,17 +164,17 @@ void RunBackendServer() {
     }
   }
 
-  header->server_pid.store(CurrentProcessId());
+  header->backend_pid.store(CurrentProcessId());
   header->ready.store(1, std::memory_order_release);
-  CERR << "Backend server " << name << " ready: " << num_slots
+  CERR << "Backend process " << name << " ready: " << num_slots
        << " slots, batch up to " << max_batch << ".";
 
-  // TODO: reclaim slots of clients that die while this server runs, clean
+  // TODO: reclaim slots of engines that die while this process runs, clean
   // shutdown (unlink the POSIX objects), and a supervisor that restarts the
-  // server after a crash.
+  // backend process after a crash.
   std::vector<std::thread> threads;
   for (uint32_t i = 0; i < num_slots; ++i) {
-    threads.emplace_back(ServeSlot, backend.get(), shm.data(), i, &requests[i],
+    threads.emplace_back(RunSlot, backend.get(), shm.data(), i, &requests[i],
                          &responses[i]);
   }
   for (auto& thread : threads) thread.join();
