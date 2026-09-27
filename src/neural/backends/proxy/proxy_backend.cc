@@ -25,21 +25,27 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-// --backend=proxy: evaluates batches in the separate process started by
-// `lc0 backendprocess`. Options:
-//   name=<proxy name>
-//   timeout=<ms, 0 waits forever>
-//   restart-wait=<ms to wait for a crashed backend process to be restarted>
+// The engine side of the backend process. lc0 runs every backend it creates in
+// a child process, so a crash in the backend or in the GPU driver costs a
+// restart of that process instead of the engine. Batches cross in shared
+// memory, see protocol.h.
+
+#include "neural/backends/proxy/proxy_backend.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <iomanip>
+#include <mutex>
+#include <sstream>
+#include <string>
 #include <thread>
 #include <vector>
 
 #include "neural/backends/proxy/ipc.h"
 #include "neural/backends/proxy/protocol.h"
-#include "neural/register.h"
 #include "neural/shared_params.h"
 #include "utils/exception.h"
 #include "utils/logging.h"
@@ -48,109 +54,146 @@ namespace lczero {
 namespace proxy {
 namespace {
 
+// Batches in flight at once; more search threads than this wait for a slot.
+constexpr uint32_t kNumSlots = 16;
+// No network backend reports a larger maximum batch size.
+constexpr uint32_t kMaxBatch = 1024;
 constexpr int kPollMs = 100;
+constexpr int kStopWaitMs = 2000;
+// Restarts while one batch is pending before it fails.
+constexpr uint32_t kMaxRestarts = 2;
+
+std::string Flag(const OptionId& id, const std::string& value) {
+  return std::string("--") + id.long_flag() + "=" + value;
+}
+
+// The options the backend process needs, as its command line.
+std::vector<std::string> ForwardedFlags(const OptionsDict& options) {
+  std::vector<std::string> flags;
+  for (const OptionId* id :
+       {&SharedBackendParams::kWeightsId, &SharedBackendParams::kBackendId,
+        &SharedBackendParams::kBackendOptionsId,
+        &SharedBackendParams::kHistoryFill}) {
+    flags.push_back(Flag(*id, options.Get<std::string>(*id)));
+  }
+  std::ostringstream temperature;
+  temperature << std::setprecision(9)
+              << options.Get<float>(SharedBackendParams::kPolicySoftmaxTemp);
+  flags.push_back(
+      Flag(SharedBackendParams::kPolicySoftmaxTemp, temperature.str()));
+  return flags;
+}
+
+// Unique among the backends of all running lc0 processes.
+std::string NewName() {
+  static std::atomic<uint32_t> counter{0};
+  return std::to_string(CurrentProcessId()) + "-" + std::to_string(counter++);
+}
 
 class ProxyBackend : public Backend {
  public:
-  explicit ProxyBackend(const OptionsDict& options) {
-    OptionsDict proxy_options;
-    proxy_options.AddSubdictFromString(
-        options.Get<std::string>(SharedBackendParams::kBackendOptionsId));
-    name_ = proxy_options.GetOrDefault<std::string>("name", "default");
-    timeout_ms_ = proxy_options.GetOrDefault<int>("timeout", 0);
-    restart_wait_ms_ = proxy_options.GetOrDefault<int>("restart-wait", 30000);
-
-    shm_ = std::make_unique<SharedMemory>(SharedMemory::Open(name_));
-    header_ = static_cast<RegionHeader*>(shm_->data());
-    if (shm_->size() < sizeof(RegionHeader) ||
-        header_->ready.load(std::memory_order_acquire) == 0) {
-      throw Exception("Backend process " + name_ + " is not ready");
+  explicit ProxyBackend(const OptionsDict& options)
+      : flags_(ForwardedFlags(options)),
+        name_(NewName()),
+        shm_(SharedMemory::Create(name_, RegionSize(kNumSlots, kMaxBatch))),
+        header_(static_cast<RegionHeader*>(shm_.data())),
+        slot_results_(kNumSlots) {
+    header_->version = kVersion;
+    header_->position_size = sizeof(Position);
+    header_->num_slots = kNumSlots;
+    header_->max_batch = kMaxBatch;
+    header_->slot_stride = SlotStride(kMaxBatch);
+    header_->magic = kMagic;
+    for (uint32_t i = 0; i < kNumSlots; ++i) {
+      requests_.push_back(NamedSemaphore::Create(RequestName(name_, i)));
+      responses_.push_back(NamedSemaphore::Create(ResponseName(name_, i)));
+      free_slots_.push_back(i);
     }
-    if (header_->magic != kMagic || header_->version != kVersion ||
-        header_->position_size != sizeof(Position) ||
-        shm_->size() < RegionSize(header_->num_slots, header_->max_batch)) {
-      throw Exception("Backend process " + name_ +
-                      " was built from a different lc0 version");
+    {
+      std::lock_guard lock(process_mutex_);
+      StartProcess();
     }
-    for (uint32_t i = 0; i < header_->num_slots; ++i) {
-      requests_.push_back(NamedSemaphore::Open(RequestName(name_, i)));
-      responses_.push_back(NamedSemaphore::Open(ResponseName(name_, i)));
-    }
-    slot_results_.resize(header_->num_slots);
-    pid_ = CurrentProcessId();
-    CERR << "Connected to backend process " << name_ << " (pid "
-         << header_->backend_pid.load() << ", " << header_->num_slots
-         << " slots, batch up to " << header_->max_batch << ").";
+    attributes_ = header_->attributes;
+    attributes_.maximum_batch_size =
+        std::min<int>(attributes_.maximum_batch_size, kMaxBatch);
+    Backend::UpdateConfiguration(options);
+    LOGFILE << "Backend process " << name_ << " started.";
   }
 
-  BackendAttributes GetAttributes() const override {
-    BackendAttributes attributes = header_->attributes;
-    attributes.maximum_batch_size = std::min<int>(
-        attributes.maximum_batch_size, static_cast<int>(header_->max_batch));
-    return attributes;
+  ~ProxyBackend() override {
+    header_->stop.store(1, std::memory_order_release);
+    for (NamedSemaphore& request : requests_) request.Post();
+    process_.Stop(kStopWaitMs);
   }
+
+  BackendAttributes GetAttributes() const override { return attributes_; }
 
   std::unique_ptr<BackendComputation> CreateComputation() override;
 
-  uint32_t max_batch() const { return header_->max_batch; }
+  UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& options) override {
+    Backend::UpdateConfiguration(options);
+    // The backend process got these on its command line, so any change,
+    // even to the softmax temperature, takes a new process.
+    return ForwardedFlags(options) == flags_ ? UPDATE_OK : NEED_RESTART;
+  }
 
-  // Blocks until a slot is free. Slots are shared with other engines.
+  // Blocks until a slot is free.
   uint32_t AcquireSlot() {
-    for (uint32_t spin = 0;; ++spin) {
-      for (uint32_t i = 0; i < header_->num_slots; ++i) {
-        uint32_t expected = 0;
-        if (GetSlot(shm_->data(), i)
-                .header->owner_pid.compare_exchange_strong(expected, pid_)) {
-          return i;
-        }
-      }
-      // TODO: reclaim slots whose owner died with no request in flight.
-      if (spin < 64) {
-        std::this_thread::yield();
-      } else {
-        std::this_thread::sleep_for(std::chrono::microseconds(50));
-      }
-    }
+    std::unique_lock lock(slots_mutex_);
+    slot_freed_.wait(lock, [&] { return !free_slots_.empty(); });
+    const uint32_t index = free_slots_.back();
+    free_slots_.pop_back();
+    return index;
   }
 
   void ReleaseSlot(uint32_t index) {
-    GetSlot(shm_->data(), index)
-        .header->owner_pid.store(0, std::memory_order_release);
+    {
+      std::lock_guard lock(slots_mutex_);
+      free_slots_.push_back(index);
+    }
+    slot_freed_.notify_one();
   }
 
-  // Posts the slot's batch and waits for the backend process to answer it.
+  // Posts the slot's batch and waits for the backend process to answer it,
+  // restarting the process if it dies meanwhile.
   void Run(uint32_t index) {
-    SlotHeader* slot = GetSlot(shm_->data(), index).header;
+    SlotHeader* slot = Slot(index).header;
     const uint64_t seq = slot->request_seq.load(std::memory_order_relaxed) + 1;
+    const uint32_t first_start = starts_.load(std::memory_order_relaxed);
     slot->failed = 0;
     slot->request_seq.store(seq, std::memory_order_release);
     requests_[index].Post();
 
-    const auto start = std::chrono::steady_clock::now();
-    auto last_alive = start;
     while (slot->response_seq.load(std::memory_order_acquire) != seq) {
       if (responses_[index].Wait(kPollMs)) continue;
-      const auto now = std::chrono::steady_clock::now();
-      if (timeout_ms_ > 0 &&
-          now - start > std::chrono::milliseconds(timeout_ms_)) {
-        throw Exception("Backend process " + name_ + " timed out");
-      }
-      // A restarted backend process finds the pending batch and answers
-      // it, so a crash only costs the time until someone restarts it.
-      if (IsProcessAlive(header_->backend_pid.load())) {
-        last_alive = now;
+      std::lock_guard lock(process_mutex_);
+      if (process_.IsRunning() ||
+          slot->response_seq.load(std::memory_order_acquire) == seq) {
         continue;
       }
-      if (now - last_alive > std::chrono::milliseconds(restart_wait_ms_)) {
-        throw Exception("Backend process " + name_ + " died");
+      // A batch that crashes every process it meets must not loop forever.
+      // Marking it answered keeps the next process away from it.
+      if (starts_.load(std::memory_order_relaxed) - first_start >=
+          kMaxRestarts) {
+        slot->response_seq.store(seq, std::memory_order_relaxed);
+        throw Exception("The backend process keeps crashing");
+      }
+      CERR << "The backend process died, restarting it.";
+      try {
+        // The new process answers the pending batches, as their seqs differ.
+        StartProcess();
+      } catch (...) {
+        slot->response_seq.store(seq, std::memory_order_relaxed);
+        throw;
       }
     }
     if (slot->failed) {
-      throw Exception("Backend process " + name_ + " failed to evaluate");
+      throw Exception("The backend process failed to evaluate a batch");
     }
   }
 
-  SlotView Slot(uint32_t index) const { return GetSlot(shm_->data(), index); }
+  SlotView Slot(uint32_t index) const { return GetSlot(shm_.data(), index); }
 
   // Kept across batches so a batch allocates nothing once warmed up. Only
   // the computation that owns the slot touches its entry.
@@ -159,14 +202,51 @@ class ProxyBackend : public Backend {
   }
 
  private:
-  std::string name_;
-  int timeout_ms_;
-  int restart_wait_ms_;
-  uint32_t pid_;
-  std::unique_ptr<SharedMemory> shm_;
-  RegionHeader* header_;
+  // Starts the backend process and waits until it has loaded the network.
+  // Requires process_mutex_.
+  void StartProcess() {
+    header_->state.store(ProcessState::kStarting, std::memory_order_relaxed);
+    header_->error[0] = '\0';
+    std::vector<std::string> args = {
+        ExecutablePath(), "backendprocess", "--name=" + name_,
+        "--parent-pid=" + std::to_string(CurrentProcessId())};
+    args.insert(args.end(), flags_.begin(), flags_.end());
+    process_ = ChildProcess::Spawn(args);
+    starts_.fetch_add(1, std::memory_order_relaxed);
+    while (true) {
+      const ProcessState state = header_->state.load(std::memory_order_acquire);
+      if (state == ProcessState::kReady) return;
+      if (state == ProcessState::kFailed) {
+        throw Exception(std::string(
+            header_->error, strnlen(header_->error, sizeof(header_->error))));
+      }
+      if (!process_.IsRunning()) {
+        // It may have set the state just before it exited.
+        if (header_->state.load(std::memory_order_acquire) !=
+            ProcessState::kStarting) {
+          continue;
+        }
+        throw Exception("The backend process exited while loading the network");
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
+
+  const std::vector<std::string> flags_;
+  const std::string name_;
+  SharedMemory shm_;
+  RegionHeader* const header_;
   std::vector<NamedSemaphore> requests_;
   std::vector<NamedSemaphore> responses_;
+  BackendAttributes attributes_;
+
+  std::mutex process_mutex_;
+  ChildProcess process_;
+  std::atomic<uint32_t> starts_{0};
+
+  std::mutex slots_mutex_;
+  std::condition_variable slot_freed_;
+  std::vector<uint32_t> free_slots_;
   std::vector<std::vector<EvalResultPtr>> slot_results_;
 };
 
@@ -174,10 +254,9 @@ class ProxyComputation : public BackendComputation {
  public:
   explicit ProxyComputation(ProxyBackend* backend) : backend_(backend) {}
 
+  // Also after Run() threw: the slot is answered or its process is dead.
   ~ProxyComputation() override {
-    // If Run() threw, the backend process may still be reading the slot,
-    // so it leaks.
-    if (slot_ >= 0 && !in_flight_) backend_->ReleaseSlot(slot_);
+    if (slot_ >= 0) backend_->ReleaseSlot(slot_);
   }
 
   size_t UsedBatchSize() const override {
@@ -191,11 +270,11 @@ class ProxyComputation : public BackendComputation {
       results_ = &backend_->SlotResults(slot_);
       results_->clear();
     }
-    if (results_->size() >= backend_->max_batch()) {
+    if (results_->size() >= kMaxBatch) {
       throw Exception("Batch is larger than the backend process allows");
     }
     if (pos.legal_moves.size() > kMaxLegalMoves) {
-      throw Exception("Too many legal moves for the backend proxy");
+      throw Exception("Too many legal moves for the backend process");
     }
     // The encoder reads at most kMoveHistory positions.
     const auto history =
@@ -216,9 +295,7 @@ class ProxyComputation : public BackendComputation {
     if (!results_ || results_->empty()) return;
     const SlotView slot = backend_->Slot(slot_);
     slot.header->batch_size = results_->size();
-    in_flight_ = true;
     backend_->Run(slot_);
-    in_flight_ = false;
     for (size_t i = 0; i < results_->size(); ++i) {
       const ResultRecord& src = slot.results[i];
       const EvalResultPtr& dst = (*results_)[i];
@@ -233,7 +310,6 @@ class ProxyComputation : public BackendComputation {
  private:
   ProxyBackend* const backend_;
   int slot_ = -1;
-  bool in_flight_ = false;
   std::vector<EvalResultPtr>* results_ = nullptr;
 };
 
@@ -241,18 +317,11 @@ std::unique_ptr<BackendComputation> ProxyBackend::CreateComputation() {
   return std::make_unique<ProxyComputation>(this);
 }
 
-class ProxyBackendFactory : public BackendFactory {
- public:
-  int GetPriority() const override { return -1000; }
-  std::string_view GetName() const override { return "proxy"; }
-  std::unique_ptr<Backend> Create(const OptionsDict& options) override {
-    return std::make_unique<ProxyBackend>(options);
-  }
-};
-
-[[maybe_unused]] static BackendManager::Register reg_proxy(
-    std::make_unique<ProxyBackendFactory>());
-
 }  // namespace
+
+std::unique_ptr<Backend> CreateProxyBackend(const OptionsDict& options) {
+  return std::make_unique<ProxyBackend>(options);
+}
+
 }  // namespace proxy
 }  // namespace lczero

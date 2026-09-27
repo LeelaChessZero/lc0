@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace lczero {
 namespace proxy {
@@ -37,9 +38,9 @@ namespace proxy {
 // Named shared memory, visible to other processes of the same user session.
 class SharedMemory {
  public:
-  // Attaches to an existing region of that name if there is one, so a
-  // restarted backend process keeps the engines that are still mapped.
-  static SharedMemory CreateOrAttach(const std::string& name, size_t size);
+  // Creates a zero-filled region. On POSIX the creator removes the name again
+  // when it is destroyed.
+  static SharedMemory Create(const std::string& name, size_t size);
   static SharedMemory Open(const std::string& name);
 
   SharedMemory(SharedMemory&& other) noexcept;
@@ -58,11 +59,13 @@ class SharedMemory {
   void* data_ = nullptr;
   size_t size_ = 0;
   intptr_t handle_ = -1;
+  std::string unlink_name_;
 };
 
 class NamedSemaphore {
  public:
-  static NamedSemaphore CreateOrAttach(const std::string& name);
+  // On POSIX the creator removes the name again when it is destroyed.
+  static NamedSemaphore Create(const std::string& name);
   static NamedSemaphore Open(const std::string& name);
 
   NamedSemaphore(NamedSemaphore&& other) noexcept;
@@ -80,10 +83,41 @@ class NamedSemaphore {
   void Release();
 
   void* handle_ = nullptr;
+  std::string unlink_name_;
+};
+
+// A child process. It is killed when this object is destroyed, and on Windows
+// also when this process dies.
+class ChildProcess {
+ public:
+  ChildProcess() = default;
+  // args[0] is the executable. The child's stdout goes to this process's
+  // stderr, as stdout carries UCI, and it gets no stdin.
+  static ChildProcess Spawn(const std::vector<std::string>& args);
+
+  ChildProcess(ChildProcess&& other) noexcept;
+  ChildProcess& operator=(ChildProcess&& other) noexcept;
+  ChildProcess(const ChildProcess&) = delete;
+  ChildProcess& operator=(const ChildProcess&) = delete;
+  ~ChildProcess();
+
+  uint32_t pid() const { return pid_; }
+  // Not thread safe: on POSIX it reaps the child once it has exited.
+  bool IsRunning();
+  // Waits up to timeout_ms for the child to exit, then kills it.
+  void Stop(int timeout_ms);
+
+ private:
+  uint32_t pid_ = 0;
+  void* process_ = nullptr;
+  void* job_ = nullptr;
 };
 
 uint32_t CurrentProcessId();
-bool IsProcessAlive(uint32_t pid);
+// Path of the running executable, to start another copy of it.
+std::string ExecutablePath();
+// Blocks until the parent process, `parent_pid`, exits.
+void WaitForParentExit(uint32_t parent_pid);
 
 }  // namespace proxy
 }  // namespace lczero

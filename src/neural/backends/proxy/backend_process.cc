@@ -27,7 +27,9 @@
 
 #include "neural/backends/proxy/backend_process.h"
 
-#include <algorithm>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
 #include <span>
 #include <thread>
 #include <vector>
@@ -45,15 +47,8 @@ namespace {
 
 using namespace proxy;
 
-const OptionId kProxyNameId{"proxy-name", "",
-                            "Name that engines connect to with --backend=proxy "
-                            "--backend-opts=name=<name>."};
-const OptionId kSlotsId{
-    "slots", "",
-    "Batches evaluated concurrently, shared by all engines. Use at least the "
-    "total number of search threads across engines."};
-const OptionId kMaxBatchId{"max-batch", "",
-                           "Largest batch an engine may send in one request."};
+const OptionId kNameId{"name", "", "Shared memory the engine created."};
+const OptionId kParentPidId{"parent-pid", "", "Process id of the engine."};
 
 bool Evaluate(Backend* backend, const SlotView& slot, uint32_t max_batch) {
   const uint32_t batch_size = slot.header->batch_size;
@@ -84,9 +79,9 @@ bool Evaluate(Backend* backend, const SlotView& slot, uint32_t max_batch) {
 
 void RunSlot(Backend* backend, void* base, uint32_t index,
              NamedSemaphore* request, NamedSemaphore* response) {
+  const auto* header = static_cast<const RegionHeader*>(base);
   const SlotView slot = GetSlot(base, index);
-  const uint32_t max_batch = static_cast<RegionHeader*>(base)->max_batch;
-  while (true) {
+  while (!header->stop.load(std::memory_order_acquire)) {
     // Posts can outnumber requests after a restart; the seqs are the truth.
     const uint64_t seq =
         slot.header->request_seq.load(std::memory_order_acquire);
@@ -94,7 +89,7 @@ void RunSlot(Backend* backend, void* base, uint32_t index,
       request->Wait(-1);
       continue;
     }
-    slot.header->failed = !Evaluate(backend, slot, max_batch);
+    slot.header->failed = !Evaluate(backend, slot, header->max_batch);
     slot.header->response_seq.store(seq, std::memory_order_release);
     response->Post();
   }
@@ -105,75 +100,49 @@ void RunSlot(Backend* backend, void* base, uint32_t index,
 void RunBackendProcess() {
   OptionsParser options;
   SharedBackendParams::Populate(&options);
-  options.Add<StringOption>(kProxyNameId) = "default";
-  options.Add<IntOption>(kSlotsId, 1, 256) = 16;
-  options.Add<IntOption>(kMaxBatchId, 1, 65536) = 1024;
+  options.Add<StringOption>(kNameId);
+  options.Add<IntOption>(kParentPidId, 0, std::numeric_limits<int>::max()) = 0;
   if (!options.ProcessAllFlags()) return;
-
   const OptionsDict& dict = options.GetOptionsDict();
-  const std::string name = dict.Get<std::string>(kProxyNameId);
-  if (dict.Get<std::string>(SharedBackendParams::kBackendId) == "proxy") {
-    throw Exception("The backend process cannot itself use --backend=proxy");
-  }
-  // Loads the weights before the region exists, so engines never see a
-  // backend process that is not ready yet.
-  std::unique_ptr<Backend> backend =
-      BackendManager::Get()->CreateFromParams(dict);
-  const BackendAttributes attributes = backend->GetAttributes();
-  const uint32_t num_slots = dict.Get<int>(kSlotsId);
-  const uint32_t max_batch = static_cast<uint32_t>(
-      std::min(dict.Get<int>(kMaxBatchId), attributes.maximum_batch_size));
 
-  SharedMemory shm =
-      SharedMemory::CreateOrAttach(name, RegionSize(num_slots, max_batch));
+  // Nothing is left to evaluate for once the engine is gone, and on POSIX
+  // nothing else ends this process then.
+  const uint32_t parent_pid = dict.Get<int>(kParentPidId);
+  std::thread([parent_pid] {
+    WaitForParentExit(parent_pid);
+    std::_Exit(1);
+  }).detach();
+
+  const std::string name = dict.Get<std::string>(kNameId);
+  SharedMemory shm = SharedMemory::Open(name);
+  // Too small to hold an error message; the engine sees this process exit.
+  if (shm.size() < sizeof(RegionHeader)) return;
   auto* header = static_cast<RegionHeader*>(shm.data());
-  if (header->magic == kMagic) {
-    // Replacing a backend process that died: its engines are still mapped and
-    // waiting, so the layout has to stay exactly as it was.
-    if (IsProcessAlive(header->backend_pid.load())) {
-      throw Exception("A backend process named " + name + " is running");
-    }
-    if (header->version != kVersion ||
-        header->position_size != sizeof(Position) ||
-        header->num_slots != num_slots || header->max_batch != max_batch) {
-      throw Exception("Backend process " + name +
-                      " left engines with a different layout; restart it "
-                      "with the same --slots and --max-batch");
-    }
-  } else {
-    header->version = kVersion;
-    header->position_size = sizeof(Position);
-    header->num_slots = num_slots;
-    header->max_batch = max_batch;
-    header->slot_stride = SlotStride(max_batch);
-    header->magic = kMagic;
-  }
-  header->attributes = attributes;
 
   std::vector<NamedSemaphore> requests;
   std::vector<NamedSemaphore> responses;
-  for (uint32_t i = 0; i < num_slots; ++i) {
-    requests.push_back(NamedSemaphore::CreateOrAttach(RequestName(name, i)));
-    responses.push_back(NamedSemaphore::CreateOrAttach(ResponseName(name, i)));
-    // Free slots whose owner died; their pending batch goes with them.
-    SlotHeader* slot = GetSlot(shm.data(), i).header;
-    const uint32_t owner = slot->owner_pid.load();
-    if (owner != 0 && !IsProcessAlive(owner)) {
-      slot->response_seq.store(slot->request_seq.load());
-      slot->owner_pid.store(0);
+  std::unique_ptr<Backend> backend;
+  try {
+    if (header->magic != kMagic || header->version != kVersion ||
+        header->position_size != sizeof(Position) ||
+        shm.size() < RegionSize(header->num_slots, header->max_batch)) {
+      throw Exception("The backend process is from a different lc0 build");
     }
+    for (uint32_t i = 0; i < header->num_slots; ++i) {
+      requests.push_back(NamedSemaphore::Open(RequestName(name, i)));
+      responses.push_back(NamedSemaphore::Open(ResponseName(name, i)));
+    }
+    backend = BackendManager::Get()->CreateInProcess(dict);
+  } catch (const std::exception& e) {
+    std::strncpy(header->error, e.what(), sizeof(header->error) - 1);
+    header->state.store(ProcessState::kFailed, std::memory_order_release);
+    return;
   }
+  header->attributes = backend->GetAttributes();
+  header->state.store(ProcessState::kReady, std::memory_order_release);
 
-  header->backend_pid.store(CurrentProcessId());
-  header->ready.store(1, std::memory_order_release);
-  CERR << "Backend process " << name << " ready: " << num_slots
-       << " slots, batch up to " << max_batch << ".";
-
-  // TODO: reclaim slots of engines that die while this process runs, clean
-  // shutdown (unlink the POSIX objects), and a supervisor that restarts the
-  // backend process after a crash.
   std::vector<std::thread> threads;
-  for (uint32_t i = 0; i < num_slots; ++i) {
+  for (uint32_t i = 0; i < header->num_slots; ++i) {
     threads.emplace_back(RunSlot, backend.get(), shm.data(), i, &requests[i],
                          &responses[i]);
   }

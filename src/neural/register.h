@@ -47,8 +47,16 @@ class BackendManager {
   std::vector<std::string> GetBackendNames() const;
 
   // Creates a backend from the parameters. Extracts the weights file and the
-  // backend from the options.
+  // backend from the options. Goes through the launcher if one is set.
   std::unique_ptr<Backend> CreateFromParams(const OptionsDict& options) const;
+
+  // Same as CreateFromParams(), but always in this process.
+  std::unique_ptr<Backend> CreateInProcess(const OptionsDict& options) const;
+
+  // Creates the backends that CreateFromParams() returns somewhere else, such
+  // as in a child process. nullptr (the default) creates them in this process.
+  using Launcher = std::unique_ptr<Backend> (*)(const OptionsDict& options);
+  void SetLauncher(Launcher launcher) { launcher_ = launcher; }
 
   // Creates a backend from the name. Backend name from the options is ignored.
   // Note that unlike the WeightsFactory, the "options" parameter contains
@@ -69,6 +77,7 @@ class BackendManager {
   BackendManager() = default;
 
   std::vector<std::unique_ptr<BackendFactory>> algorithms_;
+  Launcher launcher_ = nullptr;
 };
 
 #define REGISTER_BACKEND(factory)                                    \

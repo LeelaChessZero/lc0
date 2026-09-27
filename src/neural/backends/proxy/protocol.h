@@ -25,12 +25,14 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-// Shared memory layout between `lc0 backendprocess` and --backend=proxy.
+// Shared memory layout between lc0 and the backend process it starts.
 //
-// [RegionHeader][slot 0][slot 1]...  Each slot carries one batch at a time:
-// [SlotHeader][PositionRecord x max_batch][ResultRecord x max_batch], with a
-// request/response semaphore pair. An engine claims a slot, writes positions,
-// posts the request and waits for the response whose seq matches its own.
+// lc0 creates the region and the semaphores, then starts `lc0 backendprocess`,
+// which loads the network, fills in the attributes and sets the state to
+// kReady. [RegionHeader][slot 0][slot 1]...  Each slot carries one batch at a
+// time: [SlotHeader][PositionRecord x max_batch][ResultRecord x max_batch],
+// with a request/response semaphore pair. lc0 writes the positions, posts the
+// request and waits for the response whose seq matches its own.
 
 #pragma once
 
@@ -51,10 +53,14 @@ constexpr uint32_t kMagic = 0x6c63304e;
 constexpr uint32_t kVersion = 1;
 constexpr uint32_t kMaxLegalMoves = 256;
 
+enum class ProcessState : uint32_t { kStarting, kReady, kFailed };
+
 // Positions cross the boundary as raw bytes, so both sides must be the same
 // build; RegionHeader::position_size is a cheap guard against mixing them.
 static_assert(std::is_trivially_copyable_v<Position>);
 static_assert(std::is_trivially_copyable_v<Move>);
+static_assert(std::is_trivially_copyable_v<BackendAttributes>);
+static_assert(std::atomic<ProcessState>::is_always_lock_free);
 static_assert(std::atomic<uint32_t>::is_always_lock_free);
 static_assert(std::atomic<uint64_t>::is_always_lock_free);
 
@@ -65,19 +71,22 @@ struct RegionHeader {
   uint32_t num_slots;
   uint32_t max_batch;
   uint64_t slot_stride;
+  // Written by the backend process before it sets the state to kReady.
   BackendAttributes attributes;
-  std::atomic<uint32_t> backend_pid;
-  std::atomic<uint32_t> ready;
+  std::atomic<ProcessState> state;
+  // Set by lc0 to make the backend process exit.
+  std::atomic<uint32_t> stop;
+  // Why loading failed, when the state is kFailed.
+  char error[1024];
 };
 
 struct SlotHeader {
-  std::atomic<uint32_t> owner_pid;  // 0 when free.
   uint32_t batch_size;
+  uint32_t failed;
   // A request is pending while these differ, so a restarted backend
   // process picks up the batch its predecessor died on.
   std::atomic<uint64_t> request_seq;
   std::atomic<uint64_t> response_seq;
-  uint32_t failed;
 };
 
 struct PositionRecord {
@@ -102,7 +111,8 @@ struct ResultRecord {
 constexpr size_t RoundUp(size_t size) { return (size + 63) / 64 * 64; }
 
 inline size_t SlotStride(uint32_t max_batch) {
-  return RoundUp(sizeof(SlotHeader) +
+  // GetSlot() starts the positions at RoundUp(sizeof(SlotHeader)).
+  return RoundUp(RoundUp(sizeof(SlotHeader)) +
                  max_batch * (sizeof(PositionRecord) + sizeof(ResultRecord)));
 }
 

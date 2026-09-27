@@ -29,6 +29,8 @@
 #include "default_search.h"
 #include "engine.h"
 #include "neural/backends/proxy/backend_process.h"
+#include "neural/backends/proxy/proxy_backend.h"
+#include "neural/register.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
@@ -82,23 +84,27 @@ int main(int argc, const char** argv) {
   using namespace lczero;
   EscCodes::Init();
   LOGFILE << "Lc0 started.";
-  CERR << EscCodes::Bold() << EscCodes::Red() << "       _";
-  CERR << "|   _ | |";
-  CERR << "|_ |_ |_|" << EscCodes::Reset() << " v" << GetVersionStr()
-       << " built " << __DATE__;
+  // The backend process that lc0 starts for itself shows no second banner.
+  if (argc < 2 || std::string_view(argv[1]) != "backendprocess") {
+    CERR << EscCodes::Bold() << EscCodes::Red() << "       _";
+    CERR << "|   _ | |";
+    CERR << "|_ |_ |_|" << EscCodes::Reset() << " v" << GetVersionStr()
+         << " built " << __DATE__;
+  }
 
   try {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
+    // Backends run in a child process, so a crash in the backend or in the GPU
+    // driver restarts that process instead of taking the engine down.
+    BackendManager::Get()->SetLauncher(&proxy::CreateProxyBackend);
     if (CommandLine::BinaryName().find("simple") == std::string::npos) {
       CommandLine::RegisterMode("selfplay", "Play games with itself");
       CommandLine::RegisterMode("benchmark", "Quick benchmark");
       CommandLine::RegisterMode("bench", "Very quick benchmark");
       CommandLine::RegisterMode("backendbench",
                                 "Quick benchmark of backend only");
-      CommandLine::RegisterMode("backendprocess",
-                                "Run a backend for --backend=proxy engines");
       CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
       CommandLine::RegisterMode("onnx2leela",
                                 "Convert ONNX network to Leela net.");
@@ -130,6 +136,7 @@ int main(int argc, const char** argv) {
       BackendBenchmark benchmark;
       benchmark.Run();
     } else if (CommandLine::ConsumeCommand("backendprocess")) {
+      // Internal: started by lc0 itself, see proxy_backend.h.
       RunBackendProcess();
     } else if (CommandLine::ConsumeCommand("leela2onnx")) {
       lczero::ConvertLeelaToOnnx();
