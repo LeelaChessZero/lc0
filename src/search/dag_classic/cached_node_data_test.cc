@@ -25,8 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-// Tests for the dag_classic picking cache types (built with
-// -fno-access-control).
+// Tests for the dag_classic picking cache types.
 
 #include "search/dag_classic/search.h"
 
@@ -34,10 +33,18 @@
 
 namespace lczero {
 namespace dag_classic {
+
+// Friend of SearchWorker; re-exports its private picking-cache types.
+class SearchWorkerTest {
+ public:
+  using CurrentPath = SearchWorker::CurrentPath;
+  using TaskWorkspace = SearchWorker::TaskWorkspace;
+};
+
 namespace {
 
-using CurrentPath = SearchWorker::CurrentPath;
-using TaskWorkspace = SearchWorker::TaskWorkspace;
+using CurrentPath = SearchWorkerTest::CurrentPath;
+using TaskWorkspace = SearchWorkerTest::TaskWorkspace;
 
 // The cache is reused across levels; a narrow level's own fill must win.
 TEST(CachedNodeData, WorkspaceReuseDoesNotLeakBetweenCalls) {

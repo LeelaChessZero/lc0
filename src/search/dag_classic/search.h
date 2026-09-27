@@ -309,6 +309,9 @@ class SearchWorker {
   void UpdateCounters();
 
  private:
+  // Unit tests reach the picking-cache types below through this peer.
+  friend class SearchWorkerTest;
+
   struct NodeToProcess {
     bool IsExtendable() const {
       return !is_collision && !node->IsTerminal() && !node->GetLowNode();

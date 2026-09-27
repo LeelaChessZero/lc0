@@ -25,16 +25,25 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-// Tests for the classic picking cache types (built with -fno-access-control).
+// Tests for the classic picking cache types.
 
 #include "search/classic/search.h"
 #include "gtest/gtest.h"
 
 namespace lczero {
 namespace classic {
+
+// Friend of SearchWorker; re-exports its private picking-cache types.
+class SearchWorkerTest {
+ public:
+  using InlineDepthStack = SearchWorker::InlineDepthStack;
+  using TaskWorkspace = SearchWorker::TaskWorkspace;
+};
+
 namespace {
 
-using InlineDepthStack = SearchWorker::InlineDepthStack;
+using InlineDepthStack = SearchWorkerTest::InlineDepthStack;
+using TaskWorkspace = SearchWorkerTest::TaskWorkspace;
 
 TEST(InlineDepthStack, InlinePathGatesExactlyByCount) {
   InlineDepthStack s;
@@ -82,7 +91,7 @@ TEST(InlineDepthStack, DeepDescentAndReuse) {
 
 // The cache is reused across levels; a narrow level's own fill must win.
 TEST(CachedNodeData, WorkspaceReuseDoesNotLeakBetweenCalls) {
-  SearchWorker::TaskWorkspace workspace;
+  TaskWorkspace workspace;
   Node wide(nullptr, 0);
   wide.CreateEdges(MoveList(200));
   {
