@@ -30,7 +30,7 @@
 // restart of that process instead of the engine. Batches cross in shared
 // memory, see protocol.h.
 
-#include "neural/backends/proxy/proxy_backend.h"
+#include "neural/backends/backend_process/child_process_backend.h"
 
 #include <algorithm>
 #include <atomic>
@@ -44,14 +44,14 @@
 #include <thread>
 #include <vector>
 
-#include "neural/backends/proxy/interprocess.h"
-#include "neural/backends/proxy/protocol.h"
+#include "neural/backends/backend_process/interprocess.h"
+#include "neural/backends/backend_process/protocol.h"
 #include "neural/shared_params.h"
 #include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
-namespace proxy {
+namespace backend_process {
 namespace {
 
 // Batches in flight at once; more search threads than this wait for a slot.
@@ -90,9 +90,9 @@ std::string NewName() {
   return std::to_string(CurrentProcessId()) + "-" + std::to_string(counter++);
 }
 
-class ProxyBackend : public Backend {
+class ChildProcessBackend : public Backend {
  public:
-  explicit ProxyBackend(const OptionsDict& options)
+  explicit ChildProcessBackend(const OptionsDict& options)
       : flags_(ForwardedFlags(options)),
         name_(NewName()),
         shared_memory_(
@@ -121,7 +121,7 @@ class ProxyBackend : public Backend {
     LOGFILE << "Backend process " << name_ << " started.";
   }
 
-  ~ProxyBackend() override {
+  ~ChildProcessBackend() override {
     header_->stop.store(1, std::memory_order_release);
     for (NamedSemaphore& request : requests_) request.Post();
     process_.Stop(kStopWaitMilliseconds);
@@ -255,12 +255,13 @@ class ProxyBackend : public Backend {
   std::vector<std::vector<EvalResultPtr>> slot_results_;
 };
 
-class ProxyComputation : public BackendComputation {
+class ChildProcessComputation : public BackendComputation {
  public:
-  explicit ProxyComputation(ProxyBackend* backend) : backend_(backend) {}
+  explicit ChildProcessComputation(ChildProcessBackend* backend)
+      : backend_(backend) {}
 
   // Also after Run() threw: the slot is answered or its process is dead.
-  ~ProxyComputation() override {
+  ~ChildProcessComputation() override {
     if (slot_ >= 0) backend_->ReleaseSlot(slot_);
   }
 
@@ -317,22 +318,22 @@ class ProxyComputation : public BackendComputation {
   }
 
  private:
-  ProxyBackend* const backend_;
+  ChildProcessBackend* const backend_;
   std::once_flag slot_acquired_;
   int slot_ = -1;
   EvalResultPtr* results_ = nullptr;
   std::atomic<size_t> size_ = 0;
 };
 
-std::unique_ptr<BackendComputation> ProxyBackend::CreateComputation() {
-  return std::make_unique<ProxyComputation>(this);
+std::unique_ptr<BackendComputation> ChildProcessBackend::CreateComputation() {
+  return std::make_unique<ChildProcessComputation>(this);
 }
 
 }  // namespace
 
-std::unique_ptr<Backend> CreateProxyBackend(const OptionsDict& options) {
-  return std::make_unique<ProxyBackend>(options);
+std::unique_ptr<Backend> CreateChildProcessBackend(const OptionsDict& options) {
+  return std::make_unique<ChildProcessBackend>(options);
 }
 
-}  // namespace proxy
+}  // namespace backend_process
 }  // namespace lczero

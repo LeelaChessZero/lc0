@@ -28,8 +28,8 @@
 #include "chess/board.h"
 #include "default_search.h"
 #include "engine.h"
-#include "neural/backends/proxy/backend_process.h"
-#include "neural/backends/proxy/proxy_backend.h"
+#include "neural/backends/backend_process/backend_process.h"
+#include "neural/backends/backend_process/child_process_backend.h"
 #include "neural/register.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
@@ -98,7 +98,8 @@ int main(int argc, const char** argv) {
     CommandLine::Init(argc, argv);
     // Backends run in a child process, so a crash in the backend or in the GPU
     // driver restarts that process instead of taking the engine down.
-    BackendManager::Get()->SetLauncher(&proxy::CreateProxyBackend);
+    BackendManager::Get()->SetLauncher(
+        &backend_process::CreateChildProcessBackend);
     if (CommandLine::BinaryName().find("simple") == std::string::npos) {
       CommandLine::RegisterMode("selfplay", "Play games with itself");
       CommandLine::RegisterMode("benchmark", "Quick benchmark");
@@ -136,7 +137,7 @@ int main(int argc, const char** argv) {
       BackendBenchmark benchmark;
       benchmark.Run();
     } else if (CommandLine::ConsumeCommand("backendprocess")) {
-      // Internal: started by lc0 itself, see proxy_backend.h.
+      // Internal: started by lc0 itself, see child_process_backend.h.
       RunBackendProcess();
     } else if (CommandLine::ConsumeCommand("leela2onnx")) {
       lczero::ConvertLeelaToOnnx();

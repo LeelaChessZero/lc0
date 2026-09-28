@@ -33,7 +33,7 @@
 #include <vector>
 
 namespace lczero {
-namespace proxy {
+namespace backend_process {
 
 // Named shared memory, visible to other processes of the same user session.
 class SharedMemory {
@@ -119,5 +119,5 @@ std::string ExecutablePath();
 // Blocks until the parent process, `parent_process_id`, exits.
 void WaitForParentExit(uint32_t parent_process_id);
 
-}  // namespace proxy
+}  // namespace backend_process
 }  // namespace lczero

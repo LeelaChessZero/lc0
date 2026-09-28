@@ -137,9 +137,9 @@ common_files += [
   'src/neural/encoder.cc',
   'src/neural/factory.cc',
   'src/neural/loader.cc',
-  'src/neural/backends/proxy/backend_process.cc',
-  'src/neural/backends/proxy/interprocess.cc',
-  'src/neural/backends/proxy/proxy_backend.cc',
+  'src/neural/backends/backend_process/backend_process.cc',
+  'src/neural/backends/backend_process/interprocess.cc',
+  'src/neural/backends/backend_process/child_process_backend.cc',
   'src/neural/register.cc',
   'src/neural/shared_params.cc',
   'src/neural/wrapper.cc',
@@ -218,7 +218,7 @@ deps += dependency('absl_flat_hash_map', 'absl', modules:['absl::flat_hash_map']
 
 deps += dependency('threads')
 if host_machine.system() != 'windows'
-  # shm_open and sem_open for the backend proxy on glibc < 2.34.
+  # shm_open and sem_open for the backend process on glibc < 2.34.
   deps += cc.find_library('rt', required : false)
 endif
 

@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/backends/proxy/backend_process.h"
+#include "neural/backends/backend_process/backend_process.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -34,8 +34,8 @@
 #include <thread>
 #include <vector>
 
-#include "neural/backends/proxy/interprocess.h"
-#include "neural/backends/proxy/protocol.h"
+#include "neural/backends/backend_process/interprocess.h"
+#include "neural/backends/backend_process/protocol.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
 #include "utils/exception.h"
@@ -45,7 +45,7 @@
 namespace lczero {
 namespace {
 
-using namespace proxy;
+using namespace backend_process;
 
 const OptionId kNameId{"name", "", "Shared memory the engine created."};
 const OptionId kParentProcessIdId{"parent-process-id", "",

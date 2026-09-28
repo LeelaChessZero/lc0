@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/backends/proxy/interprocess.h"
+#include "neural/backends/backend_process/interprocess.h"
 
 #include <chrono>
 #include <thread>
@@ -60,7 +60,7 @@ extern char** environ;
 #endif
 
 namespace lczero {
-namespace proxy {
+namespace backend_process {
 namespace {
 
 #ifdef _WIN32
@@ -508,5 +508,5 @@ void WaitForParentExit(uint32_t parent_process_id) {
 #endif
 }
 
-}  // namespace proxy
+}  // namespace backend_process
 }  // namespace lczero

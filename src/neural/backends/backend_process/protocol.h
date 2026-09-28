@@ -47,7 +47,7 @@
 #include "neural/encoder.h"
 
 namespace lczero {
-namespace proxy {
+namespace backend_process {
 
 constexpr uint32_t kMagic = 0x6c63304e;
 constexpr uint32_t kVersion = 1;
@@ -145,5 +145,5 @@ inline std::string ResponseName(const std::string& name, uint32_t slot) {
   return name + "-r" + std::to_string(slot);
 }
 
-}  // namespace proxy
+}  // namespace backend_process
 }  // namespace lczero

@@ -27,18 +27,11 @@
 
 #pragma once
 
-#include <memory>
-
-#include "neural/backend.h"
-#include "utils/optionsdict.h"
-
 namespace lczero {
-namespace proxy {
 
-// Starts the backend that `options` choose in a child process, `lc0
-// backendprocess`, and returns a Backend that evaluates batches there. The
-// child is restarted if it crashes and does not outlive this process.
-std::unique_ptr<Backend> CreateProxyBackend(const OptionsDict& options);
+// `lc0 backendprocess`: internal, started by the engine itself (see
+// child_process_backend.h). Loads the backend and evaluates the engine's
+// batches until the engine tells it to stop or exits.
+void RunBackendProcess();
 
-}  // namespace proxy
 }  // namespace lczero
