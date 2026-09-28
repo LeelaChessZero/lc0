@@ -31,6 +31,8 @@
 #include <string>
 #include <vector>
 
+#include "neural/backends/client/archive.h"
+
 namespace lczero {
 
 struct PieceType {
@@ -123,6 +125,13 @@ class Square {
   constexpr bool operator!=(const Square& other) const = default;
   constexpr uint8_t as_idx() const { return idx_; }
 
+  // Serialization support for out of process backends.
+  template <typename Archive>
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
+    return ar & client::FixedInteger{idx_};
+  }
+
  private:
   explicit constexpr Square(uint8_t idx) : idx_(idx) {}
 
@@ -173,6 +182,13 @@ class Move {
   bool is_null() const { return data_ == 0; }
 
   uint16_t raw_data() const { return data_; }
+
+  // Serialization support for out of process backends.
+  template <typename Archive>
+  typename Archive::ResultType Serialize(
+      Archive& ar, [[maybe_unused]] const unsigned version) {
+    return ar & client::FixedInteger{data_};
+  }
 
  private:
   explicit constexpr Move(uint16_t data) : data_(data) {}
