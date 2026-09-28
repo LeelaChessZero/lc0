@@ -145,5 +145,11 @@ inline std::string ResponseName(const std::string& name, uint32_t slot) {
   return name + "-r" + std::to_string(slot);
 }
 
+// Posted by the backend process once it has set the state to kReady or
+// kFailed, so the engine need not poll for it.
+inline std::string StateName(const std::string& name) {
+  return name + "-state";
+}
+
 }  // namespace backend_process
 }  // namespace lczero

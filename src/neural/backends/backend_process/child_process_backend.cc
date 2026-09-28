@@ -98,6 +98,7 @@ class ChildProcessBackend : public Backend {
         shared_memory_(
             SharedMemory::Create(name_, RegionSize(kNumSlots, kMaxBatch))),
         header_(static_cast<RegionHeader*>(shared_memory_.data())),
+        state_changed_(NamedSemaphore::Create(StateName(name_))),
         slot_results_(kNumSlots, std::vector<EvalResultPtr>(kMaxBatch)) {
     header_->version = kVersion;
     header_->position_size = sizeof(Position);
@@ -243,7 +244,9 @@ class ChildProcessBackend : public Backend {
         }
         throw Exception("The backend process exited while loading the network");
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      // Woken as soon as the state is set. A post left over from an earlier
+      // process only costs one more pass.
+      state_changed_.Wait(10);
     }
   }
 
@@ -253,6 +256,7 @@ class ChildProcessBackend : public Backend {
   RegionHeader* const header_;
   std::vector<NamedSemaphore> requests_;
   std::vector<NamedSemaphore> responses_;
+  NamedSemaphore state_changed_;
   BackendAttributes attributes_;
 
   std::mutex process_mutex_;

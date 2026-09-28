@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <optional>
 #include <span>
 #include <thread>
 #include <vector>
@@ -125,6 +126,9 @@ void RunBackendProcess() {
 
   std::vector<NamedSemaphore> requests;
   std::vector<NamedSemaphore> responses;
+  // Opened only after the checks; the engine still sees a state set before,
+  // just without being woken for it.
+  std::optional<NamedSemaphore> state_changed;
   std::unique_ptr<Backend> backend;
   try {
     if (header->magic != kMagic || header->version != kVersion ||
@@ -133,6 +137,7 @@ void RunBackendProcess() {
             RegionSize(header->num_slots, header->max_batch)) {
       throw Exception("The backend process is from a different lc0 build");
     }
+    state_changed.emplace(NamedSemaphore::Open(StateName(name)));
     for (uint32_t i = 0; i < header->num_slots; ++i) {
       requests.push_back(NamedSemaphore::Open(RequestName(name, i)));
       responses.push_back(NamedSemaphore::Open(ResponseName(name, i)));
@@ -141,10 +146,12 @@ void RunBackendProcess() {
   } catch (const std::exception& e) {
     std::snprintf(header->error, sizeof(header->error), "%s", e.what());
     header->state.store(ProcessState::kFailed, std::memory_order_release);
+    if (state_changed) state_changed->Post();
     return;
   }
   header->attributes = backend->GetAttributes();
   header->state.store(ProcessState::kReady, std::memory_order_release);
+  state_changed->Post();
 
   std::vector<std::thread> threads;
   for (uint32_t i = 0; i < header->num_slots; ++i) {
