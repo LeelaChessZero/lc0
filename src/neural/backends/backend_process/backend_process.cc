@@ -83,7 +83,8 @@ void RunSlot(Backend* backend, void* base, uint32_t index,
   const auto* header = static_cast<const RegionHeader*>(base);
   const SlotView slot = GetSlot(base, index);
   while (!header->stop.load(std::memory_order_acquire)) {
-    // Posts can outnumber requests after a restart; the seqs are the truth.
+    // Posts can outnumber requests after a restart; the sequences are the
+    // truth.
     const uint64_t sequence =
         slot.header->request_sequence.load(std::memory_order_acquire);
     if (sequence ==

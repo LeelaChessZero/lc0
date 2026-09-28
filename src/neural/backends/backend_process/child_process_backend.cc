@@ -142,6 +142,13 @@ class ChildProcessBackend : public Backend {
   // Blocks until a slot is free.
   uint32_t AcquireSlot() {
     std::unique_lock lock(slots_mutex_);
+    // More batches at once than slots, e.g. from more than kNumSlots search
+    // threads, would otherwise cap the parallelism without a word.
+    if (free_slots_.empty() && !warned_all_slots_busy_) {
+      warned_all_slots_busy_ = true;
+      CERR << "All " << kNumSlots << " slots of the backend process are "
+           << "busy; further batches wait for a free one.";
+    }
     slot_freed_.wait(lock, [&] { return !free_slots_.empty(); });
     const uint32_t index = free_slots_.back();
     free_slots_.pop_back();
@@ -160,6 +167,8 @@ class ChildProcessBackend : public Backend {
   // restarting the process if it dies meanwhile.
   void Run(uint32_t index) {
     SlotHeader* slot = Slot(index).header;
+    // Only the slot's owner writes request_sequence, and slots change owners
+    // under slots_mutex_, so a relaxed load sees the last request.
     const uint64_t sequence =
         slot->request_sequence.load(std::memory_order_relaxed) + 1;
     const uint32_t first_start = starts_.load(std::memory_order_relaxed);
@@ -184,7 +193,8 @@ class ChildProcessBackend : public Backend {
       }
       CERR << "The backend process died, restarting it.";
       try {
-        // The new process answers the pending batches, as their seqs differ.
+        // The new process answers the pending batches, as their sequences
+        // differ.
         StartProcess();
       } catch (...) {
         slot->response_sequence.store(sequence, std::memory_order_relaxed);
@@ -252,6 +262,7 @@ class ChildProcessBackend : public Backend {
   std::mutex slots_mutex_;
   std::condition_variable slot_freed_;
   std::vector<uint32_t> free_slots_;
+  bool warned_all_slots_busy_ = false;
   std::vector<std::vector<EvalResultPtr>> slot_results_;
 };
 
