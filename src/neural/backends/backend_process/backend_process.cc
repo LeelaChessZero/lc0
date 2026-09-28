@@ -27,8 +27,8 @@
 
 #include "neural/backends/backend_process/backend_process.h"
 
+#include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <limits>
 #include <span>
 #include <thread>
@@ -139,7 +139,7 @@ void RunBackendProcess() {
     }
     backend = BackendManager::Get()->CreateInProcess(dict);
   } catch (const std::exception& e) {
-    std::strncpy(header->error, e.what(), sizeof(header->error) - 1);
+    std::snprintf(header->error, sizeof(header->error), "%s", e.what());
     header->state.store(ProcessState::kFailed, std::memory_order_release);
     return;
   }
