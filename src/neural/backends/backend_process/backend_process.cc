@@ -35,6 +35,8 @@
 #include <thread>
 #include <vector>
 
+#include "chess/board.h"
+#include "chess/position.h"
 #include "neural/backends/backend_process/interprocess.h"
 #include "neural/backends/backend_process/protocol.h"
 #include "neural/register.h"
@@ -99,6 +101,20 @@ void RunSlot(Backend* backend, void* base, uint32_t index,
   }
 }
 
+// Evaluates the starting position, so that what a backend sets up on its
+// first batch, such as oneMKL's GEMM kernels under SYCL, is done before
+// readyok instead of on the first move.
+void WarmUp(Backend* backend) {
+  const Position position = Position::FromFen(ChessBoard::kStartposFen);
+  const MoveList moves = position.GetBoard().GenerateLegalMoves();
+  std::vector<float> policy(moves.size());
+  float q = 0, d = 0, m = 0;
+  auto computation = backend->CreateComputation();
+  computation->AddInput(EvalPosition{std::span(&position, 1), moves},
+                        EvalResultPtr{&q, &d, &m, policy});
+  computation->ComputeBlocking();
+}
+
 }  // namespace
 
 void RunBackendProcess() {
@@ -143,6 +159,7 @@ void RunBackendProcess() {
       responses.push_back(NamedSemaphore::Open(ResponseName(name, i)));
     }
     backend = BackendManager::Get()->CreateInProcess(dict);
+    WarmUp(backend.get());
   } catch (const std::exception& e) {
     std::snprintf(header->error, sizeof(header->error), "%s", e.what());
     header->state.store(ProcessState::kFailed, std::memory_order_release);
