@@ -97,7 +97,7 @@ class ProxyBackend : public Backend {
         name_(NewName()),
         shm_(SharedMemory::Create(name_, RegionSize(kNumSlots, kMaxBatch))),
         header_(static_cast<RegionHeader*>(shm_.data())),
-        slot_results_(kNumSlots) {
+        slot_results_(kNumSlots, std::vector<EvalResultPtr>(kMaxBatch)) {
     header_->version = kVersion;
     header_->position_size = sizeof(Position);
     header_->num_slots = kNumSlots;
@@ -260,26 +260,28 @@ class ProxyComputation : public BackendComputation {
   }
 
   size_t UsedBatchSize() const override {
-    return results_ ? results_->size() : 0;
+    return std::min<size_t>(size_.load(), kMaxBatch);
   }
 
+  // The search's task workers call this concurrently, as they do
+  // NetworkAsBackendComputation::AddInput.
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
-    if (slot_ < 0) {
-      slot_ = backend_->AcquireSlot();
-      results_ = &backend_->SlotResults(slot_);
-      results_->clear();
-    }
-    if (results_->size() >= kMaxBatch) {
-      throw Exception("Batch is larger than the backend process allows");
-    }
     if (pos.legal_moves.size() > kMaxLegalMoves) {
       throw Exception("Too many legal moves for the backend process");
+    }
+    std::call_once(slot_acquired_, [&] {
+      slot_ = backend_->AcquireSlot();
+      results_ = backend_->SlotResults(slot_).data();
+    });
+    const size_t index = size_.fetch_add(1);
+    if (index >= kMaxBatch) {
+      throw Exception("Batch is larger than the backend process allows");
     }
     // The encoder reads at most kMoveHistory positions.
     const auto history =
         pos.pos.last(std::min<size_t>(pos.pos.size(), kMoveHistory));
-    PositionRecord& record = backend_->Slot(slot_).positions[results_->size()];
+    PositionRecord& record = backend_->Slot(slot_).positions[index];
     record.history_size = history.size();
     record.num_moves = pos.legal_moves.size();
     record.want_policy = !result.p.empty();
@@ -287,18 +289,19 @@ class ProxyComputation : public BackendComputation {
                 history.size() * sizeof(Position));
     std::memcpy(record.moves, pos.legal_moves.data(),
                 pos.legal_moves.size() * sizeof(Move));
-    results_->push_back(result);
+    results_[index] = result;
     return ENQUEUED_FOR_EVAL;
   }
 
   void ComputeBlocking() override {
-    if (!results_ || results_->empty()) return;
+    const size_t batch_size = UsedBatchSize();
+    if (batch_size == 0) return;
     const SlotView slot = backend_->Slot(slot_);
-    slot.header->batch_size = results_->size();
+    slot.header->batch_size = batch_size;
     backend_->Run(slot_);
-    for (size_t i = 0; i < results_->size(); ++i) {
+    for (size_t i = 0; i < batch_size; ++i) {
       const ResultRecord& src = slot.results[i];
-      const EvalResultPtr& dst = (*results_)[i];
+      const EvalResultPtr& dst = results_[i];
       if (dst.q) *dst.q = src.q;
       if (dst.d) *dst.d = src.d;
       if (dst.m) *dst.m = src.m;
@@ -309,8 +312,10 @@ class ProxyComputation : public BackendComputation {
 
  private:
   ProxyBackend* const backend_;
+  std::once_flag slot_acquired_;
   int slot_ = -1;
-  std::vector<EvalResultPtr>* results_ = nullptr;
+  EvalResultPtr* results_ = nullptr;
+  std::atomic<size_t> size_ = 0;
 };
 
 std::unique_ptr<BackendComputation> ProxyBackend::CreateComputation() {
