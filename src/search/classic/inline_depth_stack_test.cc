@@ -102,7 +102,8 @@ TEST(CachedNodeData, WorkspaceReuseDoesNotLeakBetweenCalls) {
   narrow.CreateEdges(MoveList(5));
   {
     int idx = 0;
-    for (auto& edge : narrow.Edges()) edge.edge()->SetP(9.0f + idx++);
+    // Within SetP's [0, 1], and distinct from every wide value.
+    for (auto& edge : narrow.Edges()) edge.edge()->SetP(0.95f - 0.1f * idx++);
   }
 
   // Round 1: a wide level fills 200 entries.
