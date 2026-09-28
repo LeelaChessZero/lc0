@@ -32,7 +32,7 @@
 // kReady. [RegionHeader][slot 0][slot 1]...  Each slot carries one batch at a
 // time: [SlotHeader][PositionRecord x max_batch][ResultRecord x max_batch],
 // with a request/response semaphore pair. lc0 writes the positions, posts the
-// request and waits for the response whose seq matches its own.
+// request and waits for the response whose sequence matches its own.
 
 #pragma once
 
@@ -85,8 +85,8 @@ struct SlotHeader {
   uint32_t failed;
   // A request is pending while these differ, so a restarted backend
   // process picks up the batch its predecessor died on.
-  std::atomic<uint64_t> request_seq;
-  std::atomic<uint64_t> response_seq;
+  std::atomic<uint64_t> request_sequence;
+  std::atomic<uint64_t> response_sequence;
 };
 
 struct PositionRecord {

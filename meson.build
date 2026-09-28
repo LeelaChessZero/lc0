@@ -138,7 +138,7 @@ common_files += [
   'src/neural/factory.cc',
   'src/neural/loader.cc',
   'src/neural/backends/proxy/backend_process.cc',
-  'src/neural/backends/proxy/ipc.cc',
+  'src/neural/backends/proxy/interprocess.cc',
   'src/neural/backends/proxy/proxy_backend.cc',
   'src/neural/register.cc',
   'src/neural/shared_params.cc',

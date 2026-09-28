@@ -76,7 +76,7 @@ class NamedSemaphore {
 
   void Post();
   // Negative timeout waits forever. Returns false on timeout.
-  bool Wait(int timeout_ms);
+  bool Wait(int timeout_milliseconds);
 
  private:
   NamedSemaphore() = default;
@@ -91,9 +91,9 @@ class NamedSemaphore {
 class ChildProcess {
  public:
   ChildProcess() = default;
-  // args[0] is the executable. The child's stdout goes to this process's
+  // arguments[0] is the executable. The child's stdout goes to this process's
   // stderr, as stdout carries UCI, and it gets no stdin.
-  static ChildProcess Spawn(const std::vector<std::string>& args);
+  static ChildProcess Spawn(const std::vector<std::string>& arguments);
 
   ChildProcess(ChildProcess&& other) noexcept;
   ChildProcess& operator=(ChildProcess&& other) noexcept;
@@ -101,14 +101,14 @@ class ChildProcess {
   ChildProcess& operator=(const ChildProcess&) = delete;
   ~ChildProcess();
 
-  uint32_t pid() const { return pid_; }
+  uint32_t process_id() const { return process_id_; }
   // Not thread safe: on POSIX it reaps the child once it has exited.
   bool IsRunning();
-  // Waits up to timeout_ms for the child to exit, then kills it.
-  void Stop(int timeout_ms);
+  // Waits up to timeout_milliseconds for the child to exit, then kills it.
+  void Stop(int timeout_milliseconds);
 
  private:
-  uint32_t pid_ = 0;
+  uint32_t process_id_ = 0;
   void* process_ = nullptr;
   void* job_ = nullptr;
 };
@@ -116,8 +116,8 @@ class ChildProcess {
 uint32_t CurrentProcessId();
 // Path of the running executable, to start another copy of it.
 std::string ExecutablePath();
-// Blocks until the parent process, `parent_pid`, exits.
-void WaitForParentExit(uint32_t parent_pid);
+// Blocks until the parent process, `parent_process_id`, exits.
+void WaitForParentExit(uint32_t parent_process_id);
 
 }  // namespace proxy
 }  // namespace lczero

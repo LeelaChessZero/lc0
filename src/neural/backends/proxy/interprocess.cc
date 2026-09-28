@@ -25,7 +25,7 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include "neural/backends/proxy/ipc.h"
+#include "neural/backends/proxy/interprocess.h"
 
 #include <chrono>
 #include <thread>
@@ -66,16 +66,18 @@ namespace {
 #ifdef _WIN32
 std::string ObjectName(const std::string& name) { return "Local\\lc0-" + name; }
 
-// Appends `arg` quoted so that the child's C runtime splits it back unchanged.
-void AppendQuoted(const std::string& arg, std::string* command_line) {
+// Appends `argument` quoted so that the child's C runtime splits it back
+// unchanged.
+void AppendQuoted(const std::string& argument, std::string* command_line) {
   if (!command_line->empty()) command_line->push_back(' ');
-  if (!arg.empty() && arg.find_first_of(" \t\n\v\"") == std::string::npos) {
-    command_line->append(arg);
+  if (!argument.empty() &&
+      argument.find_first_of(" \t\n\v\"") == std::string::npos) {
+    command_line->append(argument);
     return;
   }
   command_line->push_back('"');
   size_t backslashes = 0;
-  for (const char c : arg) {
+  for (const char c : argument) {
     if (c == '\\') {
       ++backslashes;
       continue;
@@ -96,66 +98,74 @@ std::string ObjectName(const std::string& name) { return "/lc0-" + name; }
 }  // namespace
 
 SharedMemory SharedMemory::Create(const std::string& name, size_t size) {
-  SharedMemory shm;
+  SharedMemory shared_memory;
   const std::string object_name = ObjectName(name);
 #ifdef _WIN32
-  const uint64_t size64 = size;
+  const uint64_t wide_size = size;
   HANDLE handle =
       CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
-                         static_cast<DWORD>(size64 >> 32),
-                         static_cast<DWORD>(size64), object_name.c_str());
+                         static_cast<DWORD>(wide_size >> 32),
+                         static_cast<DWORD>(wide_size), object_name.c_str());
   if (handle && GetLastError() == ERROR_ALREADY_EXISTS) {
     CloseHandle(handle);
     throw Exception("Shared memory already exists: " + object_name);
   }
   if (!handle) throw Exception("CreateFileMapping failed: " + object_name);
-  shm.handle_ = reinterpret_cast<intptr_t>(handle);
-  shm.data_ = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size);
+  shared_memory.handle_ = reinterpret_cast<intptr_t>(handle);
+  shared_memory.data_ = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, size);
 #else
-  // Names carry the pid, so one that exists was left by a killed process.
+  // Names carry the process_id, so one that exists was left by a killed
+  // process.
   shm_unlink(object_name.c_str());
-  const int fd = shm_open(object_name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
-  if (fd < 0) throw Exception("shm_open failed: " + object_name);
-  shm.handle_ = fd;
-  shm.unlink_name_ = object_name;
-  if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
+  const int file_descriptor =
+      shm_open(object_name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
+  if (file_descriptor < 0) throw Exception("shm_open failed: " + object_name);
+  shared_memory.handle_ = file_descriptor;
+  shared_memory.unlink_name_ = object_name;
+  if (ftruncate(file_descriptor, static_cast<off_t>(size)) != 0) {
     throw Exception("Cannot size shared memory: " + object_name);
   }
-  void* data = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  shm.data_ = data == MAP_FAILED ? nullptr : data;
+  void* data = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                    file_descriptor, 0);
+  shared_memory.data_ = data == MAP_FAILED ? nullptr : data;
 #endif
-  if (!shm.data_) throw Exception("Cannot map shared memory: " + object_name);
-  shm.size_ = size;
-  return shm;
+  if (!shared_memory.data_)
+    throw Exception("Cannot map shared memory: " + object_name);
+  shared_memory.size_ = size;
+  return shared_memory;
 }
 
 SharedMemory SharedMemory::Open(const std::string& name) {
-  SharedMemory shm;
+  SharedMemory shared_memory;
   const std::string object_name = ObjectName(name);
 #ifdef _WIN32
   HANDLE handle =
       OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, object_name.c_str());
   if (!handle) throw Exception("Cannot open shared memory " + object_name);
-  shm.handle_ = reinterpret_cast<intptr_t>(handle);
-  shm.data_ = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-  MEMORY_BASIC_INFORMATION info;
-  if (shm.data_ && VirtualQuery(shm.data_, &info, sizeof(info))) {
-    shm.size_ = info.RegionSize;
+  shared_memory.handle_ = reinterpret_cast<intptr_t>(handle);
+  shared_memory.data_ = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+  MEMORY_BASIC_INFORMATION memory_information;
+  if (shared_memory.data_ &&
+      VirtualQuery(shared_memory.data_, &memory_information,
+                   sizeof(memory_information))) {
+    shared_memory.size_ = memory_information.RegionSize;
   }
 #else
-  const int fd = shm_open(object_name.c_str(), O_RDWR, 0);
-  if (fd < 0) throw Exception("Cannot open shared memory " + object_name);
-  shm.handle_ = fd;
-  struct stat st;
-  if (fstat(fd, &st) == 0 && st.st_size > 0) {
-    void* data =
-        mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    shm.data_ = data == MAP_FAILED ? nullptr : data;
-    shm.size_ = st.st_size;
+  const int file_descriptor = shm_open(object_name.c_str(), O_RDWR, 0);
+  if (file_descriptor < 0)
+    throw Exception("Cannot open shared memory " + object_name);
+  shared_memory.handle_ = file_descriptor;
+  struct stat file_status;
+  if (fstat(file_descriptor, &file_status) == 0 && file_status.st_size > 0) {
+    void* data = mmap(nullptr, file_status.st_size, PROT_READ | PROT_WRITE,
+                      MAP_SHARED, file_descriptor, 0);
+    shared_memory.data_ = data == MAP_FAILED ? nullptr : data;
+    shared_memory.size_ = file_status.st_size;
   }
 #endif
-  if (!shm.data_) throw Exception("Cannot map shared memory: " + object_name);
-  return shm;
+  if (!shared_memory.data_)
+    throw Exception("Cannot map shared memory: " + object_name);
+  return shared_memory;
 }
 
 SharedMemory::SharedMemory(SharedMemory&& other) noexcept
@@ -195,35 +205,38 @@ void SharedMemory::Release() {
 }
 
 NamedSemaphore NamedSemaphore::Create(const std::string& name) {
-  NamedSemaphore sem;
+  NamedSemaphore semaphore;
   const std::string object_name = ObjectName(name);
 #ifdef _WIN32
-  sem.handle_ = CreateSemaphoreA(nullptr, 0, 0x7fffffff, object_name.c_str());
-  if (sem.handle_ && GetLastError() == ERROR_ALREADY_EXISTS) {
+  semaphore.handle_ =
+      CreateSemaphoreA(nullptr, 0, 0x7fffffff, object_name.c_str());
+  if (semaphore.handle_ && GetLastError() == ERROR_ALREADY_EXISTS) {
     throw Exception("Semaphore already exists: " + object_name);
   }
 #else
   sem_unlink(object_name.c_str());
   sem_t* handle = sem_open(object_name.c_str(), O_CREAT | O_EXCL, 0600, 0);
-  sem.handle_ = handle == SEM_FAILED ? nullptr : handle;
-  if (sem.handle_) sem.unlink_name_ = object_name;
+  semaphore.handle_ = handle == SEM_FAILED ? nullptr : handle;
+  if (semaphore.handle_) semaphore.unlink_name_ = object_name;
 #endif
-  if (!sem.handle_) throw Exception("Cannot create semaphore " + object_name);
-  return sem;
+  if (!semaphore.handle_)
+    throw Exception("Cannot create semaphore " + object_name);
+  return semaphore;
 }
 
 NamedSemaphore NamedSemaphore::Open(const std::string& name) {
-  NamedSemaphore sem;
+  NamedSemaphore semaphore;
   const std::string object_name = ObjectName(name);
 #ifdef _WIN32
-  sem.handle_ = OpenSemaphoreA(SEMAPHORE_MODIFY_STATE | SYNCHRONIZE, FALSE,
-                               object_name.c_str());
+  semaphore.handle_ = OpenSemaphoreA(SEMAPHORE_MODIFY_STATE | SYNCHRONIZE,
+                                     FALSE, object_name.c_str());
 #else
   sem_t* handle = sem_open(object_name.c_str(), 0);
-  sem.handle_ = handle == SEM_FAILED ? nullptr : handle;
+  semaphore.handle_ = handle == SEM_FAILED ? nullptr : handle;
 #endif
-  if (!sem.handle_) throw Exception("Cannot open semaphore " + object_name);
-  return sem;
+  if (!semaphore.handle_)
+    throw Exception("Cannot open semaphore " + object_name);
+  return semaphore;
 }
 
 NamedSemaphore::NamedSemaphore(NamedSemaphore&& other) noexcept
@@ -265,38 +278,39 @@ void NamedSemaphore::Post() {
 #endif
 }
 
-bool NamedSemaphore::Wait(int timeout_ms) {
+bool NamedSemaphore::Wait(int timeout_milliseconds) {
 #ifdef _WIN32
-  const DWORD timeout =
-      timeout_ms < 0 ? INFINITE : static_cast<DWORD>(timeout_ms);
+  const DWORD timeout = timeout_milliseconds < 0
+                            ? INFINITE
+                            : static_cast<DWORD>(timeout_milliseconds);
   return WaitForSingleObject(handle_, timeout) == WAIT_OBJECT_0;
 #else
-  sem_t* sem = static_cast<sem_t*>(handle_);
-  if (timeout_ms < 0) {
-    while (sem_wait(sem) != 0) {
+  sem_t* semaphore = static_cast<sem_t*>(handle_);
+  if (timeout_milliseconds < 0) {
+    while (sem_wait(semaphore) != 0) {
       if (errno != EINTR) return false;
     }
     return true;
   }
 #ifdef __APPLE__
   // macOS has no sem_timedwait.
-  const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-  while (sem_trywait(sem) != 0) {
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeout_milliseconds);
+  while (sem_trywait(semaphore) != 0) {
     if (std::chrono::steady_clock::now() >= deadline) return false;
     std::this_thread::sleep_for(std::chrono::microseconds(100));
   }
   return true;
 #else
-  timespec ts;
-  clock_gettime(CLOCK_REALTIME, &ts);
-  ts.tv_sec += timeout_ms / 1000;
-  ts.tv_nsec += static_cast<long>(timeout_ms % 1000) * 1000000;
-  if (ts.tv_nsec >= 1000000000) {
-    ts.tv_sec++;
-    ts.tv_nsec -= 1000000000;
+  timespec deadline;
+  clock_gettime(CLOCK_REALTIME, &deadline);
+  deadline.tv_sec += timeout_milliseconds / 1000;
+  deadline.tv_nsec += static_cast<long>(timeout_milliseconds % 1000) * 1000000;
+  if (deadline.tv_nsec >= 1000000000) {
+    deadline.tv_sec++;
+    deadline.tv_nsec -= 1000000000;
   }
-  while (sem_timedwait(sem, &ts) != 0) {
+  while (sem_timedwait(semaphore, &deadline) != 0) {
     if (errno != EINTR) return false;
   }
   return true;
@@ -304,59 +318,62 @@ bool NamedSemaphore::Wait(int timeout_ms) {
 #endif
 }
 
-ChildProcess ChildProcess::Spawn(const std::vector<std::string>& args) {
+ChildProcess ChildProcess::Spawn(const std::vector<std::string>& arguments) {
   ChildProcess child;
 #ifdef _WIN32
   std::string command_line;
-  for (const std::string& arg : args) AppendQuoted(arg, &command_line);
+  for (const std::string& argument : arguments)
+    AppendQuoted(argument, &command_line);
 
   // Hand the child our stderr as its stdout and stderr, and nothing else.
   // Without one it writes to NUL, never to our stdout.
-  HANDLE std_error = nullptr;
+  HANDLE standard_error = nullptr;
   const HANDLE own_std_error = GetStdHandle(STD_ERROR_HANDLE);
   if (own_std_error && own_std_error != INVALID_HANDLE_VALUE) {
     DuplicateHandle(GetCurrentProcess(), own_std_error, GetCurrentProcess(),
-                    &std_error, 0, TRUE, DUPLICATE_SAME_ACCESS);
+                    &standard_error, 0, TRUE, DUPLICATE_SAME_ACCESS);
   }
-  if (!std_error) {
+  if (!standard_error) {
     SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
-    std_error =
+    standard_error =
         CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
                     &inherit, OPEN_EXISTING, 0, nullptr);
-    if (std_error == INVALID_HANDLE_VALUE) std_error = nullptr;
+    if (standard_error == INVALID_HANDLE_VALUE) standard_error = nullptr;
   }
-  STARTUPINFOEXA info{};
-  info.StartupInfo.cb = sizeof(info);
+  STARTUPINFOEXA startup_information{};
+  startup_information.StartupInfo.cb = sizeof(startup_information);
   std::vector<char> attribute_buffer;
-  if (std_error) {
+  if (standard_error) {
     SIZE_T attribute_size = 0;
     InitializeProcThreadAttributeList(nullptr, 1, 0, &attribute_size);
     attribute_buffer.resize(attribute_size);
-    info.lpAttributeList =
+    startup_information.lpAttributeList =
         reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attribute_buffer.data());
-    InitializeProcThreadAttributeList(info.lpAttributeList, 1, 0,
+    InitializeProcThreadAttributeList(startup_information.lpAttributeList, 1, 0,
                                       &attribute_size);
-    UpdateProcThreadAttribute(info.lpAttributeList, 0,
-                              PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &std_error,
-                              sizeof(std_error), nullptr, nullptr);
-    info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    info.StartupInfo.hStdOutput = std_error;
-    info.StartupInfo.hStdError = std_error;
+    UpdateProcThreadAttribute(startup_information.lpAttributeList, 0,
+                              PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                              &standard_error, sizeof(standard_error), nullptr,
+                              nullptr);
+    startup_information.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup_information.StartupInfo.hStdOutput = standard_error;
+    startup_information.StartupInfo.hStdError = standard_error;
   }
   // Without a console of our own, a console child would open a window.
   const DWORD flags = CREATE_SUSPENDED |
-                      (std_error ? EXTENDED_STARTUPINFO_PRESENT : 0) |
+                      (standard_error ? EXTENDED_STARTUPINFO_PRESENT : 0) |
                       (GetConsoleWindow() ? 0 : CREATE_NO_WINDOW);
-  PROCESS_INFORMATION process_info{};
-  const BOOL started =
-      CreateProcessA(args[0].c_str(), command_line.data(), nullptr, nullptr,
-                     std_error ? TRUE : FALSE, flags, nullptr, nullptr,
-                     &info.StartupInfo, &process_info);
-  if (info.lpAttributeList) DeleteProcThreadAttributeList(info.lpAttributeList);
-  if (std_error) CloseHandle(std_error);
-  if (!started) throw Exception("Cannot start " + args[0]);
-  child.pid_ = process_info.dwProcessId;
-  child.process_ = process_info.hProcess;
+  PROCESS_INFORMATION process_information{};
+  const BOOL started = CreateProcessA(
+      arguments[0].c_str(), command_line.data(), nullptr, nullptr,
+      standard_error ? TRUE : FALSE, flags, nullptr, nullptr,
+      &startup_information.StartupInfo, &process_information);
+  if (startup_information.lpAttributeList)
+    DeleteProcThreadAttributeList(startup_information.lpAttributeList);
+  if (standard_error) CloseHandle(standard_error);
+  if (!started) throw Exception("Cannot start " + arguments[0]);
+  child.process_id_ = process_information.dwProcessId;
+  child.process_ = process_information.hProcess;
 
   // The job dies with its last handle, and takes the child with it.
   child.job_ = CreateJobObjectA(nullptr, nullptr);
@@ -368,37 +385,37 @@ ChildProcess ChildProcess::Spawn(const std::vector<std::string>& args) {
                             &limits, sizeof(limits));
     AssignProcessToJobObject(child.job_, child.process_);
   }
-  ResumeThread(process_info.hThread);
-  CloseHandle(process_info.hThread);
+  ResumeThread(process_information.hThread);
+  CloseHandle(process_information.hThread);
 #else
-  std::vector<char*> argv;
-  for (const std::string& arg : args)
-    argv.push_back(const_cast<char*>(arg.c_str()));
-  argv.push_back(nullptr);
+  std::vector<char*> argument_pointers;
+  for (const std::string& argument : arguments)
+    argument_pointers.push_back(const_cast<char*>(argument.c_str()));
+  argument_pointers.push_back(nullptr);
   posix_spawn_file_actions_t actions;
   posix_spawn_file_actions_init(&actions);
   posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
                                    O_RDONLY, 0);
   posix_spawn_file_actions_adddup2(&actions, STDERR_FILENO, STDOUT_FILENO);
-  pid_t pid = 0;
-  const int error =
-      posix_spawn(&pid, argv[0], &actions, nullptr, argv.data(), environ);
+  pid_t process_id = 0;
+  const int error = posix_spawn(&process_id, argument_pointers[0], &actions,
+                                nullptr, argument_pointers.data(), environ);
   posix_spawn_file_actions_destroy(&actions);
-  if (error != 0) throw Exception("Cannot start " + args[0]);
-  child.pid_ = static_cast<uint32_t>(pid);
+  if (error != 0) throw Exception("Cannot start " + arguments[0]);
+  child.process_id_ = static_cast<uint32_t>(process_id);
 #endif
   return child;
 }
 
 ChildProcess::ChildProcess(ChildProcess&& other) noexcept
-    : pid_(std::exchange(other.pid_, 0)),
+    : process_id_(std::exchange(other.process_id_, 0)),
       process_(std::exchange(other.process_, nullptr)),
       job_(std::exchange(other.job_, nullptr)) {}
 
 ChildProcess& ChildProcess::operator=(ChildProcess&& other) noexcept {
   if (this != &other) {
     Stop(0);
-    pid_ = std::exchange(other.pid_, 0);
+    process_id_ = std::exchange(other.process_id_, 0);
     process_ = std::exchange(other.process_, nullptr);
     job_ = std::exchange(other.job_, nullptr);
   }
@@ -411,19 +428,21 @@ bool ChildProcess::IsRunning() {
 #ifdef _WIN32
   return process_ && WaitForSingleObject(process_, 0) == WAIT_TIMEOUT;
 #else
-  // An exited child stays a zombie until reaped, and kill(pid, 0) still
+  // An exited child stays a zombie until reaped, and kill(process_id, 0) still
   // succeeds on zombies.
-  if (pid_ == 0) return false;
-  if (waitpid(static_cast<pid_t>(pid_), nullptr, WNOHANG) == 0) return true;
-  pid_ = 0;
+  if (process_id_ == 0) return false;
+  if (waitpid(static_cast<pid_t>(process_id_), nullptr, WNOHANG) == 0)
+    return true;
+  process_id_ = 0;
   return false;
 #endif
 }
 
-void ChildProcess::Stop(int timeout_ms) {
+void ChildProcess::Stop(int timeout_milliseconds) {
 #ifdef _WIN32
   if (process_) {
-    if (WaitForSingleObject(process_, static_cast<DWORD>(timeout_ms)) !=
+    if (WaitForSingleObject(process_,
+                            static_cast<DWORD>(timeout_milliseconds)) !=
         WAIT_OBJECT_0) {
       TerminateProcess(process_, 1);
       WaitForSingleObject(process_, INFINITE);
@@ -433,17 +452,17 @@ void ChildProcess::Stop(int timeout_ms) {
   if (job_) CloseHandle(job_);
   process_ = nullptr;
   job_ = nullptr;
-  pid_ = 0;
+  process_id_ = 0;
 #else
-  const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(timeout_milliseconds);
   while (IsRunning() && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   if (IsRunning()) {
-    kill(static_cast<pid_t>(pid_), SIGKILL);
-    waitpid(static_cast<pid_t>(pid_), nullptr, 0);
-    pid_ = 0;
+    kill(static_cast<pid_t>(process_id_), SIGKILL);
+    waitpid(static_cast<pid_t>(process_id_), nullptr, 0);
+    process_id_ = 0;
   }
 #endif
 }
@@ -475,15 +494,15 @@ std::string ExecutablePath() {
   return CommandLine::BinaryName();
 }
 
-void WaitForParentExit(uint32_t parent_pid) {
+void WaitForParentExit(uint32_t parent_process_id) {
 #ifdef _WIN32
-  HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parent_pid);
+  HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, parent_process_id);
   if (!parent) return;
   WaitForSingleObject(parent, INFINITE);
   CloseHandle(parent);
 #else
   // A child whose parent died is handed to another process.
-  while (getppid() == static_cast<pid_t>(parent_pid)) {
+  while (getppid() == static_cast<pid_t>(parent_process_id)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
   }
 #endif

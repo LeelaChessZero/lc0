@@ -44,7 +44,7 @@
 #include <thread>
 #include <vector>
 
-#include "neural/backends/proxy/ipc.h"
+#include "neural/backends/proxy/interprocess.h"
 #include "neural/backends/proxy/protocol.h"
 #include "neural/shared_params.h"
 #include "utils/exception.h"
@@ -58,8 +58,8 @@ namespace {
 constexpr uint32_t kNumSlots = 16;
 // No network backend reports a larger maximum batch size.
 constexpr uint32_t kMaxBatch = 1024;
-constexpr int kPollMs = 100;
-constexpr int kStopWaitMs = 2000;
+constexpr int kPollMilliseconds = 100;
+constexpr int kStopWaitMilliseconds = 2000;
 // Restarts while one batch is pending before it fails.
 constexpr uint32_t kMaxRestarts = 2;
 
@@ -95,8 +95,9 @@ class ProxyBackend : public Backend {
   explicit ProxyBackend(const OptionsDict& options)
       : flags_(ForwardedFlags(options)),
         name_(NewName()),
-        shm_(SharedMemory::Create(name_, RegionSize(kNumSlots, kMaxBatch))),
-        header_(static_cast<RegionHeader*>(shm_.data())),
+        shared_memory_(
+            SharedMemory::Create(name_, RegionSize(kNumSlots, kMaxBatch))),
+        header_(static_cast<RegionHeader*>(shared_memory_.data())),
         slot_results_(kNumSlots, std::vector<EvalResultPtr>(kMaxBatch)) {
     header_->version = kVersion;
     header_->position_size = sizeof(Position);
@@ -123,7 +124,7 @@ class ProxyBackend : public Backend {
   ~ProxyBackend() override {
     header_->stop.store(1, std::memory_order_release);
     for (NamedSemaphore& request : requests_) request.Post();
-    process_.Stop(kStopWaitMs);
+    process_.Stop(kStopWaitMilliseconds);
   }
 
   BackendAttributes GetAttributes() const override { return attributes_; }
@@ -159,24 +160,26 @@ class ProxyBackend : public Backend {
   // restarting the process if it dies meanwhile.
   void Run(uint32_t index) {
     SlotHeader* slot = Slot(index).header;
-    const uint64_t seq = slot->request_seq.load(std::memory_order_relaxed) + 1;
+    const uint64_t sequence =
+        slot->request_sequence.load(std::memory_order_relaxed) + 1;
     const uint32_t first_start = starts_.load(std::memory_order_relaxed);
     slot->failed = 0;
-    slot->request_seq.store(seq, std::memory_order_release);
+    slot->request_sequence.store(sequence, std::memory_order_release);
     requests_[index].Post();
 
-    while (slot->response_seq.load(std::memory_order_acquire) != seq) {
-      if (responses_[index].Wait(kPollMs)) continue;
+    while (slot->response_sequence.load(std::memory_order_acquire) !=
+           sequence) {
+      if (responses_[index].Wait(kPollMilliseconds)) continue;
       std::lock_guard lock(process_mutex_);
       if (process_.IsRunning() ||
-          slot->response_seq.load(std::memory_order_acquire) == seq) {
+          slot->response_sequence.load(std::memory_order_acquire) == sequence) {
         continue;
       }
       // A batch that crashes every process it meets must not loop forever.
       // Marking it answered keeps the next process away from it.
       if (starts_.load(std::memory_order_relaxed) - first_start >=
           kMaxRestarts) {
-        slot->response_seq.store(seq, std::memory_order_relaxed);
+        slot->response_sequence.store(sequence, std::memory_order_relaxed);
         throw Exception("The backend process keeps crashing");
       }
       CERR << "The backend process died, restarting it.";
@@ -184,7 +187,7 @@ class ProxyBackend : public Backend {
         // The new process answers the pending batches, as their seqs differ.
         StartProcess();
       } catch (...) {
-        slot->response_seq.store(seq, std::memory_order_relaxed);
+        slot->response_sequence.store(sequence, std::memory_order_relaxed);
         throw;
       }
     }
@@ -193,7 +196,9 @@ class ProxyBackend : public Backend {
     }
   }
 
-  SlotView Slot(uint32_t index) const { return GetSlot(shm_.data(), index); }
+  SlotView Slot(uint32_t index) const {
+    return GetSlot(shared_memory_.data(), index);
+  }
 
   // Kept across batches so a batch allocates nothing once warmed up. Only
   // the computation that owns the slot touches its entry.
@@ -207,11 +212,11 @@ class ProxyBackend : public Backend {
   void StartProcess() {
     header_->state.store(ProcessState::kStarting, std::memory_order_relaxed);
     header_->error[0] = '\0';
-    std::vector<std::string> args = {
+    std::vector<std::string> arguments = {
         ExecutablePath(), "backendprocess", "--name=" + name_,
-        "--parent-pid=" + std::to_string(CurrentProcessId())};
-    args.insert(args.end(), flags_.begin(), flags_.end());
-    process_ = ChildProcess::Spawn(args);
+        "--parent-process-id=" + std::to_string(CurrentProcessId())};
+    arguments.insert(arguments.end(), flags_.begin(), flags_.end());
+    process_ = ChildProcess::Spawn(arguments);
     starts_.fetch_add(1, std::memory_order_relaxed);
     while (true) {
       const ProcessState state = header_->state.load(std::memory_order_acquire);
@@ -234,7 +239,7 @@ class ProxyBackend : public Backend {
 
   const std::vector<std::string> flags_;
   const std::string name_;
-  SharedMemory shm_;
+  SharedMemory shared_memory_;
   RegionHeader* const header_;
   std::vector<NamedSemaphore> requests_;
   std::vector<NamedSemaphore> responses_;
@@ -300,13 +305,14 @@ class ProxyComputation : public BackendComputation {
     slot.header->batch_size = batch_size;
     backend_->Run(slot_);
     for (size_t i = 0; i < batch_size; ++i) {
-      const ResultRecord& src = slot.results[i];
-      const EvalResultPtr& dst = results_[i];
-      if (dst.q) *dst.q = src.q;
-      if (dst.d) *dst.d = src.d;
-      if (dst.m) *dst.m = src.m;
-      std::copy_n(src.p, std::min<size_t>(dst.p.size(), kMaxLegalMoves),
-                  dst.p.begin());
+      const ResultRecord& source = slot.results[i];
+      const EvalResultPtr& destination = results_[i];
+      if (destination.q) *destination.q = source.q;
+      if (destination.d) *destination.d = source.d;
+      if (destination.m) *destination.m = source.m;
+      std::copy_n(source.p,
+                  std::min<size_t>(destination.p.size(), kMaxLegalMoves),
+                  destination.p.begin());
     }
   }
 

@@ -34,7 +34,7 @@
 #include <thread>
 #include <vector>
 
-#include "neural/backends/proxy/ipc.h"
+#include "neural/backends/proxy/interprocess.h"
 #include "neural/backends/proxy/protocol.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
@@ -48,7 +48,8 @@ namespace {
 using namespace proxy;
 
 const OptionId kNameId{"name", "", "Shared memory the engine created."};
-const OptionId kParentPidId{"parent-pid", "", "Process id of the engine."};
+const OptionId kParentProcessIdId{"parent-process-id", "",
+                                  "Process id of the engine."};
 
 bool Evaluate(Backend* backend, const SlotView& slot, uint32_t max_batch) {
   const uint32_t batch_size = slot.header->batch_size;
@@ -83,14 +84,15 @@ void RunSlot(Backend* backend, void* base, uint32_t index,
   const SlotView slot = GetSlot(base, index);
   while (!header->stop.load(std::memory_order_acquire)) {
     // Posts can outnumber requests after a restart; the seqs are the truth.
-    const uint64_t seq =
-        slot.header->request_seq.load(std::memory_order_acquire);
-    if (seq == slot.header->response_seq.load(std::memory_order_relaxed)) {
+    const uint64_t sequence =
+        slot.header->request_sequence.load(std::memory_order_acquire);
+    if (sequence ==
+        slot.header->response_sequence.load(std::memory_order_relaxed)) {
       request->Wait(-1);
       continue;
     }
     slot.header->failed = !Evaluate(backend, slot, header->max_batch);
-    slot.header->response_seq.store(seq, std::memory_order_release);
+    slot.header->response_sequence.store(sequence, std::memory_order_release);
     response->Post();
   }
 }
@@ -101,23 +103,24 @@ void RunBackendProcess() {
   OptionsParser options;
   SharedBackendParams::Populate(&options);
   options.Add<StringOption>(kNameId);
-  options.Add<IntOption>(kParentPidId, 0, std::numeric_limits<int>::max()) = 0;
+  options.Add<IntOption>(kParentProcessIdId, 0,
+                         std::numeric_limits<int>::max()) = 0;
   if (!options.ProcessAllFlags()) return;
   const OptionsDict& dict = options.GetOptionsDict();
 
   // Nothing is left to evaluate for once the engine is gone, and on POSIX
   // nothing else ends this process then.
-  const uint32_t parent_pid = dict.Get<int>(kParentPidId);
-  std::thread([parent_pid] {
-    WaitForParentExit(parent_pid);
+  const uint32_t parent_process_id = dict.Get<int>(kParentProcessIdId);
+  std::thread([parent_process_id] {
+    WaitForParentExit(parent_process_id);
     std::_Exit(1);
   }).detach();
 
   const std::string name = dict.Get<std::string>(kNameId);
-  SharedMemory shm = SharedMemory::Open(name);
+  SharedMemory shared_memory = SharedMemory::Open(name);
   // Too small to hold an error message; the engine sees this process exit.
-  if (shm.size() < sizeof(RegionHeader)) return;
-  auto* header = static_cast<RegionHeader*>(shm.data());
+  if (shared_memory.size() < sizeof(RegionHeader)) return;
+  auto* header = static_cast<RegionHeader*>(shared_memory.data());
 
   std::vector<NamedSemaphore> requests;
   std::vector<NamedSemaphore> responses;
@@ -125,7 +128,8 @@ void RunBackendProcess() {
   try {
     if (header->magic != kMagic || header->version != kVersion ||
         header->position_size != sizeof(Position) ||
-        shm.size() < RegionSize(header->num_slots, header->max_batch)) {
+        shared_memory.size() <
+            RegionSize(header->num_slots, header->max_batch)) {
       throw Exception("The backend process is from a different lc0 build");
     }
     for (uint32_t i = 0; i < header->num_slots; ++i) {
@@ -143,8 +147,8 @@ void RunBackendProcess() {
 
   std::vector<std::thread> threads;
   for (uint32_t i = 0; i < header->num_slots; ++i) {
-    threads.emplace_back(RunSlot, backend.get(), shm.data(), i, &requests[i],
-                         &responses[i]);
+    threads.emplace_back(RunSlot, backend.get(), shared_memory.data(), i,
+                         &requests[i], &responses[i]);
   }
   for (auto& thread : threads) thread.join();
 }
