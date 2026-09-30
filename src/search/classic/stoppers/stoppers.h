@@ -38,7 +38,6 @@ namespace classic {
 // Combines multiple stoppers into one.
 class ChainedSearchStopper : public SearchStopper {
  public:
-  ChainedSearchStopper() = default;
   // Calls stoppers one by one until one of them returns true. If one of
   // stoppers modifies hints, next stoppers in the chain see that.
   bool ShouldStop(const IterationStats&, StoppersHints*) override;

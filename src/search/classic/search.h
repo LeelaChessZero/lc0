@@ -94,6 +94,10 @@ class Search {
   // from temperature having been applied again.
   void ResetBestMove();
 
+  // Return processed visit distribution and original policy
+  std::vector<std::tuple<float, float>> GetVisitDistribution(
+      const std::vector<Move>& legal_moves) const;
+
  private:
   // Computes the best move, maybe with temperature (according to the settings).
   void EnsureBestMoveKnown();
@@ -138,6 +142,8 @@ class Search {
 
   PositionHistory GetPositionHistoryAtNode(const Node* node) const;
 
+  void StoreOriginalPolicy(const Node* node, std::unique_ptr<Edge []>& dst);
+
   mutable Mutex counters_mutex_ ACQUIRED_AFTER(nodes_mutex_);
   // Tells all threads to stop.
   std::atomic<bool> stop_{false};
@@ -175,6 +181,8 @@ class Search {
   // tb_hits_ must be initialized before root_move_filter_.
   std::atomic<int> tb_hits_{0};
   const MoveList root_move_filter_;
+  std::vector<uint32_t> forced_exploration_visits_;
+  std::unique_ptr<Edge []> noised_policy_;
 
   mutable SharedMutex nodes_mutex_;
   EdgeAndNode current_best_edge_ GUARDED_BY(nodes_mutex_);
@@ -404,8 +412,8 @@ class SearchWorker {
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, int* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
-  void PickNodesToExtend(int collision_limit);
-  void PickNodesToExtendTask(Node* starting_point, int base_depth,
+  bool PickNodesToExtend(int collision_limit);
+  bool PickNodesToExtendTask(Node* starting_point, int base_depth,
                              int collision_limit,
                              const std::vector<Move>& moves_to_base,
                              std::vector<NodeToProcess>* receiver,
