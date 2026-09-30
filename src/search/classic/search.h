@@ -28,6 +28,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <functional>
 #include <optional>
@@ -303,6 +305,9 @@ class SearchWorker {
   void UpdateCounters();
 
  private:
+  // Unit tests reach the picking-cache types below through this peer.
+  friend class SearchWorkerTest;
+
   struct NodeToProcess {
     bool IsExtendable() const { return !is_collision && !node->IsTerminal(); }
     bool IsCollision() const { return is_collision; }
@@ -337,33 +342,94 @@ class SearchWorker {
       return NodeToProcess(node, depth, true, collision_count, max_count);
     }
     static NodeToProcess Visit(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, false, 1, 0);
+      NodeToProcess np(node, depth, false, 1, 0);
+      // Only visits are evaluated; collisions never read eval.
+      np.eval = std::make_unique<EvalResult>();
+      return np;
     }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
                   int max_count)
         : node(node),
-          eval(std::make_unique<EvalResult>()),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
           is_collision(is_collision) {}
   };
 
+  // Per-child scratch: policy/utility filled pre-emptively, rest on demand.
+  struct ChildCache {
+    Node::Iterator iter;
+    float policy = 0.0f;
+    float utility = 0.0f;
+    float uct_score = 0.0f;
+    int n_started = 0;
+  };
+
+  // Stack indexed by descent depth; entries past kInlineCapacity spill to
+  // `overflow`.
+  struct InlineDepthStack {
+    static constexpr int kInlineCapacity = 256;
+    int count = 0;
+    std::array<int, kInlineCapacity> data;
+    std::vector<int> overflow;
+
+    void clear() {
+      count = 0;
+      overflow.clear();
+    }
+    bool empty() const { return count == 0; }
+    void push_back(int val) {
+      if (count < kInlineCapacity) {
+        data[count++] = val;
+      } else {
+        overflow.push_back(val);
+        ++count;
+      }
+    }
+    void pop_back() {
+      if (count > 0) {
+        --count;
+        if (count >= kInlineCapacity) overflow.pop_back();
+      }
+    }
+    int& back() {
+      assert(count > 0);
+      return count > kInlineCapacity ? overflow[count - kInlineCapacity - 1]
+                                     : data[count - 1];
+    }
+  };
+
+  // Per-level picking scratch, reused across levels and calls. Entries are
+  // written before they are read, so it is never cleared.
+  struct alignas(64) CachedNodeData {
+    // Hot scalars first (one cache line).
+    float puct_mult = 0.0f;
+    int cache_filled_idx = -1;
+    int max_policy_entries_needed = 0;
+
+    InlineDepthStack vtp_last_filled_cache;
+
+    std::array<ChildCache, 256> children;
+
+    CachedNodeData() = default;
+  };
+
   // Holds per task worker scratch data
   struct TaskWorkspace {
-    std::array<Node::Iterator, 256> cur_iters;
     std::vector<std::unique_ptr<std::array<int, 256>>> vtp_buffer;
     std::vector<std::unique_ptr<std::array<int, 256>>> visits_to_perform;
-    std::vector<int> vtp_last_filled;
+
     std::vector<int> current_path;
     std::vector<Move> moves_to_path;
     PositionHistory history;
+
+    CachedNodeData cache;
+
     TaskWorkspace() {
       vtp_buffer.reserve(30);
       visits_to_perform.reserve(30);
-      vtp_last_filled.reserve(30);
       current_path.reserve(30);
       moves_to_path.reserve(30);
       history.Reserve(30);

@@ -309,6 +309,9 @@ class SearchWorker {
   void UpdateCounters();
 
  private:
+  // Unit tests reach the picking-cache types below through this peer.
+  friend class SearchWorkerTest;
+
   struct NodeToProcess {
     bool IsExtendable() const {
       return !is_collision && !node->IsTerminal() && !node->GetLowNode();
@@ -377,11 +380,11 @@ class SearchWorker {
     }
 
    private:
+    // Collisions are never evaluated, so eval stays null.
     NodeToProcess(const BackupPath& path, uint32_t multivisit,
                   uint32_t max_count)
         : path(path),
           node(std::get<0>(path.back())),
-          eval(std::make_unique<EvalResult>()),
           multivisit(multivisit),
           maxvisit(max_count),
           is_collision(true),
@@ -440,11 +443,27 @@ class SearchWorker {
   static_assert(sizeof(CurrentPath) == sizeof(uint32_t),
                 "CurrentPath must be packed into 32 bits");
 
+  // Per-child scratch by edge index: utility filled pre-emptively, rest on
+  // demand.
+  struct ChildCache {
+    Node::Iterator iter;
+    float utility = 0.0f;
+    float uct_score = 0.0f;
+    int n_started = 0;
+  };
+
+  // Per-level picking scratch, reused across levels and calls. Entries are
+  // written before they are read, so it is never cleared.
+  struct CachedNodeData {
+    std::array<ChildCache, 256> children;
+    std::array<CurrentPath, kMaxMovesInPosition> visits_to_perform;
+  };
+
   // Holds per task worker scratch data
   struct TaskWorkspace {
-    std::array<Node::Iterator, 256> cur_iters;
     std::vector<CurrentPath> current_path;
     BackupPath full_path;
+    CachedNodeData cache;
     TaskWorkspace() {
       current_path.reserve(30);
       full_path.reserve(30);
