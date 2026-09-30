@@ -530,7 +530,7 @@ void VisitsTrendWatcher::Update(uint64_t timestamp,
   }
   last_timestamp_ = timestamp;
   last_visits_ = visits;
-  if (cur_timestamp_ + nps_update_period_ >= timestamp) {
+  if (cur_timestamp_ + nps_update_period_ <= timestamp) {
     prev_timestamp_ = cur_timestamp_;
     prev_visits_ = std::move(cur_visits_);
     cur_visits_ = last_visits_;
