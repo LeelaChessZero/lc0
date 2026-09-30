@@ -128,6 +128,10 @@ class Converter {
                           const std::string& encoder_in,
                           const std::string& name);
 
+  std::string MakeRMSNorm(OnnxBuilder* builder, const std::string& input,
+                          const std::string& name,
+                          const lczero::OnnxConst& gammas, float eps = 1e-6);
+
   std::string MakeLayerNorm(OnnxBuilder* builder, const std::string& input,
                             const std::string& name,
                             const lczero::OnnxConst& gammas,
@@ -466,12 +470,41 @@ std::string Converter::MakeSmolgen(OnnxBuilder* builder,
   return flow;
 }
 
+std::string Converter::MakeRMSNorm(OnnxBuilder* builder,
+    const std::string& input,
+    const std::string& name,
+    const lczero::OnnxConst& gammas, float eps) {
+  auto in = input;
+  if (!options_.alt_rmsnorm) {
+    return builder->RMSNormalization(name, in, gammas, 1, eps);
+  }
+  if (GetDataType() != pblczero::TensorProto::FLOAT) {
+    in = builder->Cast(name + "/to_float", in, pblczero::TensorProto::FLOAT);
+  }
+  auto flow = builder->Mul(name + "/squared", in, in);
+  flow = builder->ReduceMean(name + "/mean", flow, {1});
+  flow =
+      builder->Add(name + "/mean_eps", flow,
+                   static_cast<const OnnxConst&>(FloatOnnxConst({eps}, {1})));
+  flow = builder->Sqrt(name + "/rms", flow);
+  flow = builder->Reciprocal(name + "/inv_rms", flow);
+  flow = builder->Mul(name + "/normalized", in, flow);
+  if (GetDataType() != pblczero::TensorProto::FLOAT) {
+    flow = builder->Cast(name + "/to_data_type", flow, GetDataType());
+  }
+  flow = builder->Mul(name + "/gammas", flow, gammas);
+  return flow;
+}
+
 std::string Converter::MakeLayerNorm(OnnxBuilder* builder,
                                      const std::string& input,
                                      const std::string& name,
                                      const lczero::OnnxConst& gammas,
                                      const lczero::OnnxConst& betas,
                                      float eps) {
+  if (betas.GetRawData().empty()) {
+    return MakeRMSNorm(builder, input, name, gammas, eps);
+  }
   if (!options_.alt_layernorm) {
     return builder->LayerNormalization(name, input, gammas, betas, 1, eps);
   }
@@ -525,7 +558,13 @@ std::string Converter::MakeEncoderLayer(
     OnnxBuilder* builder, const MultiHeadWeights::EncoderLayer& layer,
     int embedding_size, int heads, const std::string& encoder_in,
     const std::string& name, ActivationFunction activation, float alpha) {
-  const int d_model = layer.mha.q_b.size();
+  // Q/K/V biases are optional in newer weight files.  The projection width is
+  // normally available from q_b, but must be inferred from q_w when it is
+  // omitted.  ONNX's MatMul does not need a bias input, so simply skip the
+  // corresponding Add in that case.
+  const int d_model = layer.mha.q_b.empty()
+                          ? layer.mha.q_w.size() / embedding_size
+                          : layer.mha.q_b.size();
   const int depth = d_model / heads;
 
   auto mha_shape =
@@ -534,22 +573,28 @@ std::string Converter::MakeEncoderLayer(
   auto flow = builder->MatMul(
       name + "/mha/Q/w", encoder_in,
       *GetWeghtsConverter(layer.mha.q_w, {embedding_size, d_model}, {1, 0}));
-  flow = builder->Add(name + "/mha/Q/b", flow,
-                      *GetWeghtsConverter(layer.mha.q_b, {d_model}));
+  if (!layer.mha.q_b.empty()) {
+    flow = builder->Add(name + "/mha/Q/b", flow,
+                        *GetWeghtsConverter(layer.mha.q_b, {d_model}));
+  }
   flow = builder->Reshape(name + "/mha/Q/reshape", flow, mha_shape);
   auto Q = builder->Transpose(name + "/mha/Q/transpose", flow, {0, 2, 1, 3});
   flow = builder->MatMul(
       name + "/mha/K/w", encoder_in,
       *GetWeghtsConverter(layer.mha.k_w, {embedding_size, d_model}, {1, 0}));
-  flow = builder->Add(name + "/mha/K/b", flow,
-                      *GetWeghtsConverter(layer.mha.k_b, {d_model}));
+  if (!layer.mha.k_b.empty()) {
+    flow = builder->Add(name + "/mha/K/b", flow,
+                        *GetWeghtsConverter(layer.mha.k_b, {d_model}));
+  }
   flow = builder->Reshape(name + "/mha/K/reshape", flow, mha_shape);
   auto K = builder->Transpose(name + "/mha/K/transpose", flow, {0, 2, 3, 1});
   flow = builder->MatMul(
       name + "/mha/V/w", encoder_in,
       *GetWeghtsConverter(layer.mha.v_w, {embedding_size, d_model}, {1, 0}));
-  flow = builder->Add(name + "/mha/V/b", flow,
-                      *GetWeghtsConverter(layer.mha.v_b, {d_model}));
+  if (!layer.mha.v_b.empty()) {
+    flow = builder->Add(name + "/mha/V/b", flow,
+                        *GetWeghtsConverter(layer.mha.v_b, {d_model}));
+  }
   flow = builder->Reshape(name + "/mha/V/reshape", flow, mha_shape);
   auto V = builder->Transpose(name + "/mha/V/transpose", flow, {0, 2, 1, 3});
   flow = builder->MatMul(name + "/mha/QK/matmul", Q, K);
