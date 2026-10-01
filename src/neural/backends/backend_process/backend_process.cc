@@ -149,6 +149,7 @@ void RunBackendProcess() {
   try {
     if (header->magic != kMagic || header->version != kVersion ||
         header->position_size != sizeof(Position) ||
+        header->slot_stride != SlotStride(header->max_batch) ||
         shared_memory.size() <
             RegionSize(header->num_slots, header->max_batch)) {
       throw Exception("The backend process is from a different lc0 build");
