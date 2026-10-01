@@ -40,6 +40,7 @@
 #include <cstring>
 #include <iomanip>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -63,6 +64,10 @@ constexpr int kPollMilliseconds = 100;
 constexpr int kStopWaitMilliseconds = 2000;
 // Restarts while one batch is pending before it fails.
 constexpr uint32_t kMaxRestarts = 2;
+// A restarted backend process is stopped when it takes this many times as
+// long to get ready as the first one did, and no less than the minimum.
+constexpr int kRestartTimeFactor = 5;
+constexpr std::chrono::seconds kMinimumRestartTime{60};
 
 std::string Flag(const OptionId& id, const std::string& value) {
   return std::string("--") + id.long_flag() + "=" + value;
@@ -220,8 +225,11 @@ class ChildProcessBackend : public Backend {
 
  private:
   // Starts the backend process and waits until it has loaded the network.
+  // The first start may take any time, as nothing tells a slow load from one
+  // that hangs. It gives the time limit of the later ones.
   // Requires process_mutex_.
   void StartProcess() {
+    const auto start_time = std::chrono::steady_clock::now();
     header_->state.store(ProcessState::kStarting, std::memory_order_relaxed);
     header_->error[0] = '\0';
     std::vector<std::string> arguments = {
@@ -232,7 +240,15 @@ class ChildProcessBackend : public Backend {
     starts_.fetch_add(1, std::memory_order_relaxed);
     while (true) {
       const ProcessState state = header_->state.load(std::memory_order_acquire);
-      if (state == ProcessState::kReady) return;
+      if (state == ProcessState::kReady) {
+        if (!restart_time_limit_) {
+          restart_time_limit_ = std::max<std::chrono::steady_clock::duration>(
+              kMinimumRestartTime,
+              kRestartTimeFactor *
+                  (std::chrono::steady_clock::now() - start_time));
+        }
+        return;
+      }
       if (state == ProcessState::kFailed) {
         throw Exception(std::string(
             header_->error, strnlen(header_->error, sizeof(header_->error))));
@@ -244,6 +260,12 @@ class ChildProcessBackend : public Backend {
           continue;
         }
         throw Exception("The backend process exited while loading the network");
+      }
+      if (restart_time_limit_ && std::chrono::steady_clock::now() - start_time >
+                                     *restart_time_limit_) {
+        process_.Stop(0);
+        throw Exception(
+            "The backend process took too long to load the network");
       }
       // Woken as soon as the state is set. A post left over from an earlier
       // process only costs one more pass.
@@ -262,6 +284,8 @@ class ChildProcessBackend : public Backend {
 
   std::mutex process_mutex_;
   ChildProcess process_;
+  // Set by the first start. Guarded by process_mutex_.
+  std::optional<std::chrono::steady_clock::duration> restart_time_limit_;
   std::atomic<uint32_t> starts_{0};
 
   std::mutex slots_mutex_;
