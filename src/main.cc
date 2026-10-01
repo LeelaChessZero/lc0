@@ -28,8 +28,10 @@
 #include "chess/board.h"
 #include "default_search.h"
 #include "engine.h"
+#ifndef __ANDROID__
 #include "neural/backends/backend_process/backend_process.h"
 #include "neural/backends/backend_process/child_process_backend.h"
+#endif
 #include "neural/register.h"
 #include "search/register.h"
 #include "selfplay/loop.h"
@@ -96,10 +98,13 @@ int main(int argc, const char** argv) {
     InitializeMagicBitboards();
 
     CommandLine::Init(argc, argv);
+#ifndef __ANDROID__
     // Backends run in a child process, so a crash in the backend or in the GPU
-    // driver restarts that process instead of taking the engine down.
+    // driver restarts that process instead of taking the engine down. Android
+    // lacks what that takes, so there they run in this process.
     BackendManager::Get()->SetLauncher(
         &backend_process::CreateChildProcessBackend);
+#endif
     if (CommandLine::BinaryName().find("simple") == std::string::npos) {
       CommandLine::RegisterMode("selfplay", "Play games with itself");
       CommandLine::RegisterMode("benchmark", "Quick benchmark");
@@ -136,9 +141,11 @@ int main(int argc, const char** argv) {
       // Backend Benchmark mode.
       BackendBenchmark benchmark;
       benchmark.Run();
+#ifndef __ANDROID__
     } else if (CommandLine::ConsumeCommand("backendprocess")) {
       // Internal: started by lc0 itself, see child_process_backend.h.
       RunBackendProcess();
+#endif
     } else if (CommandLine::ConsumeCommand("leela2onnx")) {
       lczero::ConvertLeelaToOnnx();
     } else if (CommandLine::ConsumeCommand("onnx2leela")) {
