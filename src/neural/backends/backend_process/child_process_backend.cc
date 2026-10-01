@@ -62,7 +62,8 @@ constexpr uint32_t kNumSlots = 16;
 constexpr uint32_t kMaxBatch = 1024;
 constexpr int kPollMilliseconds = 100;
 constexpr int kStopWaitMilliseconds = 2000;
-// Restarts while one batch is pending before it fails.
+// Restarts while one batch is pending before it fails. Each batch counts from
+// the moment it is posted, so restarts before that are not held against it.
 constexpr uint32_t kMaxRestarts = 2;
 // A restarted backend process is stopped when it takes this many times as
 // long to get ready as the first one did, and no less than the minimum.
@@ -193,7 +194,9 @@ class ChildProcessBackend : public Backend {
         continue;
       }
       // A batch that crashes every process it meets must not loop forever.
-      // Marking it answered keeps the next process away from it.
+      // Marking it answered keeps the next process away from it. Nothing
+      // tells which pending batch a process died on, so each of them counts
+      // the restart.
       if (starts_.load(std::memory_order_relaxed) - first_start >=
           kMaxRestarts) {
         slot->response_sequence.store(sequence, std::memory_order_relaxed);
