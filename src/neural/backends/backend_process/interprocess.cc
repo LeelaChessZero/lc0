@@ -33,6 +33,7 @@
 
 #include "utils/commandline.h"
 #include "utils/exception.h"
+#include "utils/logging.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -375,15 +376,20 @@ ChildProcess ChildProcess::Spawn(const std::vector<std::string>& arguments) {
   child.process_id_ = process_information.dwProcessId;
   child.process_ = process_information.hProcess;
 
-  // The job dies with its last handle, and takes the child with it.
+  // The job dies with its last handle, and takes the child with it. Without
+  // one the child still ends itself once it sees the engine gone, see
+  // WaitForParentExit(), only not at the same moment.
   child.job_ = CreateJobObjectA(nullptr, nullptr);
-  if (child.job_) {
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
-    limits.BasicLimitInformation.LimitFlags =
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-    SetInformationJobObject(child.job_, JobObjectExtendedLimitInformation,
-                            &limits, sizeof(limits));
-    AssignProcessToJobObject(child.job_, child.process_);
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+  limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  if (!child.job_ ||
+      !SetInformationJobObject(child.job_, JobObjectExtendedLimitInformation,
+                               &limits, sizeof(limits)) ||
+      !AssignProcessToJobObject(child.job_, child.process_)) {
+    LOGFILE << "The backend process is not in a job object, error "
+            << GetLastError() << ".";
+    if (child.job_) CloseHandle(child.job_);
+    child.job_ = nullptr;
   }
   ResumeThread(process_information.hThread);
   CloseHandle(process_information.hThread);
