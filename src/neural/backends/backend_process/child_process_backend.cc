@@ -122,8 +122,9 @@ class ChildProcessBackend : public Backend {
       StartProcess();
     }
     attributes_ = header_->attributes;
+    // A slot holds kMaxBatch positions, and a batch has at least one.
     attributes_.maximum_batch_size =
-        std::min<int>(attributes_.maximum_batch_size, kMaxBatch);
+        std::clamp<int>(attributes_.maximum_batch_size, 1, kMaxBatch);
     Backend::UpdateConfiguration(options);
     LOGFILE << "Backend process " << name_ << " started.";
   }
