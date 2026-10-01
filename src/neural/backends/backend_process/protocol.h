@@ -50,7 +50,7 @@ namespace lczero {
 namespace backend_process {
 
 constexpr uint32_t kMagic = 0x6c63304e;
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 2;
 constexpr uint32_t kMaxLegalMoves = 256;
 
 enum class ProcessState : uint32_t { kStarting, kReady, kFailed };
@@ -90,10 +90,10 @@ struct SlotHeader {
 };
 
 struct PositionRecord {
-  uint32_t history_size;  // At most kMoveHistory, newest last.
+  uint32_t history_size;  // At most kCompactHistory, newest last.
   uint32_t num_moves;
   uint32_t want_policy;
-  alignas(Position) std::byte history[kMoveHistory * sizeof(Position)];
+  alignas(Position) std::byte history[kCompactHistory * sizeof(Position)];
   Move moves[kMaxLegalMoves];
 
   const Position* positions() const {

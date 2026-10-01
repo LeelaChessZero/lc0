@@ -61,7 +61,7 @@ bool Evaluate(Backend* backend, const SlotView& slot, uint32_t max_batch) {
     auto computation = backend->CreateComputation();
     for (uint32_t i = 0; i < batch_size; ++i) {
       const PositionRecord& in = slot.positions[i];
-      if (in.history_size == 0 || in.history_size > kMoveHistory ||
+      if (in.history_size == 0 || in.history_size > kCompactHistory ||
           in.num_moves > kMaxLegalMoves) {
         return false;
       }

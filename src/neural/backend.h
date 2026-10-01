@@ -47,6 +47,7 @@ struct BackendAttributes {
   int suggested_num_search_threads;
   int recommended_batch_size;
   int maximum_batch_size;
+  pblczero::NetworkFormat::InputFormat input_format;
 };
 
 struct EvalResultPtr {

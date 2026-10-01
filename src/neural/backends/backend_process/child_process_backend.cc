@@ -33,6 +33,7 @@
 #include "neural/backends/backend_process/child_process_backend.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -299,15 +300,18 @@ class ChildProcessComputation : public BackendComputation {
     if (index >= kMaxBatch) {
       throw Exception("Batch is larger than the backend process allows");
     }
-    // The encoder reads at most kMoveHistory positions.
-    const auto history =
-        pos.pos.last(std::min<size_t>(pos.pos.size(), kMoveHistory));
+    // Only the positions the encoder reads cross to the backend process.
+    std::array<int, kCompactHistory> history;
+    const int history_size = CompactHistoryForNN(
+        backend_->GetAttributes().input_format, pos.pos, history);
     PositionRecord& record = backend_->Slot(slot_).positions[index];
-    record.history_size = history.size();
+    record.history_size = history_size;
     record.num_moves = pos.legal_moves.size();
     record.want_policy = !result.p.empty();
-    std::memcpy(record.history, history.data(),
-                history.size() * sizeof(Position));
+    for (int i = 0; i < history_size; ++i) {
+      std::memcpy(record.history + i * sizeof(Position), &pos.pos[history[i]],
+                  sizeof(Position));
+    }
     std::memcpy(record.moves, pos.legal_moves.data(),
                 pos.legal_moves.size() * sizeof(Move));
     results_[index] = result;
