@@ -74,6 +74,11 @@ class DagClassicSearch : public SearchBase {
     if (search_) search_->Abort();
   }
 
+  float GetMaxOutOfOrderFactor() const override {
+    return options_->Get<float>(
+        classic::BaseSearchParams::kMaxOutOfOrderEvalsFactorId);
+  }
+
   const OptionsDict* options_;
   std::unique_ptr<classic::TimeManager> time_manager_;
   std::unique_ptr<Search> search_;

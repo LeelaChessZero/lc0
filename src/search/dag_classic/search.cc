@@ -1488,6 +1488,9 @@ void SearchWorker::GatherMinibatch() {
           minibatch_.erase(minibatch_.begin() + i);
           --minibatch_size;
           ++number_out_of_order_;
+        } else if (minibatch_[i].is_delayed_cache_hit) {
+          --minibatch_size;
+          ++number_out_of_order_;
         }
       }
     }
@@ -2105,13 +2108,22 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     picked_node.tt_low_node = std::make_shared<LowNode>(legal_moves);
     picked_node.nn_queried = true;
     picked_node.eval->p.resize(legal_moves.size());
-    picked_node.is_cache_hit = computation_->AddInput(
-                                   EvalPosition{
-                                       .pos = history.GetPositions(),
-                                       .legal_moves = legal_moves,
-                                   },
-                                   picked_node.eval->AsPtr()) ==
-                               BackendComputation::FETCHED_IMMEDIATELY;
+    auto cache_result = computation_->AddInput(
+        EvalPosition{
+            .pos = history.GetPositions(),
+            .legal_moves = legal_moves,
+        },
+        picked_node.eval->AsPtr());
+    switch (cache_result) {
+      case BackendComputation::ENQUEUED_FOR_EVAL:
+        break;
+      case BackendComputation::FETCHED_IMMEDIATELY:
+        picked_node.is_cache_hit = true;
+        break;
+      case BackendComputation::FETCHED_DELAYED:
+        picked_node.is_delayed_cache_hit = true;
+        break;
+    }
   }
 }
 
@@ -2380,7 +2392,8 @@ void SearchWorker::DoBackupUpdateSingleNode(
     nm = pm;
   }
   search_->total_playouts_ += node_to_process.multivisit;
-  if (node_to_process.nn_queried && !node_to_process.is_cache_hit) {
+  if (node_to_process.nn_queried && !node_to_process.is_cache_hit &&
+      !node_to_process.is_delayed_cache_hit) {
     search_->network_evaluations_++;
   }
   search_->cum_depth_ +=
