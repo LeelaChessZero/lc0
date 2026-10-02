@@ -251,6 +251,10 @@ class DemuxingNetwork final : public Network {
   }
 
   int GetMiniBatchSize() const override {
+    if (min_batch_size_ * backends_.size() > 1024) {
+      unsigned steps = 1024 / batch_step_ / backends_.size();
+      return steps * batch_step_ * backends_.size();
+    }
     return min_batch_size_ * backends_.size();
   }
 
