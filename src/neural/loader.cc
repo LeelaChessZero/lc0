@@ -31,10 +31,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cctype>
 #include <cstdio>
-#include <fstream>
-#include <sstream>
+#include <filesystem>
 #include <string>
 
 #include "neural/shared_params.h"
@@ -42,7 +40,6 @@
 #include "utils/commandline.h"
 #include "utils/exception.h"
 #include "utils/filesystem.h"
-#include "utils/optionsdict.h"
 #include "version.h"
 
 #ifdef _WIN32
@@ -54,7 +51,8 @@
 namespace lczero {
 
 namespace {
-const std::uint32_t kWeightMagic = 0x1c0;
+constexpr std::uint32_t kWeightMagic = 0x1c0;
+constexpr int kMinFileSize = 500000;  // 500 KB
 
 std::string DecompressGzip(const std::string& filename) {
   const int kStartingSize = 8 * 1024 * 1024;  // 8M
@@ -227,50 +225,67 @@ std::optional<WeightsFile> LoadWeights(std::string_view location) {
   return LoadWeightsFromFile(net_path);
 }
 
-std::string DiscoverWeightsFile() {
-  const int kMinFileSize = 500000;  // 500 KB
+bool IsPathWeightsFile(const std::filesystem::directory_entry& file) {
+  if (!file.is_regular_file() || file.file_size() < kMinFileSize) return false;
+#ifdef _WIN32
+  const gzFile stream = gzopen_w(file.path().c_str(), "rb");
+#else
+  const gzFile stream = gzopen(file.path().c_str(), "rb");
+#endif
+  if (!stream) return false;
+  unsigned char buf[256];
+  int sz = gzread(stream, buf, sizeof(buf));
+  gzclose(stream);
+  if (sz < 0) return false;
 
-  std::vector<std::string> data_dirs = {CommandLine::BinaryDirectory()};
-  const std::string user_data_path = GetUserDataDirectory();
+  // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it
+  // as our own magic should suffice.
+  const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
+                     (static_cast<uint32_t>(buf[3]) << 16) |
+                     (static_cast<uint32_t>(buf[4]) << 24);
+  if (magic != kWeightMagic) return false;
+  return true;
+}
+
+std::string DiscoverWeightsFile() {
+  std::vector<std::filesystem::path> data_dirs = {
+      CommandLine::BinaryDirectory()};
+  const std::filesystem::path user_data_path = GetUserDataDirectory();
   if (!user_data_path.empty()) {
-    data_dirs.emplace_back(user_data_path + "lc0");
+    data_dirs.emplace_back(user_data_path / "lc0");
   }
   for (const auto& dir : GetSystemDataDirectoryList()) {
-    data_dirs.emplace_back(dir + (dir.back() == '/' ? "" : "/") + "lc0");
+    data_dirs.emplace_back(std::filesystem::path(dir) / "lc0");
+    data_dirs.emplace_back(data_dirs.back() / "networks");
   }
 
   for (const auto& dir : data_dirs) {
     // Open all files in <dir> amd <dir>/networks,
     // ones which are >= kMinFileSize are candidates.
-    std::vector<std::pair<time_t, std::string> > time_and_filename;
-    for (const auto& path : {"", "/networks"}) {
-      for (const auto& file : GetFileList(dir + path)) {
-        const std::string filename = dir + path + "/" + file;
-        if (GetFileSize(filename) < kMinFileSize) continue;
-        time_and_filename.emplace_back(GetFileTime(filename), filename);
-      }
+    std::vector<std::filesystem::directory_entry> time_and_filename;
+    if (!std::filesystem::exists(dir) || !std::filesystem::is_directory(dir)) {
+      continue;
+    }
+    for (const auto& file : std::filesystem::directory_iterator(dir)) {
+      if (!file.is_regular_file() || file.file_size() < kMinFileSize) continue;
+      time_and_filename.emplace_back(file);
     }
 
-    std::sort(time_and_filename.rbegin(), time_and_filename.rend());
+    std::sort(time_and_filename.rbegin(), time_and_filename.rend(),
+              [](const auto& a, const auto& b) {
+                if (a.last_write_time() == b.last_write_time()) {
+                  return a.path().filename().string() <
+                         b.path().filename().string();
+                }
+                return a.last_write_time() < b.last_write_time();
+              });
 
     // Open all candidates, from newest to oldest, possibly gzipped, and try to
     // read version for it. If version is 2 or if the file is our protobuf,
     // return it.
     for (const auto& candidate : time_and_filename) {
-      const gzFile file = gzopen(candidate.second.c_str(), "rb");
-
-      if (!file) continue;
-      unsigned char buf[256];
-      int sz = gzread(file, buf, 256);
-      gzclose(file);
-      if (sz < 0) continue;
-
-      // First byte of the protobuf stream is 0x0d for fixed32, so we ignore it
-      // as our own magic should suffice.
-      const auto magic = buf[1] | (static_cast<uint32_t>(buf[2]) << 8) |
-                         (static_cast<uint32_t>(buf[3]) << 16) |
-                         (static_cast<uint32_t>(buf[4]) << 24);
-      if (magic == kWeightMagic) return candidate.second;
+      if (!IsPathWeightsFile(candidate)) continue;
+      return candidate.path().string();
     }
   }
   LOGFILE << "Network weights file not found.";
