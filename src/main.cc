@@ -38,6 +38,7 @@
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/logging.h"
+#include "utils/numa.h"
 #include "utils/trace.h"
 #include "version.h"
 
