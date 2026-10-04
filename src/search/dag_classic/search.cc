@@ -694,7 +694,9 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
       !bestmove_is_sent_) {
     SendUciInfo(stats);
     EnsureBestMoveKnown();
-    SendMovesStats();
+    if (params_.GetVerboseStats() || params_.GetLogLiveStats()) {
+      SendMovesStats();
+    }
     BestMoveInfo info(final_bestmove_, final_pondermove_);
     uci_responder_->OutputBestMove(&info);
     stopper_->OnSearchDone(stats);
