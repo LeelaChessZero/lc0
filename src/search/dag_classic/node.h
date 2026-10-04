@@ -730,6 +730,10 @@ class EdgeAndNode {
     return numerator * GetP() / (1 + GetNStarted());
   }
 
+  unsigned GetIndex(const Node* parent) const {
+    return edge_ - parent->GetLowNode()->GetEdges();
+  }
+
   std::string DebugString() const;
 
  protected:
