@@ -1704,7 +1704,16 @@ void SearchWorker::PickNodesToExtendTask(
       for (Node* child : node->VisitedNodes()) {
         int index = child->Index();
         visited_pol += current_pol[index];
-        float q = child->GetQ(draw_score);
+        // Overlay virtual visits for Q calculation.
+        // Convert averages to totals before adding.
+        Edge* edge = node->GetEdgeToNode(child);
+        const float real_n = static_cast<float>(child->GetN());
+        const float real_wl = child->GetWL() * real_n;
+        const float real_d = child->GetD() * real_n;
+        const float total_wl = real_wl + edge->GetW0();
+        const float total_d = real_d + edge->GetD0();
+        const float total_n = real_n + edge->GetN0();
+        float q = (total_n > 0.0f) ? (total_wl + draw_score * total_d) / total_n : 0.0f;
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
       const float fpu =
@@ -1740,8 +1749,9 @@ void SearchWorker::PickNodesToExtendTask(
           int nstarted = current_nstarted[idx];
           const float util = current_util[idx];
           if (idx > cache_filled_idx) {
+            const float virtual_n = cur_iters[idx].edge()->GetN0();
             current_score[idx] =
-                current_pol[idx] * puct_mult / (1 + nstarted) + util;
+                current_pol[idx] * puct_mult / (1.0f + virtual_n + nstarted) + util;
             cache_filled_idx++;
           }
           if (is_root_node) {
@@ -1787,7 +1797,8 @@ void SearchWorker::PickNodesToExtendTask(
         if (second_best_edge) {
           int estimated_visits_to_change_best = std::numeric_limits<int>::max();
           if (best_without_u < second_best) {
-            const auto n1 = current_nstarted[best_idx] + 1;
+            const float virtual_n = cur_iters[best_idx].edge()->GetN0();
+            const auto n1 = current_nstarted[best_idx] + 1 + virtual_n;
             estimated_visits_to_change_best = static_cast<int>(
                 std::max(1.0f, std::min(current_pol[best_idx] * puct_mult /
                                                 (second_best - best_without_u) -
@@ -1824,8 +1835,9 @@ void SearchWorker::PickNodesToExtendTask(
             child_node->IncrementNInFlight(new_visits);
             current_nstarted[best_idx] += new_visits;
           }
+          const float virtual_n = cur_iters[best_idx].edge()->GetN0();
           current_score[best_idx] = current_pol[best_idx] * puct_mult /
-                                        (1 + current_nstarted[best_idx]) +
+                                        (1.0f + virtual_n + current_nstarted[best_idx]) +
                                     current_util[best_idx];
         }
         if ((decremented &&
@@ -2086,10 +2098,24 @@ int SearchWorker::PrefetchIntoCache(Node* node, int budget, bool is_odd_depth) {
       GetFpu(params_, node, node == search_->root_node_, draw_score);
   for (auto& edge : node->Edges()) {
     if (edge.GetP() == 0.0f) continue;
+    // Compute Q with virtual visits overlay.
+    // Convert averages to totals before adding.
+    float q = edge.GetQ(fpu, draw_score);
+    if (edge.node() && edge.GetN() > 0) {
+      const float real_n = static_cast<float>(edge.node()->GetN());
+      const float real_wl = edge.node()->GetWL() * real_n;
+      const float real_d = edge.node()->GetD() * real_n;
+      const float total_wl = real_wl + edge.edge()->GetW0();
+      const float total_d = real_d + edge.edge()->GetD0();
+      const float total_n = real_n + edge.edge()->GetN0();
+      q = (total_n > 0.0f) ? (total_wl + draw_score * total_d) / total_n : fpu;
+    }
+    // Compute U with virtual visits in denominator.
+    float n_effective = edge.GetNStarted() + edge.edge()->GetN0();
+    float u = puct_mult * edge.GetP() / (1.0f + n_effective);
     // Flip the sign of a score to be able to easily sort.
     // TODO: should this use logit_q if set??
-    scores.emplace_back(-edge.GetU(puct_mult) - edge.GetQ(fpu, draw_score),
-                        edge);
+    scores.emplace_back(-u - q, edge);
   }
 
   size_t first_unsorted_index = 0;
@@ -2191,6 +2217,20 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
   if (params_.GetNoiseEpsilon() && node == search_->root_node_) {
     ApplyDirichletNoise(node, params_.GetNoiseEpsilon(),
                         params_.GetNoiseAlpha());
+  }
+  // Initialize virtual visits for node priors.
+  const float alpha = params_.GetNodePrior();
+  if (alpha > 0.0f) {
+    const float K = alpha * node->GetNumEdges();
+    // Use NN eval for parent values (most robust - always available).
+    const float parent_wl = node_to_process->eval->q;
+    const float parent_d = node_to_process->eval->d;
+    for (auto& edge : node->Edges()) {
+      const float n0 = K * edge.GetP();
+      const float w0 = n0 * parent_wl;
+      const float d0 = n0 * parent_d;
+      edge.edge()->SetVirtualVisits(n0, w0, d0);
+    }
   }
   node->SortEdges();
 }
