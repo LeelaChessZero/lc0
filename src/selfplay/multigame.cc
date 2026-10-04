@@ -46,7 +46,7 @@ class PolicyEvaluator : public Evaluator {
         EvalResultPtr{.p = v_.back()});
   }
 
-  void MakeBestMove(classic::NodeTree* tree) {
+  void MakeBestMove(classic::NodeTree* tree) override {
     auto v = std::move(v_.front());
     v_.pop();
     size_t best_idx = std::max_element(v.begin(), v.end()) - v.begin();
@@ -85,7 +85,7 @@ class ValueEvaluator : public Evaluator {
     }
   }
 
-  void MakeBestMove(classic::NodeTree* tree) {
+  void MakeBestMove(classic::NodeTree* tree) override {
     auto v = std::move(v_.front());
     v_.pop();
     size_t best_idx = std::min_element(v.begin(), v.end()) - v.begin();

@@ -1012,7 +1012,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
 
   // 1. Compute mean
   float s = 0;
-  if (!oobThread)
+  if (!oobThread) {
     if (skip != nullptr) {
       for (int i = 0; i < 16; i++) {
         val[i] = activate(val[i], act) * alpha + oth[i];
@@ -1024,18 +1024,20 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
         s += val[i];
       }
     }
+  }
 
   s = shared_sum_for_layer_norm(s);
   float mean = s / C;
 
   // 2. Compute varience
   s = 0;
-  if (!oobThread)
+  if (!oobThread) {
     for (int i = 0; i < 16; i++) {
       float d = val[i] - mean;
       float d_sq = d * d;
       s += d_sq;
     }
+  }
   s = shared_sum_for_layer_norm(s);
   float var = s / C;
 

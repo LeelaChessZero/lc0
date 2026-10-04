@@ -33,7 +33,8 @@
 
 // Native fp16 arithmetic requires compute capability 5.3+; guard the fp16 device
 // bodies so lc0 still builds for older architectures.
-#if __CUDA_ARCH__ >= 530
+// CoreX/ivcore11: device __CUDA_ARCH__ reports 300.
+#if __CUDA_ARCH__ >= 530 || defined(__ILUVATAR__)
 #define HAS_FP16_SUPPORT 1
 #endif
 #include "winograd_helper.inc"
@@ -454,13 +455,14 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
     // Use special kernel with reduced register pressure - only works on Ampere,
     // and only for fp16.
     if (C <= kMaxResBlockFusingSeKFp16Ampere) {
-      cudaFuncSetAttribute(
+      auto stauts = cudaFuncSetAttribute(
 #if defined(USE_HIP)
           (const void*)
 #endif
-          OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
-                                                      use_skip>,
+              OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
+                                                          use_skip>,
           cudaFuncAttributeMaxDynamicSharedMemorySize, 72 * C * sizeof(half));
+      ReportCUDAErrors(stauts);
       OutputInputTransformKernel_fp16_shmem_board<activation, use_bias,
                                                   use_skip>
           <<<N, C, 72 * C * sizeof(half), stream>>>(
