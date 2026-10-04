@@ -373,24 +373,22 @@ static const NSInteger kMinSubBatchSize = 20;
                                                 length:outputChannels * inputChannels * kernelSize * kernelSize * sizeof(float)
                                           freeWhenDone:NO];
 
-    MPSGraphTensor * weightsTensor = [self variableWithData:weightsData
+    MPSGraphTensor * weightsTensor = [self constantWithData:weightsData
                                                       shape:@[@(outputChannels), @(inputChannels), @(kernelSize), @(kernelSize)]
-                                                   dataType:MPSDataTypeFloat32
-                                                       name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                   dataType:MPSDataTypeFloat32];
 
     NSData * biasData = [NSData dataWithBytesNoCopy:biases
                                              length:outputChannels * sizeof(float)
                                        freeWhenDone:NO];
 
-    MPSGraphTensor * biasTensor = [self variableWithData:biasData
+    MPSGraphTensor * biasTensor = [self constantWithData:biasData
                                                    shape:@[@(outputChannels), @1, @1]
-                                                dataType:MPSDataTypeFloat32
-                                                    name:[NSString stringWithFormat:@"%@/biases", label]];
+                                                dataType:MPSDataTypeFloat32];
 
     MPSGraphTensor * convTensor = [self convolution2DWithSourceTensor:parent
                                                         weightsTensor:weightsTensor
                                                            descriptor:convolution2DDescriptor
-                                                                 name:[NSString stringWithFormat:@"%@/conv", label]];
+                                                           name:[NSString stringWithFormat:@"%@/conv", label]];
 
     MPSGraphTensor * convBiasTensor = [self additionWithPrimaryTensor:convTensor
                                                       secondaryTensor:biasTensor
@@ -468,10 +466,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                length:outputChannels * inputChannels * sizeof(float)
                                          freeWhenDone:NO];
 
-    MPSGraphTensor * weightTensor = [self variableWithData:weightData
+    MPSGraphTensor * weightTensor = [self constantWithData:weightData
                                                      shape:@[@(outputChannels), @(inputChannels)]
-                                                  dataType:MPSDataTypeFloat32
-                                                      name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                  dataType:MPSDataTypeFloat32];
 
     // Leela weights are OIHW, need to be transposed to IO** to allow matmul.
     weightTensor = [self transposeTensor:weightTensor
@@ -488,10 +485,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                  length:outputChannels * sizeof(float)
                                            freeWhenDone:NO];
 
-        MPSGraphTensor * biasTensor = [self variableWithData:biasData
+        MPSGraphTensor * biasTensor = [self constantWithData:biasData
                                                        shape:@[@(outputChannels)]
-                                                    dataType:MPSDataTypeFloat32
-                                                        name:[NSString stringWithFormat:@"%@/biases", label]];
+                                                    dataType:MPSDataTypeFloat32];
 
         parent = [self additionWithPrimaryTensor:parent
                                  secondaryTensor:biasTensor
@@ -778,19 +774,17 @@ static const NSInteger kMinSubBatchSize = 20;
                                               length:channelSize * sizeof(float)
                                         freeWhenDone:NO];
 
-    MPSGraphTensor * gammaTensor = [self variableWithData:gammaData
+    MPSGraphTensor * gammaTensor = [self constantWithData:gammaData
                                                     shape:@[@(channelSize)]
-                                                 dataType:MPSDataTypeFloat32
-                                                     name:[NSString stringWithFormat:@"%@/gamma", label]];
+                                                 dataType:MPSDataTypeFloat32];
 
     NSData * betaData = [NSData dataWithBytesNoCopy:betas
                                              length:channelSize * sizeof(float)
                                        freeWhenDone:NO];
 
-    MPSGraphTensor * betaTensor = [self variableWithData:betaData
+    MPSGraphTensor * betaTensor = [self constantWithData:betaData
                                                    shape:@[@(channelSize)]
-                                                dataType:MPSDataTypeFloat32
-                                                    name:[NSString stringWithFormat:@"%@/beta", label]];
+                                                dataType:MPSDataTypeFloat32];
 
     return [self normalizationWithTensor:parent
                               meanTensor:means
@@ -839,10 +833,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                               length:channelSize * sizeof(float)
                                         freeWhenDone:NO];
 
-    MPSGraphTensor * gammaTensor = [self variableWithData:gammaData
+    MPSGraphTensor * gammaTensor = [self constantWithData:gammaData
                                                     shape:@[@(channelSize)]
-                                                 dataType:MPSDataTypeFloat32
-                                                     name:[NSString stringWithFormat:@"%@/gamma", label]];
+                                                 dataType:MPSDataTypeFloat32];
 
     factor = [self multiplicationWithPrimaryTensor:factor
                                    secondaryTensor:gammaTensor
@@ -1030,10 +1023,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                length:outputSize * channelSize * sizeof(float)
                                          freeWhenDone:NO];
 
-    MPSGraphTensor * weightTensor = [self variableWithData:weightData
+    MPSGraphTensor * weightTensor = [self constantWithData:weightData
                                                      shape:@[@(outputSize), @(channelSize)]
-                                                  dataType:parent.dataType
-                                                      name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                  dataType:parent.dataType];
 
     keys = [self transposeTensor:keys dimension:1 withDimension:2 name:[NSString stringWithFormat:@"%@/transpose", label]];
 
@@ -1093,10 +1085,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                  length:[shape[0] intValue] * [shape[1] intValue] * sizeof(float)
                                            freeWhenDone:NO];
 
-    MPSGraphTensor * encodingTensor = [self variableWithData:encodingData
+    MPSGraphTensor * encodingTensor = [self constantWithData:encodingData
                                                        shape:shape
-                                                    dataType:MPSDataTypeFloat32
-                                                        name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                    dataType:MPSDataTypeFloat32];
 
     MPSGraphTensor * shapeTensor = [self shapeOfTensor:tensor
                                                   name:[NSString stringWithFormat:@"%@/shape", label]];
@@ -1180,10 +1171,9 @@ static const NSInteger kMinSubBatchSize = 20;
                                                 length:[parent sizeOfDimensionsFrom:@1] * sizeof(float)
                                           freeWhenDone:NO];
 
-    MPSGraphTensor * weightsTensor = [self variableWithData:weightsData
+    MPSGraphTensor * weightsTensor = [self constantWithData:weightsData
                                                       shape:@[parent.shape[2], parent.shape[1]]
-                                                   dataType:MPSDataTypeFloat32
-                                                       name:[NSString stringWithFormat:@"%@/weights", label]];
+                                                   dataType:MPSDataTypeFloat32];
 
     // Leela weights are transposed.
     weightsTensor = [self transposeTensor:weightsTensor
