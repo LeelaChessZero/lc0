@@ -1954,7 +1954,8 @@ void SearchWorker::PickNodesToExtendTask(
               child_limit > params_.GetMinimumWorkSizeForPicking()) ||
              child_limit >= params_.GetMinimumRemainingWorkSizeForPicking())) {
           int idx = visits_to_perform[i].index_;
-          Node* child_node = cache.children[idx].iter.GetOrSpawnNode(/* parent */ node);
+          Node* child_node =
+              cache.children[idx].iter.GetOrSpawnNode(/* parent */ node);
           history.Append(cache.children[idx].iter.GetMove());
           auto [child_repetitions, child_moves_left] =
               GetRepetitions(full_path.size(), history.Last());
