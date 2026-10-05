@@ -337,14 +337,16 @@ class SearchWorker {
       return NodeToProcess(node, depth, true, collision_count, max_count);
     }
     static NodeToProcess Visit(Node* node, uint16_t depth) {
-      return NodeToProcess(node, depth, false, 1, 0);
+      NodeToProcess node_to_process(node, depth, false, 1, 0);
+      // Only visits are evaluated; collisions never read eval.
+      node_to_process.eval = std::make_unique<EvalResult>();
+      return node_to_process;
     }
 
    private:
     NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
                   int max_count)
         : node(node),
-          eval(std::make_unique<EvalResult>()),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
