@@ -24,7 +24,6 @@
 #include <sycl/sycl.hpp>
 #include <algorithm>
 #include <cassert>
-#include <cstdlib>
 #include <functional>
 #include <list>
 #include <memory>
@@ -1065,23 +1064,9 @@ void SyclNetworkComputation<DataType>::ComputeBlocking() {
   network_->forwardEval(inputs_outputs_.get(), GetBatchSize());
 }
 
-// On Windows the Level Zero v1 adapter can lose the device once the GPU has
-// idled after a long search (intel/llvm#23209); the v2 adapter does not. Use
-// v2 unless the user has set the variable themselves (=0 keeps v1). The
-// runtime reads it on the first SYCL call, so this has to run before that.
-static void DefaultToLevelZeroV2() {
-#ifdef _WIN32
-  constexpr const char* kVariable = "SYCL_UR_USE_LEVEL_ZERO_V2";
-  size_t size = 0;
-  getenv_s(&size, nullptr, 0, kVariable);
-  if (size == 0) _putenv_s(kVariable, "1");
-#endif
-}
-
 template <typename DataType>
 std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
                                          const OptionsDict& options) {
-  DefaultToLevelZeroV2();
   if (!w) {
     throw Exception(
         "The sycl" +
@@ -1152,7 +1137,6 @@ std::unique_ptr<Network> MakeSyclNetwork(const std::optional<WeightsFile>& w,
 
 std::unique_ptr<Network> MakeSyclNetworkAuto(
     const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  DefaultToLevelZeroV2();
   int gpu_id = options.GetOrDefault<int>("gpu", 0);
 
   auto devices = sycl::device::get_devices();
