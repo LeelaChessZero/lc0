@@ -195,6 +195,13 @@ void BackendBenchmark::Run() {
           batches_done++;
         }
       }
+      // The first batch of a thread warms up and is not timed, so one batch
+      // a thread leaves nothing to report.
+      if (batches_done == 0) {
+        std::cout << "No batch was timed at batch size " << i
+                  << ": --batches has to be above 1." << std::endl;
+        continue;
+      }
 
       double mean = total / batches_done;
 
@@ -202,7 +209,7 @@ void BackendBenchmark::Run() {
         double diff = times[j].count() - mean;
         stddev += diff * diff;
       }
-      stddev = std::sqrt(stddev / (batches_done - 1));
+      stddev = batches_done > 1 ? std::sqrt(stddev / (batches_done - 1)) : 0;
       double cv = stddev / mean;
 
       std::sort(times.begin(), times.begin() + batches_done);
