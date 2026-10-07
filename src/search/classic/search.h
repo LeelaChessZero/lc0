@@ -330,27 +330,31 @@ class SearchWorker {
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count) {
-      return NodeToProcess(node, depth, true, collision_count, 0);
+      return NodeToProcess(node, depth, collision_count, 0);
     }
     static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count, int max_count) {
-      return NodeToProcess(node, depth, true, collision_count, max_count);
+      return NodeToProcess(node, depth, collision_count, max_count);
     }
     static NodeToProcess Visit(Node* node, uint16_t depth) {
-      NodeToProcess node_to_process(node, depth, false, 1, 0);
-      // Only visits are evaluated; collisions never read eval.
-      node_to_process.eval = std::make_unique<EvalResult>();
-      return node_to_process;
+      return NodeToProcess(node, depth);
     }
 
    private:
-    NodeToProcess(Node* node, uint16_t depth, bool is_collision, int multivisit,
-                  int max_count)
+    // Collisions are never evaluated, so eval stays null.
+    NodeToProcess(Node* node, uint16_t depth, int multivisit, int max_count)
         : node(node),
           multivisit(multivisit),
           maxvisit(max_count),
           depth(depth),
-          is_collision(is_collision) {}
+          is_collision(true) {}
+    NodeToProcess(Node* node, uint16_t depth)
+        : node(node),
+          eval(std::make_unique<EvalResult>()),
+          multivisit(1),
+          maxvisit(0),
+          depth(depth),
+          is_collision(false) {}
   };
 
   // Holds per task worker scratch data
