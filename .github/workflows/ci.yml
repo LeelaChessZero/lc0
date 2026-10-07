@@ -68,12 +68,12 @@ jobs:
     name: AMD ROCm / HIP Backend (hipcc + hipblas)
     runs-on: ubuntu-latest
     container:
-      image: rocm/dev-ubuntu-22.04:latest
+      image: rocm/dev-ubuntu-22.04:10.0.0-full
     steps:
       - name: Install Git & Base Build Tools
         run: |
           apt-get update
-          apt-get install -y git python3-pip ninja-build zlib1g-dev libopenblas-dev
+          apt-get install -y git python3-pip ninja-build zlib1g-dev
           pip3 install meson
 
       - name: Checkout repository
@@ -138,12 +138,6 @@ jobs:
       - name: Compile lc0
         run: |
           ninja -C build
-
-      - name: Upload Windows Binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: lc0-windows-x64
-          path: build/lc0.exe
 
   # ---------------------------------------------------------------------------
   # Downstream: macOS (Apple Silicon arm64)

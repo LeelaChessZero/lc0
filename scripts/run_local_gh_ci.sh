@@ -13,7 +13,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TARGET="${1:-all}"
-ROCM_IMAGE="rocm/dev-ubuntu-22.04:latest"
+ROCM_IMAGE="rocm/dev-ubuntu-22.04:10.0.0-full"
 
 if ! command -v docker &> /dev/null; then
     echo -e "\033[1;31mError: Docker is required to run isolated containerized CI builds.\033[0m" >&2
@@ -116,7 +116,7 @@ run_rocm_ci() {
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq
-            apt-get install -y -qq git python3-pip ninja-build zlib1g-dev libopenblas-dev
+            apt-get install -y -qq git python3-pip ninja-build zlib1g-dev
             pip3 install -q meson
 
             BUILD_DIR="build/ci-rocm"
