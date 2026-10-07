@@ -329,10 +329,6 @@ class SearchWorker {
     bool ooo_completed = false;
 
     static NodeToProcess Collision(Node* node, uint16_t depth,
-                                   int collision_count) {
-      return NodeToProcess(node, depth, collision_count, 0);
-    }
-    static NodeToProcess Collision(Node* node, uint16_t depth,
                                    int collision_count, int max_count) {
       return NodeToProcess(node, depth, collision_count, max_count);
     }
