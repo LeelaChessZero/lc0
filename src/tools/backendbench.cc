@@ -199,7 +199,7 @@ void BackendBenchmark::Run() {
       // a thread leaves nothing to report.
       if (batches_done == 0) {
         std::cout << "No batch was timed at batch size " << i
-                  << ": --batches has to be above 1." << std::endl;
+                  << ": --batches has to be above --threads." << std::endl;
         continue;
       }
 
