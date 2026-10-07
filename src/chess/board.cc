@@ -38,13 +38,9 @@
 
 #include "utils/exception.h"
 
-#if !defined(NO_PEXT) && (defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || defined(__x86_64__))
+#if not defined(NO_PEXT)
 // Include header for pext instruction.
 #include <immintrin.h>
-#else
-#ifndef NO_PEXT
-#define NO_PEXT
-#endif
 #endif
 
 namespace lczero {

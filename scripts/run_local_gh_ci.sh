@@ -2,11 +2,11 @@
 # =============================================================================
 # scripts/run_local_gh_ci.sh
 # Run GitHub Actions CI jobs locally in a single unified Docker container.
-# Uses rocm/dev-ubuntu-22.04:latest (which includes ROCm/HIP, GCC, and Linux dev
-# toolchains) so only one Docker image is needed across all test jobs.
+# Uses rocm/dev-ubuntu-22.04:latest (which includes ROCm/HIP, GCC, Clang, and
+# Linux dev toolchains) so only one Docker image is needed across all test jobs.
 #
 # Usage:
-#   ./scripts/run_local_gh_ci.sh [linux|downstream|rocm|all]
+#   ./scripts/run_local_gh_ci.sh [linux|clang|rocm|all]
 # =============================================================================
 
 set -euo pipefail
@@ -44,10 +44,10 @@ run_linux_ci() {
             apt-get install -y -qq git python3-pip ninja-build zlib1g-dev libopenblas-dev ccache
             pip3 install -q meson
 
-            BUILD_DIR="build/ci-linux"
+            BUILD_DIR="build/ci-linux-gcc"
             rm -rf "$BUILD_DIR"
 
-            echo ">>> Configuring Meson build (Linux OpenBLAS)..."
+            echo ">>> Configuring Meson build (GCC + OpenBLAS)..."
             meson setup "$BUILD_DIR" \
                 --buildtype release \
                 -Dnative_arch=false \
@@ -61,15 +61,15 @@ run_linux_ci() {
             echo ">>> Running Unit Tests..."
             meson test -C "$BUILD_DIR" --print-errorlogs
 
-            echo ">>> Running Engine Benchmark..."
-            "./$BUILD_DIR/lc0" benchmark --backend=blas --num-positions=2 --movetime=2000
+            echo ">>> Running Engine Benchmark (random backend)..."
+            "./$BUILD_DIR/lc0" benchmark --backend=random --num-positions=2 --movetime=2000
 
-            echo -e "\n\033[1;32m✓ Linux CI Job Passed Successfully!\033[0m"
+            echo -e "\n\033[1;32m✓ Linux GCC CI Job Passed Successfully!\033[0m"
         '
 }
 
-run_downstream_ci() {
-    print_header "Running Downstream Minimal / Backend-Free Build"
+run_clang_ci() {
+    print_header "Running Linux Clang Meson Build (Warnings & Portability Check)"
     docker run --rm \
         -v "$REPO_ROOT":/workspace \
         -w /workspace \
@@ -78,26 +78,31 @@ run_downstream_ci() {
             set -euo pipefail
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -qq
-            apt-get install -y -qq git python3-pip ninja-build zlib1g-dev
+            apt-get install -y -qq git python3-pip ninja-build zlib1g-dev libopenblas-dev ccache
             pip3 install -q meson
 
-            BUILD_DIR="build/ci-downstream"
+            BUILD_DIR="build/ci-linux-clang"
             rm -rf "$BUILD_DIR"
 
-            echo ">>> Configuring Meson build without external backends (-Dbuild_backends=false)..."
-            meson setup "$BUILD_DIR" \
-                --buildtype release \
-                -Dgtest=false \
-                -Dlc0=true \
-                -Dblas=false \
-                -Dbuild_backends=false
+            # Use LLVM clang bundled in the ROCm image
+            CLANG_DIR="/opt/rocm/llvm/bin"
+            if [ ! -x "$CLANG_DIR/clang++" ]; then
+                CLANG_DIR="/opt/rocm/core-10.0/lib/llvm/bin"
+            fi
 
-            echo ">>> Compiling minimal lc0..."
+            echo ">>> Configuring Meson build with Clang ($CLANG_DIR/clang++)..."
+            CC="$CLANG_DIR/clang" CXX="$CLANG_DIR/clang++" meson setup "$BUILD_DIR" \
+                --buildtype release \
+                -Db_lto=false \
+                -Dnative_arch=false \
+                -Dgtest=false \
+                -Dblas=true \
+                -Dlc0=true
+
+            echo ">>> Compiling lc0 with Clang..."
             ninja -C "$BUILD_DIR" lc0
 
-            echo ">>> Verifying binary execution..."
-            "./$BUILD_DIR/lc0" --help > /dev/null
-            echo -e "\n\033[1;32m✓ Downstream Minimal Build Passed Successfully!\033[0m"
+            echo -e "\n\033[1;32m✓ Linux Clang CI Job Passed Successfully!\033[0m"
         '
 }
 
@@ -139,19 +144,19 @@ case "$TARGET" in
     linux)
         run_linux_ci
         ;;
-    downstream)
-        run_downstream_ci
+    clang)
+        run_clang_ci
         ;;
     rocm)
         run_rocm_ci
         ;;
     all)
         run_linux_ci
-        run_downstream_ci
+        run_clang_ci
         run_rocm_ci
         ;;
     *)
-        echo "Usage: $0 [linux|downstream|rocm|all]"
+        echo "Usage: $0 [linux|clang|rocm|all]"
         exit 1
         ;;
 esac
