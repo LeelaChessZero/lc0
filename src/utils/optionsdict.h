@@ -60,17 +60,19 @@ class TypeDict {
     }
 
     V() = default;
-    V(const V& o) :
-      was_read_since_last_set_{o.was_read_since_last_set_.load(std::memory_order::acquire)},
-      value_{o.value_} {
-    }
+    V(const V& o)
+        : was_read_since_last_set_{
+              o.was_read_since_last_set_.load(std::memory_order::acquire)},
+          value_{o.value_} {}
     V& operator=(const V& o) {
       value_ = o.value_;
-      was_read_since_last_set_.store(o.was_read_since_last_set_.load(std::memory_order::acquire),
-                                     std::memory_order::release);
+      was_read_since_last_set_.store(
+          o.was_read_since_last_set_.load(std::memory_order::acquire),
+          std::memory_order::release);
       return *this;
     }
     V(const T& v) : value_{v} {}
+
    private:
     mutable std::atomic<bool> was_read_since_last_set_ = false;
     T value_;
@@ -248,6 +250,15 @@ class OptionsDict : TypeDict<bool>,
   // back to this object. You need to ensure, that this object
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
+
+  // Serializes options (and optionally flattens a subdictionary) to a string
+  // representation compatible with AddSubdictFromString.
+  // If subdict_name is non-empty, values in the subdictionary override root
+  // values, and nested subdicts inside subdict_name are included.
+  // Any keys in ignore_keys are skipped.
+  std::string FlattenSubdictToString(
+      const std::string& subdict_name = "",
+      const std::vector<std::string>& ignore_keys = {}) const;
 
   // Throws an exception for the first option in the dict that has not been read
   // to find syntax errors in options added using AddSubdictFromString.

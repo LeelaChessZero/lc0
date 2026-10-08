@@ -328,6 +328,119 @@ void OptionsDict::AddSubdictFromString(const std::string& str) {
   parser.ParseMain(this);
 }
 
+namespace {
+
+bool NeedsQuotes(const std::string& str) {
+  if (str.empty() || str == "true" || str == "false") return true;
+  static const std::string kAllowedPunctuation = "_-./";
+  for (char c : str) {
+    if (!std::isalnum(static_cast<unsigned char>(c)) &&
+        kAllowedPunctuation.find(c) == std::string::npos) {
+      return true;
+    }
+  }
+  char* end = nullptr;
+  std::strtod(str.c_str(), &end);
+  if (end == str.c_str() + str.size()) return true;
+  return false;
+}
+
+std::string QuoteString(const std::string& str) {
+  if (!NeedsQuotes(str)) return str;
+  if (str.find('"') == std::string::npos) {
+    return "\"" + str + "\"";
+  }
+  if (str.find('\'') == std::string::npos) {
+    return "'" + str + "'";
+  }
+  throw Exception(
+      "Cannot serialize string containing both single and double quotes: " +
+      str);
+}
+
+std::string FormatFloat(float val) {
+  std::ostringstream oss;
+  oss << val;
+  std::string s = oss.str();
+  if (s.find('.') == std::string::npos && s.find('e') == std::string::npos &&
+      s.find('E') == std::string::npos) {
+    s += ".0";
+  }
+  return s;
+}
+
+}  // namespace
+
+std::string OptionsDict::FlattenSubdictToString(
+    const std::string& subdict_name,
+    const std::vector<std::string>& ignore_keys) const {
+  enum class ValueType { kBool, kInt, kFloat, kString };
+  struct SerializedVal {
+    ValueType type;
+    std::string text;
+  };
+
+  std::map<std::string, SerializedVal> merged_values;
+  std::map<std::string, const OptionsDict*> merged_subdicts;
+
+  auto collect_from_dict = [&](const OptionsDict& d, bool include_subdicts) {
+    for (const auto& [k, v] : d.TypeDict<bool>::dict()) {
+      merged_values[k] = {ValueType::kBool, v.Get() ? "true" : "false"};
+    }
+    for (const auto& [k, v] : d.TypeDict<int>::dict()) {
+      merged_values[k] = {ValueType::kInt, std::to_string(v.Get())};
+    }
+    for (const auto& [k, v] : d.TypeDict<float>::dict()) {
+      merged_values[k] = {ValueType::kFloat, FormatFloat(v.Get())};
+    }
+    for (const auto& [k, v] : d.TypeDict<std::string>::dict()) {
+      merged_values[k] = {ValueType::kString, QuoteString(v.Get())};
+    }
+    if (include_subdicts) {
+      for (const auto& [k, sub] : d.subdicts_) {
+        merged_subdicts[k] = &sub;
+      }
+    }
+  };
+
+  // 1. Collect from root.
+  collect_from_dict(*this, subdict_name.empty());
+
+  // 2. If subdict_name is specified, collect and override from target subdict.
+  if (!subdict_name.empty()) {
+    const auto& child = GetSubdict(subdict_name);
+    collect_from_dict(child, true);
+  }
+
+  // 3. Remove ignore_keys.
+  for (const auto& key : ignore_keys) {
+    merged_values.erase(key);
+    merged_subdicts.erase(key);
+  }
+
+  // 4. Serialize to string.
+  std::string result;
+  auto append_entry = [&](const std::string& entry) {
+    if (!result.empty()) result += ", ";
+    result += entry;
+  };
+
+  for (const auto& [k, val] : merged_values) {
+    append_entry(k + "=" + val.text);
+  }
+
+  for (const auto& [k, sub_ptr] : merged_subdicts) {
+    std::string inner = sub_ptr->FlattenSubdictToString("", ignore_keys);
+    if (!k.empty() && k.front() == '[' && k.back() == ']') {
+      append_entry("(" + inner + ")");
+    } else {
+      append_entry(k + "(" + inner + ")");
+    }
+  }
+
+  return result;
+}
+
 void OptionsDict::CheckAllOptionsRead(
     const std::string& path_from_parent) const {
   std::string s = path_from_parent.empty() ? "" : path_from_parent + '.';

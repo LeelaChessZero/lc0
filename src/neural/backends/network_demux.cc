@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2020 The LCZero Authors
+  Copyright (C) 2018-2025 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,137 +28,54 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
-#include <cstdlib>
+#include <memory>
 #include <mutex>
 #include <queue>
+#include <string>
 #include <thread>
+#include <vector>
 
-#include "neural/factory.h"
+#include "neural/backend.h"
+#include "neural/register.h"
+#include "neural/shared_params.h"
+#include "utils/exception.h"
+#include "utils/mutex.h"
+#include "utils/optionsdict.h"
 
 namespace lczero {
 namespace {
 
+class DemuxingBackend;
 class DemuxingComputation;
 
 struct DemuxingWork {
-  DemuxingComputation* source_ = nullptr;
-  std::unique_ptr<NetworkComputation> computation_;
-  int start_ = 0;
-  int end_ = 0;
-
-  DemuxingWork(int sample) : end_(sample) {}
-  DemuxingWork(DemuxingComputation* source, int start, int end)
-      : source_(source), start_(start), end_(end) {
-    assert(start_ != end_);
-  }
-
-  auto operator<=>(const DemuxingWork& b) const { return end_ <=> b.end_; }
+  DemuxingComputation* source = nullptr;
+  size_t start = 0;
+  size_t end = 0;
 };
 
-class DemuxingNetwork;
-class DemuxingBackend;
-class DemuxingComputation final : public NetworkComputation {
-  std::tuple<const std::unique_ptr<NetworkComputation>&, int> GetParent(
-      int sample) const {
-    auto iter = std::lower_bound(parents_.begin(), parents_.end(), sample + 1);
-    assert(iter != parents_.end());
-    assert(sample >= iter->start_);
-    assert(sample < iter->end_);
-    return {iter->computation_, sample - iter->start_};
-  }
-
+class DemuxingChildBackend {
  public:
-  DemuxingComputation(DemuxingNetwork* network) : network_(network) {}
-  ~DemuxingComputation() {
-    // Wait for other threads to stop using this object. It must be spinloop for
-    // correct synchronization between notify_one and destructor.
-    while (dataready_.load(std::memory_order_acquire) != -1) {
-      SpinloopPause();
+  DemuxingChildBackend(std::unique_ptr<Backend> backend,
+                       std::string backend_name,
+                       std::string backend_opts_str,
+                       std::string weights_path,
+                       int num_threads,
+                       std::atomic<bool>& abort)
+      : backend_(std::move(backend)),
+        backend_name_(std::move(backend_name)),
+        backend_opts_str_(std::move(backend_opts_str)),
+        weights_path_(std::move(weights_path)) {
+    for (int i = 0; i < num_threads; ++i) {
+      threads_.emplace_back([this, &abort] { Worker(abort); });
     }
   }
 
-  void AddInput(InputPlanes&& input) override {
-    planes_.emplace_back(std::move(input));
-  }
-
-  void ComputeBlocking() override;
-
-  int GetBatchSize() const override { return planes_.size(); }
-
-  float GetQVal(int sample) const override {
-    auto [parent, offset] = GetParent(sample);
-    if (!parent) return 0;
-    return parent->GetQVal(offset);
-  }
-
-  float GetDVal(int sample) const override {
-    auto [parent, offset] = GetParent(sample);
-    if (!parent) return 0;
-    return parent->GetDVal(offset);
-  }
-
-  float GetMVal(int sample) const override {
-    auto [parent, offset] = GetParent(sample);
-    if (!parent) return 0;
-    return parent->GetMVal(offset);
-  }
-
-  float GetPVal(int sample, int move_id) const override {
-    auto [parent, offset] = GetParent(sample);
-    if (!parent) return 0;
-    return parent->GetPVal(offset, move_id);
-  }
-
-  void NotifyComplete() {
-    if (1 == dataready_.fetch_sub(1, std::memory_order_release)) {
-      {
-        std::lock_guard lock(mutex_);
-      }
-      dataready_cv_.notify_one();
-      dataready_.store(-1, std::memory_order_release);
-    }
-  }
-
- private:
-  std::vector<InputPlanes> planes_;
-  DemuxingNetwork* network_;
-  std::vector<DemuxingWork> parents_;
-
-  std::mutex mutex_;
-  std::condition_variable dataready_cv_;
-  std::atomic<int> dataready_ = -1;
-
-  friend class DemuxingBackend;
-};
-
-class DemuxingBackend {
- public:
-  ~DemuxingBackend() {
-    while (!threads_.empty()) {
-      threads_.back().join();
-      threads_.pop_back();
-    }
-    while (!queue_.empty()) {
-      queue_.front()->source_->NotifyComplete();
-      queue_.pop();
-    }
-  }
-
-  void Assign(std::unique_ptr<Network>&& network, const OptionsDict& opts,
-              std::atomic<bool>& abort) {
-    network_ = std::move(network);
-    int nn_threads = opts.GetOrDefault<int>("threads", 0);
-    if (nn_threads == 0) {
-      nn_threads = network_->GetThreads();
-    }
-    for (int i = 0; i < nn_threads; i++) {
-      threads_.emplace_back([&] { Worker(abort); });
-    }
-  }
+  ~DemuxingChildBackend();
 
   void Enqueue(DemuxingWork* work) {
     {
-      std::unique_lock lock(mutex_);
+      std::lock_guard lock(mutex_);
       queue_.push(work);
     }
     dataready_cv_.notify_one();
@@ -166,179 +83,359 @@ class DemuxingBackend {
 
   void Abort() {
     {
-      std::unique_lock lock(mutex_);
+      std::lock_guard lock(mutex_);
     }
     dataready_cv_.notify_all();
   }
 
-  void Worker(std::atomic<bool>& abort) {
-    while (!abort.load(std::memory_order_relaxed)) {
-      DemuxingWork* work = nullptr;
-      {
-        std::unique_lock lock(mutex_);
-        dataready_cv_.wait(lock, [&] {
-          return abort.load(std::memory_order_relaxed) || !queue_.empty();
-        });
-        if (abort.load(std::memory_order_relaxed)) return;
-        if (!queue_.empty()) {
-          work = queue_.front();
-          queue_.pop();
-        }
-      }
-      if (work) {
-        work->computation_ = network_->NewComputation();
-        auto& planes = work->source_->planes_;
-        for (int i = work->start_; i < work->end_; i++) {
-          work->computation_->AddInput(std::move(planes[i]));
-        }
-        work->computation_->ComputeBlocking();
-        work->source_->NotifyComplete();
-      }
-    }
-  }
+  void Worker(std::atomic<bool>& abort);
+
+  std::unique_ptr<Backend> backend_;
+  std::string backend_name_;
+  std::string backend_opts_str_;
+  std::string weights_path_;
 
  private:
   std::mutex mutex_;
   std::condition_variable dataready_cv_;
   std::vector<std::thread> threads_;
-  std::unique_ptr<Network> network_;
   std::queue<DemuxingWork*> queue_;
 };
 
-class DemuxingNetwork final : public Network {
+class DemuxingComputation final : public BackendComputation {
  public:
-  DemuxingNetwork(const std::optional<WeightsFile>& weights,
-                  const OptionsDict& options)
-      : backends_(std::max(size_t(1), options.ListSubdicts().size())) {
-    const auto parents = options.ListSubdicts();
-    if (parents.empty()) {
-      // If options are empty, or multiplexer configured in root object,
-      // initialize on root object and default backend.
-      auto backends = NetworkFactory::Get()->GetBackendsList();
-      AddBackend(0, backends[0], weights, options);
-    }
+  explicit DemuxingComputation(DemuxingBackend* backend)
+      : backend_(backend) {}
 
-    int i = 0;
-    for (const auto& name : parents) {
-      AddBackend(i++, name, weights, options.GetSubdict(name));
+  ~DemuxingComputation() override {
+    while (dataready_.load(std::memory_order_acquire) > 0) {
+      SpinloopPause();
     }
   }
 
-  void AddBackend(int index, const std::string& name,
-                  const std::optional<WeightsFile>& weights,
-                  const OptionsDict& opts) {
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+  size_t UsedBatchSize() const override { return entries_.size(); }
 
-    auto network = NetworkFactory::Get()->Create(backend, weights, opts);
-
-    min_batch_size_ = std::min(min_batch_size_, network->GetMiniBatchSize());
-    batch_step_ = std::max(batch_step_, network->GetPreferredBatchStep());
-    is_cpu_ &= network->IsCpu();
-    if (index == 0) {
-      capabilities_ = network->GetCapabilities();
-    } else {
-      capabilities_.Merge(network->GetCapabilities());
-    }
-    backends_[index].Assign(std::move(network), opts, abort_);
+  AddInputResult AddInput(const EvalPosition& pos,
+                          EvalResultPtr result) override {
+    entries_.push_back({pos, result});
+    return ENQUEUED_FOR_EVAL;
   }
 
-  std::unique_ptr<NetworkComputation> NewComputation() override {
+  void ComputeBlocking() override;
+
+  void NotifyComplete() {
+    if (dataready_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      std::lock_guard lock(mutex_);
+      dataready_cv_.notify_one();
+    }
+  }
+
+ private:
+  struct Entry {
+    EvalPosition pos;
+    EvalResultPtr result;
+  };
+
+  DemuxingBackend* backend_;
+  std::vector<Entry> entries_;
+  std::vector<DemuxingWork> work_items_;
+
+  std::mutex mutex_;
+  std::condition_variable dataready_cv_;
+  std::atomic<int> dataready_ = 0;
+
+  friend class DemuxingChildBackend;
+};
+
+DemuxingChildBackend::~DemuxingChildBackend() {
+  Abort();
+  for (auto& t : threads_) {
+    if (t.joinable()) t.join();
+  }
+  while (!queue_.empty()) {
+    queue_.front()->source->NotifyComplete();
+    queue_.pop();
+  }
+}
+
+void DemuxingChildBackend::Worker(std::atomic<bool>& abort) {
+  while (!abort.load(std::memory_order_relaxed)) {
+    DemuxingWork* work = nullptr;
+    {
+      std::unique_lock lock(mutex_);
+      dataready_cv_.wait(lock, [&] {
+        return abort.load(std::memory_order_relaxed) || !queue_.empty();
+      });
+      if (abort.load(std::memory_order_relaxed)) return;
+      if (!queue_.empty()) {
+        work = queue_.front();
+        queue_.pop();
+      }
+    }
+    if (work) {
+      auto computation = backend_->CreateComputation();
+      auto& entries = work->source->entries_;
+      for (size_t i = work->start; i < work->end; ++i) {
+        computation->AddInput(entries[i].pos, entries[i].result);
+      }
+      computation->ComputeBlocking();
+      work->source->NotifyComplete();
+    }
+  }
+}
+
+BackendAttributes AggregateDemuxAttributes(
+    const std::vector<std::unique_ptr<DemuxingChildBackend>>& children) {
+  BackendAttributes result{};
+  if (children.empty()) return result;
+  const auto& first = children[0]->backend_->GetAttributes();
+  result.has_mlh = first.has_mlh;
+  result.has_wdl = first.has_wdl;
+  result.runs_on_cpu = first.runs_on_cpu;
+  result.suggested_num_search_threads = first.suggested_num_search_threads;
+  result.recommended_batch_size = first.recommended_batch_size;
+  result.maximum_batch_size = first.maximum_batch_size;
+
+  for (size_t i = 1; i < children.size(); ++i) {
+    const auto& attr = children[i]->backend_->GetAttributes();
+    result.has_mlh &= attr.has_mlh;
+    result.has_wdl &= attr.has_wdl;
+    result.runs_on_cpu &= attr.runs_on_cpu;
+    result.suggested_num_search_threads += attr.suggested_num_search_threads;
+    result.recommended_batch_size += attr.recommended_batch_size;
+    result.maximum_batch_size += attr.maximum_batch_size;
+  }
+  return result;
+}
+
+class DemuxingBackend final : public Backend {
+ public:
+  explicit DemuxingBackend(const OptionsDict& options);
+  ~DemuxingBackend() override { Abort(); }
+
+  BackendAttributes GetAttributes() const override { return attrs_; }
+
+  std::unique_ptr<BackendComputation> CreateComputation() override {
     return std::make_unique<DemuxingComputation>(this);
   }
 
-  const NetworkCapabilities& GetCapabilities() const override {
-    return capabilities_;
-  }
+  UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& options) override;
 
-  int GetMiniBatchSize() const override {
-    return min_batch_size_ * backends_.size();
-  }
-
-  int GetPreferredBatchStep() const override { return batch_step_; }
-
-  bool IsCpu() const override { return is_cpu_; }
-
-  ~DemuxingNetwork() { Abort(); }
-
+ private:
   void Abort() {
     abort_.store(true, std::memory_order_relaxed);
     for (auto& b : backends_) {
-      b.Abort();
+      b->Abort();
     }
   }
 
-  std::vector<DemuxingBackend> backends_;
-  NetworkCapabilities capabilities_;
-  int min_batch_size_ = std::numeric_limits<int>::max();
+  std::vector<std::unique_ptr<DemuxingChildBackend>> backends_;
+  BackendAttributes attrs_;
   int batch_step_ = 1;
-  bool is_cpu_ = true;
-  std::atomic<int64_t> start_index_;
+  std::atomic<int64_t> start_index_ = 0;
   std::atomic<bool> abort_ = false;
+
+  std::string backend_opts_;
+  std::string weights_path_;
+
+  friend class DemuxingComputation;
 };
 
+DemuxingBackend::DemuxingBackend(const OptionsDict& options)
+    : backend_opts_(
+          options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
+      weights_path_(options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+  OptionsDict backend_options;
+  backend_options.AddSubdictFromString(backend_opts_);
+
+  batch_step_ = backend_options.GetOrDefault<int>("batch_step", 1);
+  if (batch_step_ < 1) batch_step_ = 1;
+
+  auto subdicts = backend_options.ListSubdicts();
+  if (subdicts.empty()) {
+    subdicts.push_back("");
+  }
+
+  auto* backend_manager = BackendManager::Get();
+  auto all_backends = backend_manager->GetBackendNames();
+  std::vector<std::string> valid_backends;
+  for (const auto& b : all_backends) {
+    if (b != "demux") valid_backends.push_back(b);
+  }
+  if (valid_backends.empty()) {
+    throw Exception("No available backend to demux across.");
+  }
+
+  for (const auto& subdict_name : subdicts) {
+    std::string child_backend;
+    std::string child_weights;
+    int child_threads = 0;
+
+    if (subdict_name.empty()) {
+      child_backend = backend_options.GetOrDefault<std::string>(
+          "backend", valid_backends[0]);
+      child_threads = backend_options.GetOrDefault<int>("threads", 0);
+    } else {
+      const auto& child_dict = backend_options.GetSubdict(subdict_name);
+      child_threads = child_dict.GetOrDefault<int>("threads", 0);
+      if (child_dict.Exists<std::string>("backend")) {
+        child_backend = child_dict.Get<std::string>("backend");
+      } else if (backend_options.Exists<std::string>("backend")) {
+        child_backend = backend_options.Get<std::string>("backend");
+      } else if (backend_manager->GetFactoryByName(subdict_name) != nullptr) {
+        child_backend = subdict_name;
+      } else {
+        child_backend = valid_backends[0];
+      }
+      if (child_dict.Exists<std::string>("weights")) {
+        child_weights = child_dict.Get<std::string>("weights");
+      }
+    }
+
+    std::string child_opts_str = backend_options.FlattenSubdictToString(
+        subdict_name, {"backend", "threads"});
+
+    OptionsDict child_opts(&options);
+    child_opts.Set<std::string>(SharedBackendParams::kBackendId, child_backend);
+    child_opts.Set<std::string>(SharedBackendParams::kBackendOptionsId,
+                                child_opts_str);
+    if (!child_weights.empty()) {
+      child_opts.Set<std::string>(SharedBackendParams::kWeightsId,
+                                  child_weights);
+    }
+
+    auto child_be = backend_manager->CreateFromParams(child_opts);
+    if (child_threads == 0) {
+      child_threads = std::max(
+          1, child_be->GetAttributes().suggested_num_search_threads);
+    }
+
+    backends_.push_back(std::make_unique<DemuxingChildBackend>(
+        std::move(child_be), child_backend, child_opts_str, child_weights,
+        child_threads, abort_));
+  }
+
+  attrs_ = AggregateDemuxAttributes(backends_);
+  if (backend_options.Exists<int>("max_batch")) {
+    attrs_.maximum_batch_size = backend_options.Get<int>("max_batch");
+    attrs_.recommended_batch_size =
+        std::min(attrs_.recommended_batch_size, attrs_.maximum_batch_size);
+  }
+}
+
+Backend::UpdateConfigurationResult DemuxingBackend::UpdateConfiguration(
+    const OptionsDict& options) {
+  auto rv = Backend::UpdateConfiguration(options);
+  if (rv != UPDATE_OK) return rv;
+  if (backend_opts_ !=
+      options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {
+    return NEED_RESTART;
+  }
+  if (weights_path_ !=
+      options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+    return NEED_RESTART;
+  }
+  for (auto& child : backends_) {
+    OptionsDict child_opts(&options);
+    child_opts.Set<std::string>(SharedBackendParams::kBackendId,
+                                child->backend_name_);
+    child_opts.Set<std::string>(SharedBackendParams::kBackendOptionsId,
+                                child->backend_opts_str_);
+    if (!child->weights_path_.empty()) {
+      child_opts.Set<std::string>(SharedBackendParams::kWeightsId,
+                                  child->weights_path_);
+    }
+    if (child->backend_->UpdateConfiguration(child_opts) == NEED_RESTART) {
+      return NEED_RESTART;
+    }
+  }
+  return UPDATE_OK;
+}
+
 void DemuxingComputation::ComputeBlocking() {
-  if (GetBatchSize() == 0) return;
-  // Calculate batch_step_ size split count.
-  int splits = 1 + (GetBatchSize() - 1) / network_->batch_step_;
-  // Calculate the minimum number of splits per backend.
-  int split_size_per_backend = splits / network_->backends_.size();
-  // Calculate how many backends get extra work.
-  int extra_split_backends =
-      splits - split_size_per_backend * network_->backends_.size();
+  if (entries_.empty()) return;
 
-  // Find the first backend which got less work from the previous batch.
-  int start_index =
-      network_->start_index_.fetch_add(std::max(1, extra_split_backends),
+  const size_t num_backends = backend_->backends_.size();
+  assert(num_backends > 0);
+
+  const int batch_step = backend_->batch_step_;
+  const size_t total_size = entries_.size();
+
+  const int splits = 1 + (total_size - 1) / batch_step;
+  const int split_size_per_backend = splits / num_backends;
+  const int extra_split_backends =
+      splits - split_size_per_backend * num_backends;
+
+  const size_t start_index =
+      backend_->start_index_.fetch_add(std::max(1, extra_split_backends),
                                        std::memory_order_relaxed) %
-      network_->backends_.size();
+      num_backends;
+  const size_t end_index =
+      (start_index + extra_split_backends) % num_backends;
 
-  int end_index =
-      (start_index + extra_split_backends) % network_->backends_.size();
-  int work_start = 0;
-  int work_items = split_size_per_backend > 0 ? network_->backends_.size()
-                                             : extra_split_backends;
-  // First store the work item count and reserve memory from them.
+  const int work_items = split_size_per_backend > 0 ? num_backends
+                                                    : extra_split_backends;
   dataready_.store(work_items, std::memory_order_relaxed);
-  parents_.reserve(work_items);
-  int i = start_index;
+  work_items_.clear();
+  work_items_.reserve(work_items);
+
+  size_t work_start = 0;
+  size_t i = start_index;
+
   // First send work to backends which get extra work.
   int split_size = split_size_per_backend + 1;
-  for (; i != end_index; i = (i + 1) % network_->backends_.size()) {
-    assert(work_start != GetBatchSize());
-    int work_end = work_start + split_size * network_->batch_step_;
-    work_end = std::min(work_end, GetBatchSize());
-    parents_.emplace_back(this, work_start, work_end);
-    network_->backends_[i].Enqueue(&parents_.back());
+  for (; i != end_index; i = (i + 1) % num_backends) {
+    assert(work_start != total_size);
+    size_t work_end =
+        std::min(work_start + split_size * batch_step, total_size);
+    work_items_.push_back(DemuxingWork{
+        .source = this,
+        .start = work_start,
+        .end = work_end,
+    });
+    backend_->backends_[i]->Enqueue(&work_items_.back());
     work_start = work_end;
   }
+
   // Queue remaining work items which don't get extra work.
   split_size--;
   if (split_size > 0) {
     do {
-      assert(work_start != GetBatchSize());
-      int work_end = work_start + split_size * network_->batch_step_;
-      work_end = std::min(work_end, GetBatchSize());
-      parents_.emplace_back(this, work_start, work_end);
-      network_->backends_[i].Enqueue(&parents_.back());
+      assert(work_start != total_size);
+      size_t work_end =
+          std::min(work_start + split_size * batch_step, total_size);
+      work_items_.push_back(DemuxingWork{
+          .source = this,
+          .start = work_start,
+          .end = work_end,
+      });
+      backend_->backends_[i]->Enqueue(&work_items_.back());
       work_start = work_end;
-      i = (i + 1) % network_->backends_.size();
+      i = (i + 1) % num_backends;
     } while (i != start_index);
   }
-  assert(work_start == GetBatchSize());
-  assert(work_items == (int)parents_.size());
+
+  assert(work_start == total_size);
+  assert(work_items == static_cast<int>(work_items_.size()));
+
   // Wait until all backends complete their work.
-  std::unique_lock<std::mutex> lock(mutex_);
+  std::unique_lock lock(mutex_);
   dataready_cv_.wait(lock, [this]() {
-    return dataready_.load(std::memory_order_acquire) <= 0;
+    return dataready_.load(std::memory_order_acquire) == 0;
   });
 }
 
-std::unique_ptr<Network> MakeDemuxingNetwork(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  return std::make_unique<DemuxingNetwork>(weights, options);
-}
+class DemuxingBackendFactory : public BackendFactory {
+ public:
+  int GetPriority() const override { return -1001; }
+  std::string_view GetName() const override { return "demux"; }
+  std::unique_ptr<Backend> Create(const OptionsDict& options) override {
+    return std::make_unique<DemuxingBackend>(options);
+  }
+};
 
-REGISTER_NETWORK("demux", MakeDemuxingNetwork, -1001)
+REGISTER_BACKEND(DemuxingBackendFactory)
 
 }  // namespace
 }  // namespace lczero

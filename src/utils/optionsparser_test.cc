@@ -82,6 +82,65 @@ TEST(OptionsParser, ChoiceOptionCheckValueConstraints) {
   EXPECT_THROW(options.SetUciOption("choice-test-a", "choice-d"), Exception);
 }
 
+TEST(OptionsDict, FlattenSubdictToStringInheritanceAndOverride) {
+  OptionsDict dict;
+  dict.AddSubdictFromString("a=b, c=d, x(c=e, f=g, y(h=i))");
+
+  // Flatten subdict x
+  std::string s = dict.FlattenSubdictToString("x");
+
+  // Parse back to verify
+  OptionsDict parsed;
+  parsed.AddSubdictFromString(s);
+
+  EXPECT_EQ(parsed.Get<std::string>("a"), "b");
+  EXPECT_EQ(parsed.Get<std::string>("c"), "e");
+  EXPECT_EQ(parsed.Get<std::string>("f"), "g");
+  EXPECT_TRUE(parsed.HasSubdict("y"));
+  EXPECT_EQ(parsed.GetSubdict("y").Get<std::string>("h"), "i");
+  EXPECT_FALSE(parsed.HasSubdict("x"));
+}
+
+TEST(OptionsDict, FlattenSubdictToStringTypesAndIgnoreKeys) {
+  OptionsDict dict;
+  dict.AddSubdictFromString(
+      "backend=demux, flag=true, count=42, rate=1.5, path=/tmp/foo, (gpu=0), (gpu=1)");
+
+  // Flatten anonymous subdict [0], ignore "backend"
+  std::string s0 = dict.FlattenSubdictToString("[0]", {"backend"});
+  OptionsDict parsed0;
+  parsed0.AddSubdictFromString(s0);
+
+  EXPECT_FALSE(parsed0.Exists<std::string>("backend"));
+  EXPECT_EQ(parsed0.Get<bool>("flag"), true);
+  EXPECT_EQ(parsed0.Get<int>("count"), 42);
+  EXPECT_FLOAT_EQ(parsed0.Get<float>("rate"), 1.5f);
+  EXPECT_EQ(parsed0.Get<std::string>("path"), "/tmp/foo");
+  EXPECT_EQ(parsed0.Get<int>("gpu"), 0);
+
+  // Flatten anonymous subdict [1], ignore "backend"
+  std::string s1 = dict.FlattenSubdictToString("[1]", {"backend"});
+  OptionsDict parsed1;
+  parsed1.AddSubdictFromString(s1);
+
+  EXPECT_FALSE(parsed1.Exists<std::string>("backend"));
+  EXPECT_EQ(parsed1.Get<int>("gpu"), 1);
+}
+
+TEST(OptionsDict, FlattenSubdictToStringFloatExactness) {
+  OptionsDict dict;
+  dict.AddSubdictFromString("val=1.0, zero=0.0");
+  std::string s = dict.FlattenSubdictToString();
+
+  OptionsDict parsed;
+  parsed.AddSubdictFromString(s);
+
+  EXPECT_TRUE(parsed.Exists<float>("val"));
+  EXPECT_FLOAT_EQ(parsed.Get<float>("val"), 1.0f);
+  EXPECT_TRUE(parsed.Exists<float>("zero"));
+  EXPECT_FLOAT_EQ(parsed.Get<float>("zero"), 0.0f);
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
