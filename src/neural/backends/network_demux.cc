@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2018-2025 The LCZero Authors
+  Copyright (C) 2018-2020 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@
 #include "neural/backend.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
+#include "utils/atomic_vector.h"
 #include "utils/exception.h"
 #include "utils/mutex.h"
 #include "utils/optionsdict.h"
@@ -57,15 +58,11 @@ struct DemuxingWork {
 class DemuxingChildBackend {
  public:
   DemuxingChildBackend(std::unique_ptr<Backend> backend,
-                       std::string backend_name,
-                       std::string backend_opts_str,
-                       std::string weights_path,
-                       int num_threads,
-                       std::atomic<bool>& abort)
+                       std::string backend_name, std::string backend_opts_str,
+                       int num_threads, std::atomic<bool>& abort)
       : backend_(std::move(backend)),
         backend_name_(std::move(backend_name)),
-        backend_opts_str_(std::move(backend_opts_str)),
-        weights_path_(std::move(weights_path)) {
+        backend_opts_str_(std::move(backend_opts_str)) {
     for (int i = 0; i < num_threads; ++i) {
       threads_.emplace_back([this, &abort] { Worker(abort); });
     }
@@ -93,7 +90,6 @@ class DemuxingChildBackend {
   std::unique_ptr<Backend> backend_;
   std::string backend_name_;
   std::string backend_opts_str_;
-  std::string weights_path_;
 
  private:
   std::mutex mutex_;
@@ -104,11 +100,12 @@ class DemuxingChildBackend {
 
 class DemuxingComputation final : public BackendComputation {
  public:
-  explicit DemuxingComputation(DemuxingBackend* backend)
-      : backend_(backend) {}
+  DemuxingComputation(DemuxingBackend* backend, size_t capacity)
+      : backend_(backend), entries_(capacity) {}
 
   ~DemuxingComputation() override {
-    while (dataready_.load(std::memory_order_acquire) > 0) {
+    // Wait for notify_one to finish before destroying the condition variable.
+    while (dataready_.load(std::memory_order_acquire) != -1) {
       SpinloopPause();
     }
   }
@@ -117,32 +114,39 @@ class DemuxingComputation final : public BackendComputation {
 
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
-    entries_.push_back({pos, result});
+    entries_.emplace_back(
+        Entry{{pos.pos.begin(), pos.pos.end()},
+              {pos.legal_moves.begin(), pos.legal_moves.end()},
+              result});
     return ENQUEUED_FOR_EVAL;
   }
 
   void ComputeBlocking() override;
 
   void NotifyComplete() {
-    if (dataready_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-      std::lock_guard lock(mutex_);
+    if (dataready_.fetch_sub(1, std::memory_order_release) == 1) {
+      {
+        std::lock_guard lock(mutex_);
+      }
       dataready_cv_.notify_one();
+      dataready_.store(-1, std::memory_order_release);
     }
   }
 
  private:
   struct Entry {
-    EvalPosition pos;
+    std::vector<Position> positions;
+    MoveList legal_moves;
     EvalResultPtr result;
   };
 
   DemuxingBackend* backend_;
-  std::vector<Entry> entries_;
+  AtomicVector<Entry> entries_;
   std::vector<DemuxingWork> work_items_;
 
   std::mutex mutex_;
   std::condition_variable dataready_cv_;
-  std::atomic<int> dataready_ = 0;
+  std::atomic<int> dataready_ = -1;
 
   friend class DemuxingChildBackend;
 };
@@ -159,6 +163,7 @@ DemuxingChildBackend::~DemuxingChildBackend() {
 }
 
 void DemuxingChildBackend::Worker(std::atomic<bool>& abort) {
+  const size_t max_batch = backend_->GetAttributes().maximum_batch_size;
   while (!abort.load(std::memory_order_relaxed)) {
     DemuxingWork* work = nullptr;
     {
@@ -173,12 +178,18 @@ void DemuxingChildBackend::Worker(std::atomic<bool>& abort) {
       }
     }
     if (work) {
-      auto computation = backend_->CreateComputation();
-      auto& entries = work->source->entries_;
-      for (size_t i = work->start; i < work->end; ++i) {
-        computation->AddInput(entries[i].pos, entries[i].result);
+      const auto& entries = work->source->entries_;
+      for (size_t start = work->start; start < work->end;) {
+        const size_t end = start + std::min(max_batch, work->end - start);
+        auto computation = backend_->CreateComputation();
+        for (size_t i = start; i < end; ++i) {
+          const auto& entry = entries[i];
+          computation->AddInput({entry.positions, entry.legal_moves},
+                                entry.result);
+        }
+        computation->ComputeBlocking();
+        start = end;
       }
-      computation->ComputeBlocking();
       work->source->NotifyComplete();
     }
   }
@@ -192,7 +203,7 @@ BackendAttributes AggregateDemuxAttributes(
   result.has_mlh = first.has_mlh;
   result.has_wdl = first.has_wdl;
   result.runs_on_cpu = first.runs_on_cpu;
-  result.suggested_num_search_threads = first.suggested_num_search_threads;
+  result.suggested_num_search_threads = 1;
   result.recommended_batch_size = first.recommended_batch_size;
   result.maximum_batch_size = first.maximum_batch_size;
 
@@ -201,10 +212,11 @@ BackendAttributes AggregateDemuxAttributes(
     result.has_mlh &= attr.has_mlh;
     result.has_wdl &= attr.has_wdl;
     result.runs_on_cpu &= attr.runs_on_cpu;
-    result.suggested_num_search_threads += attr.suggested_num_search_threads;
-    result.recommended_batch_size += attr.recommended_batch_size;
+    result.recommended_batch_size =
+        std::min(result.recommended_batch_size, attr.recommended_batch_size);
     result.maximum_batch_size += attr.maximum_batch_size;
   }
+  result.recommended_batch_size *= children.size();
   return result;
 }
 
@@ -216,7 +228,8 @@ class DemuxingBackend final : public Backend {
   BackendAttributes GetAttributes() const override { return attrs_; }
 
   std::unique_ptr<BackendComputation> CreateComputation() override {
-    return std::make_unique<DemuxingComputation>(this);
+    return std::make_unique<DemuxingComputation>(this,
+                                               attrs_.maximum_batch_size);
   }
 
   UpdateConfigurationResult UpdateConfiguration(
@@ -250,7 +263,9 @@ DemuxingBackend::DemuxingBackend(const OptionsDict& options)
   backend_options.AddSubdictFromString(backend_opts_);
 
   batch_step_ = backend_options.GetOrDefault<int>("batch_step", 1);
-  if (batch_step_ < 1) batch_step_ = 1;
+  if (batch_step_ < 1) {
+    throw Exception("demux batch_step must be at least 1.");
+  }
 
   auto subdicts = backend_options.ListSubdicts();
   if (subdicts.empty()) {
@@ -258,70 +273,37 @@ DemuxingBackend::DemuxingBackend(const OptionsDict& options)
   }
 
   auto* backend_manager = BackendManager::Get();
-  auto all_backends = backend_manager->GetBackendNames();
-  std::vector<std::string> valid_backends;
-  for (const auto& b : all_backends) {
-    if (b != "demux") valid_backends.push_back(b);
-  }
-  if (valid_backends.empty()) {
-    throw Exception("No available backend to demux across.");
-  }
-
   for (const auto& subdict_name : subdicts) {
-    std::string child_backend;
-    std::string child_weights;
-    int child_threads = 0;
+    const auto& child_dict = subdict_name.empty()
+                                 ? backend_options
+                                 : backend_options.GetSubdict(subdict_name);
+    const std::string child_backend = child_dict.GetOrDefault<std::string>(
+        "backend", subdict_name.empty() ? backend_manager->GetBackendNames()[0]
+                                       : subdict_name);
+    int child_threads = child_dict.GetOrDefault<int>("threads", 0);
 
-    if (subdict_name.empty()) {
-      child_backend = backend_options.GetOrDefault<std::string>(
-          "backend", valid_backends[0]);
-      child_threads = backend_options.GetOrDefault<int>("threads", 0);
-    } else {
-      const auto& child_dict = backend_options.GetSubdict(subdict_name);
-      child_threads = child_dict.GetOrDefault<int>("threads", 0);
-      if (child_dict.Exists<std::string>("backend")) {
-        child_backend = child_dict.Get<std::string>("backend");
-      } else if (backend_options.Exists<std::string>("backend")) {
-        child_backend = backend_options.Get<std::string>("backend");
-      } else if (backend_manager->GetFactoryByName(subdict_name) != nullptr) {
-        child_backend = subdict_name;
-      } else {
-        child_backend = valid_backends[0];
-      }
-      if (child_dict.Exists<std::string>("weights")) {
-        child_weights = child_dict.Get<std::string>("weights");
-      }
-    }
-
+    // Children validate options independently. Backend-specific options for
+    // heterogeneous children must go in their respective subdicts.
     std::string child_opts_str = backend_options.FlattenSubdictToString(
-        subdict_name, {"backend", "threads"});
+        subdict_name, {"backend"}, {"batch_step"});
 
     OptionsDict child_opts(&options);
     child_opts.Set<std::string>(SharedBackendParams::kBackendId, child_backend);
     child_opts.Set<std::string>(SharedBackendParams::kBackendOptionsId,
                                 child_opts_str);
-    if (!child_weights.empty()) {
-      child_opts.Set<std::string>(SharedBackendParams::kWeightsId,
-                                  child_weights);
-    }
 
     auto child_be = backend_manager->CreateFromParams(child_opts);
     if (child_threads == 0) {
-      child_threads = std::max(
-          1, child_be->GetAttributes().suggested_num_search_threads);
+      child_threads = child_be->GetAttributes().suggested_num_search_threads;
     }
 
     backends_.push_back(std::make_unique<DemuxingChildBackend>(
-        std::move(child_be), child_backend, child_opts_str, child_weights,
-        child_threads, abort_));
+        std::move(child_be), child_backend, child_opts_str, child_threads,
+        abort_));
   }
 
   attrs_ = AggregateDemuxAttributes(backends_);
-  if (backend_options.Exists<int>("max_batch")) {
-    attrs_.maximum_batch_size = backend_options.Get<int>("max_batch");
-    attrs_.recommended_batch_size =
-        std::min(attrs_.recommended_batch_size, attrs_.maximum_batch_size);
-  }
+  UpdateConfiguration(options);
 }
 
 Backend::UpdateConfigurationResult DemuxingBackend::UpdateConfiguration(
@@ -342,10 +324,6 @@ Backend::UpdateConfigurationResult DemuxingBackend::UpdateConfiguration(
                                 child->backend_name_);
     child_opts.Set<std::string>(SharedBackendParams::kBackendOptionsId,
                                 child->backend_opts_str_);
-    if (!child->weights_path_.empty()) {
-      child_opts.Set<std::string>(SharedBackendParams::kWeightsId,
-                                  child->weights_path_);
-    }
     if (child->backend_->UpdateConfiguration(child_opts) == NEED_RESTART) {
       return NEED_RESTART;
     }
@@ -354,7 +332,7 @@ Backend::UpdateConfigurationResult DemuxingBackend::UpdateConfiguration(
 }
 
 void DemuxingComputation::ComputeBlocking() {
-  if (entries_.empty()) return;
+  if (entries_.size() == 0) return;
 
   const size_t num_backends = backend_->backends_.size();
   assert(num_backends > 0);
@@ -371,11 +349,10 @@ void DemuxingComputation::ComputeBlocking() {
       backend_->start_index_.fetch_add(std::max(1, extra_split_backends),
                                        std::memory_order_relaxed) %
       num_backends;
-  const size_t end_index =
-      (start_index + extra_split_backends) % num_backends;
+  const size_t end_index = (start_index + extra_split_backends) % num_backends;
 
-  const int work_items = split_size_per_backend > 0 ? num_backends
-                                                    : extra_split_backends;
+  const int work_items =
+      split_size_per_backend > 0 ? num_backends : extra_split_backends;
   dataready_.store(work_items, std::memory_order_relaxed);
   work_items_.clear();
   work_items_.reserve(work_items);
@@ -422,7 +399,7 @@ void DemuxingComputation::ComputeBlocking() {
   // Wait until all backends complete their work.
   std::unique_lock lock(mutex_);
   dataready_cv_.wait(lock, [this]() {
-    return dataready_.load(std::memory_order_acquire) == 0;
+    return dataready_.load(std::memory_order_acquire) <= 0;
   });
 }
 

@@ -71,9 +71,9 @@ class BackendManager {
   std::vector<std::unique_ptr<BackendFactory>> algorithms_;
 };
 
-#define REGISTER_BACKEND(factory)                                     \
-  namespace {                                                         \
+#define REGISTER_BACKEND(factory)                                    \
+  namespace {                                                        \
   [[maybe_unused]] static BackendManager::Register reg29c93##factory( \
-      std::make_unique<factory>());                                   \
+      std::make_unique<factory>());                                  \
   }
 }  // namespace lczero

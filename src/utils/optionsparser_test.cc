@@ -17,7 +17,9 @@
 */
 
 #include "utils/optionsparser.h"
+
 #include <gtest/gtest.h>
+
 #include <iostream>
 
 namespace lczero {
@@ -104,7 +106,8 @@ TEST(OptionsDict, FlattenSubdictToStringInheritanceAndOverride) {
 TEST(OptionsDict, FlattenSubdictToStringTypesAndIgnoreKeys) {
   OptionsDict dict;
   dict.AddSubdictFromString(
-      "backend=demux, flag=true, count=42, rate=1.5, path=/tmp/foo, (gpu=0), (gpu=1)");
+      "backend=demux, flag=true, count=42, rate=1.5, path=/tmp/foo, (gpu=0), "
+      "(gpu=1)");
 
   // Flatten anonymous subdict [0], ignore "backend"
   std::string s0 = dict.FlattenSubdictToString("[0]", {"backend"});
@@ -128,17 +131,77 @@ TEST(OptionsDict, FlattenSubdictToStringTypesAndIgnoreKeys) {
 }
 
 TEST(OptionsDict, FlattenSubdictToStringFloatExactness) {
+  for (float value : {0.0f, 1.0f, 1.2345678f, -1.2345678f, 1e-20f, 1e20f}) {
+    SCOPED_TRACE(value);
+    OptionsDict dict;
+    dict.Set<float>("val", value);
+    OptionsDict parsed;
+    parsed.AddSubdictFromString(dict.FlattenSubdictToString());
+    EXPECT_EQ(parsed.Get<float>("val"), value);
+  }
+}
+
+TEST(OptionsDict, FlattenSubdictToStringQuotesValuesAndNames) {
+  for (const std::string value :
+       {"", "true", "false", "42", "_foo", "-foo", ".hidden", "123abc", "12-34",
+        "a b", "a,b", "a(b)", "a=b", "single'quote", "double\"quote"}) {
+    SCOPED_TRACE(value);
+    OptionsDict dict;
+    dict.Set<std::string>(value, value);
+    dict.AddSubdict(value)->Set<int>("id", 7);
+    OptionsDict parsed;
+    parsed.AddSubdictFromString(dict.FlattenSubdictToString());
+    EXPECT_EQ(parsed.Get<std::string>(value), value);
+    EXPECT_EQ(parsed.GetSubdict(value).Get<int>("id"), 7);
+  }
+}
+
+TEST(OptionsDict, FlattenSubdictToStringFiltersOnlyTopLevel) {
   OptionsDict dict;
-  dict.AddSubdictFromString("val=1.0, zero=0.0");
-  std::string s = dict.FlattenSubdictToString();
-
+  dict.AddSubdictFromString(
+      "backend=demux, threads=2, omitted(x=1), "
+      "child(backend=demux, threads=3, omitted(x=2), "
+      "nested(backend=cuda, threads=4, omitted(x=5)))");
   OptionsDict parsed;
-  parsed.AddSubdictFromString(s);
+  parsed.AddSubdictFromString(
+      dict.FlattenSubdictToString("child", {"backend", "omitted"}));
+  EXPECT_FALSE(parsed.Exists<std::string>("backend"));
+  EXPECT_EQ(parsed.Get<int>("threads"), 3);
+  EXPECT_FALSE(parsed.HasSubdict("omitted"));
+  const auto& nested = parsed.GetSubdict("nested");
+  EXPECT_EQ(nested.Get<std::string>("backend"), "cuda");
+  EXPECT_EQ(nested.Get<int>("threads"), 4);
+  EXPECT_EQ(nested.GetSubdict("omitted").Get<int>("x"), 5);
+}
 
-  EXPECT_TRUE(parsed.Exists<float>("val"));
-  EXPECT_FLOAT_EQ(parsed.Get<float>("val"), 1.0f);
-  EXPECT_TRUE(parsed.Exists<float>("zero"));
-  EXPECT_FLOAT_EQ(parsed.Get<float>("zero"), 0.0f);
+TEST(OptionsDict, FlattenSubdictToStringFiltersRootBatchStep) {
+  OptionsDict dict;
+  dict.AddSubdictFromString("batch_step=3, child(batch_step=5), empty()");
+  for (const std::string name : {"", "empty", "child"}) {
+    SCOPED_TRACE(name);
+    OptionsDict parsed;
+    parsed.AddSubdictFromString(
+        dict.FlattenSubdictToString(name, {}, {"batch_step"}));
+    if (name == "child") {
+      EXPECT_EQ(parsed.Get<int>("batch_step"), 5);
+    } else {
+      EXPECT_FALSE(parsed.Exists<int>("batch_step"));
+    }
+  }
+}
+
+TEST(OptionsDict, FlattenSubdictToStringPreservesAnonymousNames) {
+  OptionsDict dict;
+  for (int i = 0; i < 12; ++i)
+    dict.AddSubdictFromString("(id=" + std::to_string(i) + ")");
+  OptionsDict parsed;
+  parsed.AddSubdictFromString(dict.FlattenSubdictToString("", {"[1]"}));
+  EXPECT_FALSE(parsed.HasSubdict("[1]"));
+  for (int i = 0; i < 12; ++i) {
+    if (i == 1) continue;
+    EXPECT_EQ(parsed.GetSubdict("[" + std::to_string(i) + "]").Get<int>("id"),
+              i);
+  }
 }
 
 }  // namespace lczero

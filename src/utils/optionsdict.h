@@ -251,14 +251,19 @@ class OptionsDict : TypeDict<bool>,
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
 
-  // Serializes options (and optionally flattens a subdictionary) to a string
-  // representation compatible with AddSubdictFromString.
-  // If subdict_name is non-empty, values in the subdictionary override root
-  // values, and nested subdicts inside subdict_name are included.
-  // Any keys in ignore_keys are skipped.
+  // Serializes local bool, int, float and string options for
+  // AddSubdictFromString; parent and alias dictionaries are not consulted. If
+  // subdict_name is set, merges the named child's values over this dictionary's
+  // values and includes only the child's nested subdicts; otherwise includes
+  // this one's subdicts. ignore_keys excludes keys at the resulting top level.
+  // root_ignore_keys excludes this dictionary's keys before merging, preserving
+  // explicit child values (e.g. batch_step). Neither filter applies inside
+  // nested subdicts. Subdict names are preserved, including synthesized names
+  // like "[0]".
   std::string FlattenSubdictToString(
       const std::string& subdict_name = "",
-      const std::vector<std::string>& ignore_keys = {}) const;
+      const std::vector<std::string>& ignore_keys = {},
+      const std::vector<std::string>& root_ignore_keys = {}) const;
 
   // Throws an exception for the first option in the dict that has not been read
   // to find syntax errors in options added using AddSubdictFromString.

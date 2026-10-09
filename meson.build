@@ -1166,6 +1166,13 @@ if get_option('gtest')
     dependencies: [gtest]
   ), args: '--gtest_output=xml:encoder.xml', timeout: 90)
 
+  test('DemuxTest',
+    executable('network_demux_test',
+               'src/neural/backends/network_demux_test.cc',
+               'src/neural/backends/network_demux.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest),
+    args: '--gtest_output=xml:network_demux.xml', timeout: 90)
+
   test('EngineTest',
     executable('engine_test', 'src/engine_test.cc', 'src/engine.cc',
                'src/neural/memcache.cc', pb_files,

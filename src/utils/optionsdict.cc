@@ -29,8 +29,12 @@
 
 #include <cassert>
 #include <cctype>
+#include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <variant>
 
 #include "utils/exception.h"
 
@@ -330,23 +334,7 @@ void OptionsDict::AddSubdictFromString(const std::string& str) {
 
 namespace {
 
-bool NeedsQuotes(const std::string& str) {
-  if (str.empty() || str == "true" || str == "false") return true;
-  static const std::string kAllowedPunctuation = "_-./";
-  for (char c : str) {
-    if (!std::isalnum(static_cast<unsigned char>(c)) &&
-        kAllowedPunctuation.find(c) == std::string::npos) {
-      return true;
-    }
-  }
-  char* end = nullptr;
-  std::strtod(str.c_str(), &end);
-  if (end == str.c_str() + str.size()) return true;
-  return false;
-}
-
 std::string QuoteString(const std::string& str) {
-  if (!NeedsQuotes(str)) return str;
   if (str.find('"') == std::string::npos) {
     return "\"" + str + "\"";
   }
@@ -360,7 +348,7 @@ std::string QuoteString(const std::string& str) {
 
 std::string FormatFloat(float val) {
   std::ostringstream oss;
-  oss << val;
+  oss << std::setprecision(std::numeric_limits<float>::max_digits10) << val;
   std::string s = oss.str();
   if (s.find('.') == std::string::npos && s.find('e') == std::string::npos &&
       s.find('E') == std::string::npos) {
@@ -373,29 +361,20 @@ std::string FormatFloat(float val) {
 
 std::string OptionsDict::FlattenSubdictToString(
     const std::string& subdict_name,
-    const std::vector<std::string>& ignore_keys) const {
-  enum class ValueType { kBool, kInt, kFloat, kString };
-  struct SerializedVal {
-    ValueType type;
-    std::string text;
-  };
-
-  std::map<std::string, SerializedVal> merged_values;
+    const std::vector<std::string>& ignore_keys,
+    const std::vector<std::string>& root_ignore_keys) const {
+  std::map<std::string, std::variant<bool, int, float, std::string>>
+      merged_values;
   std::map<std::string, const OptionsDict*> merged_subdicts;
 
   auto collect_from_dict = [&](const OptionsDict& d, bool include_subdicts) {
-    for (const auto& [k, v] : d.TypeDict<bool>::dict()) {
-      merged_values[k] = {ValueType::kBool, v.Get() ? "true" : "false"};
-    }
-    for (const auto& [k, v] : d.TypeDict<int>::dict()) {
-      merged_values[k] = {ValueType::kInt, std::to_string(v.Get())};
-    }
-    for (const auto& [k, v] : d.TypeDict<float>::dict()) {
-      merged_values[k] = {ValueType::kFloat, FormatFloat(v.Get())};
-    }
-    for (const auto& [k, v] : d.TypeDict<std::string>::dict()) {
-      merged_values[k] = {ValueType::kString, QuoteString(v.Get())};
-    }
+    auto collect_values = [&](const auto& values) {
+      for (const auto& [k, v] : values) merged_values[k] = v.Get();
+    };
+    collect_values(d.TypeDict<bool>::dict());
+    collect_values(d.TypeDict<int>::dict());
+    collect_values(d.TypeDict<float>::dict());
+    collect_values(d.TypeDict<std::string>::dict());
     if (include_subdicts) {
       for (const auto& [k, sub] : d.subdicts_) {
         merged_subdicts[k] = &sub;
@@ -403,22 +382,20 @@ std::string OptionsDict::FlattenSubdictToString(
     }
   };
 
-  // 1. Collect from root.
   collect_from_dict(*this, subdict_name.empty());
-
-  // 2. If subdict_name is specified, collect and override from target subdict.
+  for (const auto& key : root_ignore_keys) {
+    merged_values.erase(key);
+    merged_subdicts.erase(key);
+  }
   if (!subdict_name.empty()) {
-    const auto& child = GetSubdict(subdict_name);
-    collect_from_dict(child, true);
+    collect_from_dict(GetSubdict(subdict_name), true);
   }
 
-  // 3. Remove ignore_keys.
   for (const auto& key : ignore_keys) {
     merged_values.erase(key);
     merged_subdicts.erase(key);
   }
 
-  // 4. Serialize to string.
   std::string result;
   auto append_entry = [&](const std::string& entry) {
     if (!result.empty()) result += ", ";
@@ -426,16 +403,26 @@ std::string OptionsDict::FlattenSubdictToString(
   };
 
   for (const auto& [k, val] : merged_values) {
-    append_entry(k + "=" + val.text);
+    const auto text = std::visit(
+        [](const auto& value) -> std::string {
+          using T = std::decay_t<decltype(value)>;
+          if constexpr (std::is_same_v<T, std::string>) {
+            return QuoteString(value);
+          } else if constexpr (std::is_same_v<T, bool>) {
+            return value ? "true" : "false";
+          } else if constexpr (std::is_same_v<T, float>) {
+            return FormatFloat(value);
+          } else {
+            return std::to_string(value);
+          }
+        },
+        val);
+    append_entry(QuoteString(k) + "=" + text);
   }
 
   for (const auto& [k, sub_ptr] : merged_subdicts) {
-    std::string inner = sub_ptr->FlattenSubdictToString("", ignore_keys);
-    if (!k.empty() && k.front() == '[' && k.back() == ']') {
-      append_entry("(" + inner + ")");
-    } else {
-      append_entry(k + "(" + inner + ")");
-    }
+    append_entry(QuoteString(k) + "(" + sub_ptr->FlattenSubdictToString() +
+                 ")");
   }
 
   return result;
