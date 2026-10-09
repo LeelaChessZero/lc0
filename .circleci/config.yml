@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 jobs:
   build:
     docker:
@@ -117,7 +117,7 @@ jobs:
               /tmp/lc0-$CIRCLE_TAG-macos_13.2.1 \
               --clobber --repo LeelaChessZero/lc0
 workflows:
-  version: 2
+  version: 2.1
   builds:
     jobs:
       - build
