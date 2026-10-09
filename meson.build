@@ -1171,6 +1171,16 @@ if get_option('gtest')
                'src/neural/memcache.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
+
+  test('DepthStackAndCache',
+    executable('inline_depth_stack_test', 'src/search/classic/inline_depth_stack_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest),
+    args: '--gtest_output=xml:depthstack.xml', timeout: 90)
+
+  test('DagCachedNodeData',
+    executable('dag_cached_node_data_test', 'src/search/dag_classic/cached_node_data_test.cc', pb_files,
+    include_directories: includes, link_with: lc0_lib, dependencies: [gtest] + deps),
+    args: '--gtest_output=xml:dagcache.xml', timeout: 90)
 endif
 
 
