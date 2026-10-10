@@ -154,7 +154,8 @@ void BackendBenchmark::Run() {
         bool first = true;
         auto& end = ends[tid];
         // Ignore the first batch to let GPU queue fill for stable measurements.
-        while (j++ < batches) {
+        // It is not one of the --batches.
+        while (first || j++ < batches) {
           // Put i copies of tree root node into computation and compute.
           auto computation = backend->CreateComputation();
           for (int k = 0; k < i; k++) {
@@ -194,13 +195,6 @@ void BackendBenchmark::Run() {
           total += times[batches_done].count();
           batches_done++;
         }
-      }
-      // The first batch of a thread warms up and is not timed, so one batch
-      // a thread leaves nothing to report.
-      if (batches_done == 0) {
-        std::cout << "No batch was timed at batch size " << i
-                  << ": --batches has to be above --threads." << std::endl;
-        continue;
       }
 
       double mean = total / batches_done;
