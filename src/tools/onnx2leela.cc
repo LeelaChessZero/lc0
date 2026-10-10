@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <set>
 
 #include "proto/net.pb.h"
