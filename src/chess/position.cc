@@ -32,6 +32,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 #include "chess/types.h"
 
@@ -52,7 +53,13 @@ Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
 
 Position Position::FromFen(std::string_view fen) {
   Position pos;
-  pos.us_board_.SetFromFen(std::string(fen), &pos.rule50_ply_, &pos.ply_count_);
+  int fullmove_number;
+  pos.us_board_.SetFromFen(std::string(fen), &pos.rule50_ply_, &fullmove_number);
+  if (fullmove_number < 1 ||
+      fullmove_number > std::numeric_limits<int>::max() / 2 + 1) {
+    throw Exception("Bad FEN fullmove number: " + std::string(fen));
+  }
+  pos.ply_count_ = 2 * (fullmove_number - 1) + pos.IsBlackToMove();
   return pos;
 }
 
