@@ -35,6 +35,7 @@
 #include <limits>
 
 #include "chess/types.h"
+#include "utils/exception.h"
 
 namespace lczero {
 
@@ -54,7 +55,8 @@ Position::Position(const ChessBoard& board, int rule50_ply, int game_ply)
 Position Position::FromFen(std::string_view fen) {
   Position pos;
   int fullmove_number;
-  pos.us_board_.SetFromFen(std::string(fen), &pos.rule50_ply_, &fullmove_number);
+  pos.us_board_.SetFromFen(std::string(fen), &pos.rule50_ply_,
+                           &fullmove_number);
   if (fullmove_number < 1 ||
       fullmove_number > std::numeric_limits<int>::max() / 2 + 1) {
     throw Exception("Bad FEN fullmove number: " + std::string(fen));

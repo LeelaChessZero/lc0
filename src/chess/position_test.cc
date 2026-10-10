@@ -84,10 +84,9 @@ TEST(Position, FromFenValidatesFullmoveRange) {
 
   EXPECT_EQ(Position::FromFen(board + "1073741824").GetGamePly(),
             std::numeric_limits<int>::max() - 1);
-  EXPECT_EQ(Position::FromFen(
-                "4k3/8/8/8/8/8/8/4K3 b - - 0 1073741824")
-                .GetGamePly(),
-            std::numeric_limits<int>::max());
+  EXPECT_EQ(
+      Position::FromFen("4k3/8/8/8/8/8/8/4K3 b - - 0 1073741824").GetGamePly(),
+      std::numeric_limits<int>::max());
 }
 
 TEST(Position, FromFenFullmoveAffectsLegacyClockBudget) {
