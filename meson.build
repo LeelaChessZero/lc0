@@ -1202,6 +1202,7 @@ if get_option('python_bindings')
     ] + files,
     include_directories: [includes],
     dependencies: [cpython, pybind11_dep] + deps,
+    objects: backend_objects,
     cpp_args: ['-fvisibility=hidden'],
     subdir: 'lczero',
     install: true)
