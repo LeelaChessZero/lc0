@@ -82,6 +82,91 @@ TEST(OptionsParser, ChoiceOptionCheckValueConstraints) {
   EXPECT_THROW(options.SetUciOption("choice-test-a", "choice-d"), Exception);
 }
 
+TEST(OptionsDict, CloneScalarsDetachesLocalValues) {
+  OptionsDict parent;
+  parent.Set<int>("inherited", 1);
+  OptionsDict source(&parent);
+  source.AddSubdictFromString(
+      "enabled=true, threads=2, rate=1.5, backend=cuda");
+  source.Set<Button>("button", Button(true));
+  source.AddSubdict("child");
+
+  auto clone = source.CloneScalars();
+  EXPECT_TRUE(clone->Get<bool>("enabled"));
+  EXPECT_EQ(clone->Get<int>("threads"), 2);
+  EXPECT_EQ(clone->Get<float>("rate"), 1.5f);
+  EXPECT_EQ(clone->Get<std::string>("backend"), "cuda");
+  EXPECT_FALSE(clone->Exists<int>("inherited"));
+  EXPECT_FALSE(clone->Exists<Button>("button"));
+  EXPECT_TRUE(clone->ListSubdicts().empty());
+  source.Set<int>("threads", 4);
+  EXPECT_EQ(clone->Get<int>("threads"), 2);
+}
+
+TEST(OptionsDict, MergeAndCopySubdictsReplaceTrees) {
+  OptionsDict source;
+  source.AddSubdictFromString("threads=2, backend=cuda, child(id=7, nested())");
+  OptionsDict dict;
+  dict.AddSubdictFromString(
+      "threads=4, batch=32, stale(), child(old=1, nested(old=2))");
+
+  dict.MergeFrom(source);
+  EXPECT_EQ(dict.Get<int>("threads"), 2);
+  EXPECT_EQ(dict.Get<int>("batch"), 32);
+  EXPECT_EQ(dict.Get<std::string>("backend"), "cuda");
+  EXPECT_TRUE(dict.HasSubdict("stale"));
+  const auto& child = dict.GetSubdict("child");
+  EXPECT_EQ(child.Get<int>("id"), 7);
+  EXPECT_EQ(child.Get<int>("batch"), 32);
+  EXPECT_FALSE(child.Exists<int>("old"));
+  EXPECT_FALSE(child.GetSubdict("nested").Exists<int>("old"));
+
+  dict.Set<int>("threads", 8);
+  dict.GetMutableSubdict("child")->Set<int>("old", 3);
+  dict.GetMutableSubdict("child")->GetMutableSubdict("nested")->Set<int>("old",
+                                                                         4);
+  dict.CopySubdictsFrom(source);
+  EXPECT_EQ(dict.Get<int>("threads"), 8);
+  EXPECT_EQ(dict.GetSubdict("child").Get<int>("threads"), 8);
+  EXPECT_EQ(dict.GetSubdict("child").Get<int>("id"), 7);
+  EXPECT_FALSE(dict.GetSubdict("child").Exists<int>("old"));
+  EXPECT_FALSE(
+      dict.GetSubdict("child").GetSubdict("nested").Exists<int>("old"));
+  source.GetMutableSubdict("child")->Set<int>("id", 9);
+  EXPECT_EQ(dict.GetSubdict("child").Get<int>("id"), 7);
+}
+
+TEST(OptionsDict, RemoveLeavesParentAndUnrelatedValues) {
+  OptionsDict parent;
+  parent.Set<int>("threads", 2);
+  OptionsDict dict(&parent);
+  dict.AddSubdictFromString("threads=4, batch=32, threads(), child(threads=8)");
+
+  dict.Remove("threads");
+  EXPECT_FALSE(dict.OwnExists<int>("threads"));
+  EXPECT_FALSE(dict.HasSubdict("threads"));
+  EXPECT_EQ(dict.Get<int>("threads"), 2);
+  EXPECT_EQ(parent.Get<int>("threads"), 2);
+  EXPECT_EQ(dict.Get<int>("batch"), 32);
+  EXPECT_EQ(dict.GetSubdict("child").Get<int>("threads"), 8);
+}
+
+TEST(OptionsDict, SerializeRoundTripsScalarsAndSubdict) {
+  OptionsDict dict;
+  dict.AddSubdictFromString("enabled=true, threads=2, child(device=0)");
+  dict.Set<std::string>("display name", "cuda backend");
+  dict.Set<float>("rate", 1.2345678f);
+  dict.Set<float>("offset", -1.0f);
+  OptionsDict parsed;
+  parsed.AddSubdictFromString(dict.Serialize());
+
+  EXPECT_TRUE(parsed.Get<bool>("enabled"));
+  EXPECT_EQ(parsed.Get<int>("threads"), 2);
+  EXPECT_EQ(parsed.Get<std::string>("display name"), "cuda backend");
+  EXPECT_EQ(parsed.Get<float>("rate"), 1.2345678f);
+  EXPECT_EQ(parsed.Get<float>("offset"), -1.0f);
+  EXPECT_EQ(parsed.GetSubdict("child").Get<int>("device"), 0);
+}
 }  // namespace lczero
 
 int main(int argc, char** argv) {

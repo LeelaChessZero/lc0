@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -60,17 +61,19 @@ class TypeDict {
     }
 
     V() = default;
-    V(const V& o) :
-      was_read_since_last_set_{o.was_read_since_last_set_.load(std::memory_order::acquire)},
-      value_{o.value_} {
-    }
+    V(const V& o)
+        : was_read_since_last_set_{
+              o.was_read_since_last_set_.load(std::memory_order::acquire)},
+          value_{o.value_} {}
     V& operator=(const V& o) {
       value_ = o.value_;
-      was_read_since_last_set_.store(o.was_read_since_last_set_.load(std::memory_order::acquire),
-                                     std::memory_order::release);
+      was_read_since_last_set_.store(
+          o.was_read_since_last_set_.load(std::memory_order::acquire),
+          std::memory_order::release);
       return *this;
     }
     V(const T& v) : value_{v} {}
+
    private:
     mutable std::atomic<bool> was_read_since_last_set_ = false;
     T value_;
@@ -249,6 +252,23 @@ class OptionsDict : TypeDict<bool>,
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
 
+  // Returns a detached copy of local bool, int, float and string values only,
+  // no subdicts, parent or aliases. Buttons are not copied.
+  std::unique_ptr<OptionsDict> CloneScalars() const;
+
+  // Copies local values from source, overwriting existing values.
+  // Subdicts are cloned as entire trees, not recursively merged.
+  void MergeFrom(const OptionsDict& source);
+
+  // Copies source subdicts, overwriting existing subdicts of the same name.
+  void CopySubdictsFrom(const OptionsDict& source);
+
+  // Removes a local value or subdict by name.
+  void Remove(std::string_view key);
+
+  // Serializes local scalar values and subdicts for AddSubdictFromString.
+  std::string Serialize() const;
+
   // Throws an exception for the first option in the dict that has not been read
   // to find syntax errors in options added using AddSubdictFromString.
   void CheckAllOptionsRead(const std::string& path_from_parent) const;
@@ -256,6 +276,9 @@ class OptionsDict : TypeDict<bool>,
   bool HasSubdict(const std::string& name) const;
 
  private:
+  void CopyScalarsFrom(const OptionsDict& source);
+  void RemoveScalars(const std::string& key);
+
   static std::string GetOptionId(const OptionId& option_id) {
     return std::to_string(reinterpret_cast<intptr_t>(&option_id));
   }

@@ -27,10 +27,16 @@
 
 #include "utils/optionsdict.h"
 
+#include <absl/strings/str_cat.h>
+
 #include <cassert>
 #include <cctype>
+#include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
+#include <type_traits>
+#include <variant>
 
 #include "utils/exception.h"
 
@@ -326,6 +332,122 @@ class Parser {
 void OptionsDict::AddSubdictFromString(const std::string& str) {
   Parser parser(str);
   parser.ParseMain(this);
+}
+
+namespace {
+
+std::string QuoteString(std::string_view str) {
+  if (str.find('"') == std::string::npos) return absl::StrCat("\"", str, "\"");
+  if (str.find('\'') == std::string::npos) return absl::StrCat("'", str, "'");
+  throw Exception("Cannot quote string with both quote types.");
+}
+
+std::string FormatFloat(float val) {
+  std::ostringstream oss;
+  oss << std::setprecision(std::numeric_limits<float>::max_digits10) << val;
+  std::string s = oss.str();
+  if (s.find_first_of(".eE") == std::string::npos) s += ".0";
+  return s;
+}
+
+}  // namespace
+
+void OptionsDict::CopyScalarsFrom(const OptionsDict& source) {
+  auto copy_values = [&]<typename T>() {
+    for (const auto& [key, value] : source.TypeDict<T>::dict()) {
+      Set<T>(key, value.Get());
+    }
+  };
+  copy_values.operator()<bool>();
+  copy_values.operator()<int>();
+  copy_values.operator()<float>();
+  copy_values.operator()<std::string>();
+}
+
+std::unique_ptr<OptionsDict> OptionsDict::CloneScalars() const {
+  auto result = std::make_unique<OptionsDict>();
+  result->CopyScalarsFrom(*this);
+  return result;
+}
+
+void OptionsDict::RemoveScalars(const std::string& key) {
+  TypeDict<bool>::mutable_dict()->erase(key);
+  TypeDict<Button>::mutable_dict()->erase(key);
+  TypeDict<int>::mutable_dict()->erase(key);
+  TypeDict<float>::mutable_dict()->erase(key);
+  TypeDict<std::string>::mutable_dict()->erase(key);
+}
+
+void OptionsDict::MergeFrom(const OptionsDict& source) {
+  if (&source == this) return;
+  // Remove old types first so copying preserves all types stored in source.
+  auto remove_values = [&]<typename T>() {
+    for (const auto& [key, value] : source.TypeDict<T>::dict()) {
+      RemoveScalars(key);
+    }
+  };
+  remove_values.operator()<bool>();
+  remove_values.operator()<int>();
+  remove_values.operator()<float>();
+  remove_values.operator()<std::string>();
+  CopyScalarsFrom(source);
+  CopySubdictsFrom(source);
+}
+
+void OptionsDict::CopySubdictsFrom(const OptionsDict& source) {
+  if (&source == this) return;
+  for (const auto& [name, subdict] : source.subdicts_) {
+    subdicts_.erase(name);
+    auto* child = AddSubdict(name);
+    child->CopyScalarsFrom(subdict);
+    child->CopySubdictsFrom(subdict);
+  }
+}
+
+void OptionsDict::Remove(std::string_view key) {
+  const std::string name(key);
+  RemoveScalars(name);
+  subdicts_.erase(name);
+}
+
+std::string OptionsDict::Serialize() const {
+  std::map<std::string, std::variant<bool, int, float, std::string>> values;
+  auto collect_values = [&](const auto& dict) {
+    for (const auto& [key, value] : dict) values[key] = value.Get();
+  };
+  collect_values(TypeDict<bool>::dict());
+  collect_values(TypeDict<int>::dict());
+  collect_values(TypeDict<float>::dict());
+  collect_values(TypeDict<std::string>::dict());
+
+  std::string result;
+  auto append_entry = [&](const std::string& entry) {
+    absl::StrAppend(&result, result.empty() ? "" : ",", entry);
+  };
+
+  for (const auto& [k, val] : values) {
+    const auto text = std::visit(
+        [](const auto& value) -> std::string {
+          using T = std::decay_t<decltype(value)>;
+          if constexpr (std::is_same_v<T, std::string>) {
+            return QuoteString(value);
+          } else if constexpr (std::is_same_v<T, bool>) {
+            return value ? "true" : "false";
+          } else if constexpr (std::is_same_v<T, float>) {
+            return FormatFloat(value);
+          } else {
+            return std::to_string(value);
+          }
+        },
+        val);
+    append_entry(QuoteString(k) + "=" + text);
+  }
+
+  for (const auto& [k, subdict] : subdicts_) {
+    append_entry(QuoteString(k) + "(" + subdict.Serialize() + ")");
+  }
+
+  return result;
 }
 
 void OptionsDict::CheckAllOptionsRead(
