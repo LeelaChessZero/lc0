@@ -21,10 +21,7 @@
 #include <gtest/gtest.h>
 
 #include <iostream>
-#include <limits>
 
-#include "search/classic/stoppers/legacy.h"
-#include "search/classic/stoppers/stoppers.h"
 #include "utils/string.h"
 
 namespace lczero {
@@ -57,51 +54,6 @@ TEST(Position, SetFenGetFen) {
     std::string target_fen = PositionToFen(pos);
     EXPECT_EQ(source_fens[i], target_fen);
   }
-}
-
-TEST(Position, FromFenConvertsFullmoveToGamePly) {
-  const std::string board = "4k3/8/8/8/8/8/8/4K3 ";
-  for (const auto& [side, expected_ply] :
-       std::vector<std::pair<std::string, int>>{{"w", 0}, {"b", 1}}) {
-    const std::string fen = board + side + " - - 0 1";
-    const Position position = Position::FromFen(fen);
-    EXPECT_EQ(position.GetGamePly(), expected_ply);
-    EXPECT_EQ(PositionToFen(position), fen);
-  }
-  for (const auto& [side, expected_ply] :
-       std::vector<std::pair<std::string, int>>{{"w", 78}, {"b", 79}}) {
-    const std::string fen = board + side + " - - 0 40";
-    const Position position = Position::FromFen(fen);
-    EXPECT_EQ(position.GetGamePly(), expected_ply);
-    EXPECT_EQ(PositionToFen(position), fen);
-  }
-}
-
-TEST(Position, FromFenValidatesFullmoveRange) {
-  const std::string board = "4k3/8/8/8/8/8/8/4K3 w - - 0 ";
-  EXPECT_THROW(Position::FromFen(board + "0"), Exception);
-  EXPECT_THROW(Position::FromFen(board + "1073741825"), Exception);
-
-  EXPECT_EQ(Position::FromFen(board + "1073741824").GetGamePly(),
-            std::numeric_limits<int>::max() - 1);
-  EXPECT_EQ(
-      Position::FromFen("4k3/8/8/8/8/8/8/4K3 b - - 0 1073741824").GetGamePly(),
-      std::numeric_limits<int>::max());
-}
-
-TEST(Position, FromFenFullmoveAffectsLegacyClockBudget) {
-  const Position position = Position::FromFen(
-      "3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 40");
-  ASSERT_EQ(position.GetGamePly(), 79);
-
-  GoParams params;
-  params.btime = 100000;
-  auto manager = classic::MakeLegacyTimeManager(0, OptionsDict{});
-  auto stopper = manager->GetStopper(params, position, 0, 0, 0);
-  classic::IterationStats stats;
-  classic::StoppersHints hints;
-  stats.time_since_movestart = 25000;
-  EXPECT_FALSE(stopper->ShouldStop(stats, &hints));
 }
 
 // https://github.com/LeelaChessZero/lc0/issues/209

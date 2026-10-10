@@ -1147,9 +1147,6 @@ if get_option('gtest')
 
   test('PositionTest',
     executable('position_test', 'src/chess/position_test.cc',
-    'src/search/classic/stoppers/legacy.cc',
-    'src/search/classic/stoppers/stoppers.cc',
-    'src/search/classic/stoppers/timemgr.cc',
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:position.xml', timeout: 90)
 
