@@ -368,8 +368,7 @@ TEST_F(DemuxTest, RejectsMissingChildrenBeforeCreatingChildren) {
       auto backend = Create(options);
       FAIL() << "Expected missing children to be rejected";
     } catch (const Exception& exception) {
-      EXPECT_STREQ(exception.what(),
-                   "demux requires at least one explicit child subdict.");
+      EXPECT_STREQ(exception.what(), "demux needs child backends.");
     }
   }
   EXPECT_TRUE(factory_->children.empty());
