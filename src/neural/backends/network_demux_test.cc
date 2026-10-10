@@ -136,7 +136,10 @@ class TestBackendFactory : public BackendFactory {
         .recommended_batch_size =
             child_options.GetOrDefault<int>("recommended", capacity),
         .maximum_batch_size = config->max_batch ? config->max_batch : capacity};
+    const bool throw_on_create =
+        child_options.GetOrDefault<bool>("throw_on_create", false);
     child_options.CheckAllOptionsRead("demux-test");
+    if (throw_on_create) throw Exception("demux-test factory failure");
     children.push_back(config);
     return std::make_unique<TestBackend>(attributes, config, options);
   }
@@ -409,6 +412,24 @@ TEST_F(DemuxTest, InitializesAndUpdatesSharedConfiguration) {
       SharedBackendParams::kBackendOptionsId,
       "backend=demux-test,demux_threads=2,first(),second()");
   EXPECT_EQ(backend->UpdateConfiguration(options), Backend::NEED_RESTART);
+}
+
+TEST_F(DemuxTest, LaterChildFactoryFailureJoinsEarlierWorkers) {
+  EXPECT_THROW(Create("backend=demux-test,demux_threads=2,first(),"
+                      "second(throw_on_create=true)"),
+               Exception);
+  ASSERT_EQ(factory_->children.size(), 1);
+  EXPECT_EQ(factory_->children[0]->computations.load(), 0);
+}
+
+TEST_F(DemuxTest, IdleChildrenWithMultipleWorkersTearDown) {
+  auto backend =
+      Create("backend=demux-test,demux_threads=3,first(),second(),third()");
+  ASSERT_EQ(factory_->children.size(), 3);
+  backend.reset();
+  for (const auto& child : factory_->children) {
+    EXPECT_EQ(child->computations.load(), 0);
+  }
 }
 
 TEST_F(DemuxTest, EmptyComputationCompletes) {

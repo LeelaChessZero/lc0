@@ -101,22 +101,22 @@ class DemuxingChildBackend {
  public:
   DemuxingChildBackend(std::unique_ptr<Backend> backend,
                        std::string backend_name, std::string backend_opts_str,
-                       int num_threads, std::atomic<bool>& abort)
+                       int num_threads)
       : backend_(std::move(backend)),
         backend_name_(std::move(backend_name)),
         backend_opts_str_(std::move(backend_opts_str)) {
-    for (int i = 0; i < num_threads; ++i) {
-      threads_.emplace_back([this, &abort] { Worker(abort); });
+    try {
+      for (int i = 0; i < num_threads; ++i) {
+        threads_.emplace_back([this] { Worker(); });
+      }
+    } catch (...) {
+      StopAndJoin();
+      throw;
     }
   }
 
   ~DemuxingChildBackend() {
-    // TODO: workers borrow the parent's abort flag, destroyed before child
-    // teardown. Constructor unwinding also skips setting it before joining.
-    Abort();
-    for (auto& t : threads_) {
-      if (t.joinable()) t.join();
-    }
+    StopAndJoin();
     while (!queue_.empty()) {
       queue_.front()->source->NotifyComplete();
       queue_.pop();
@@ -134,19 +134,20 @@ class DemuxingChildBackend {
   void Abort() {
     {
       std::lock_guard lock(mutex_);
+      abort_.store(true, std::memory_order_relaxed);
     }
     dataready_cv_.notify_all();
   }
 
-  void Worker(std::atomic<bool>& abort) {
-    while (!abort.load(std::memory_order_relaxed)) {
+  void Worker() {
+    while (!abort_.load(std::memory_order_relaxed)) {
       DemuxingWork* work = nullptr;
       {
         std::unique_lock lock(mutex_);
         dataready_cv_.wait(lock, [&] {
-          return abort.load(std::memory_order_relaxed) || !queue_.empty();
+          return abort_.load(std::memory_order_relaxed) || !queue_.empty();
         });
-        if (abort.load(std::memory_order_relaxed)) return;
+        if (abort_.load(std::memory_order_relaxed)) return;
         if (!queue_.empty()) {
           work = queue_.front();
           queue_.pop();
@@ -164,6 +165,14 @@ class DemuxingChildBackend {
   std::string backend_opts_str_;
 
  private:
+  void StopAndJoin() {
+    Abort();
+    for (auto& t : threads_) {
+      if (t.joinable()) t.join();
+    }
+  }
+
+  std::atomic<bool> abort_{false};
   std::mutex mutex_;
   std::condition_variable dataready_cv_;
   std::vector<std::thread> threads_;
@@ -220,7 +229,6 @@ class DemuxingBackend final : public Backend {
 
  private:
   void Abort() {
-    abort_.store(true, std::memory_order_relaxed);
     for (auto& b : backends_) {
       b->Abort();
     }
@@ -230,7 +238,6 @@ class DemuxingBackend final : public Backend {
   BackendAttributes attrs_;
   int batch_step_ = 1;
   std::atomic<size_t> start_index_ = 0;
-  std::atomic<bool> abort_ = false;
 
   std::string backend_opts_;
   std::string weights_path_;
@@ -278,8 +285,7 @@ DemuxingBackend::DemuxingBackend(const OptionsDict& options)
     }
 
     backends_.push_back(std::make_unique<DemuxingChildBackend>(
-        std::move(child_be), child_backend, child_opts_str, child_threads,
-        abort_));
+        std::move(child_be), child_backend, child_opts_str, child_threads));
   }
 
   attrs_ = AggregateDemuxAttributes(backends_, batch_step_);
