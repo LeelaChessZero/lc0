@@ -32,6 +32,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -251,19 +252,22 @@ class OptionsDict : TypeDict<bool>,
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
 
-  // Serializes local bool, int, float and string options for
-  // AddSubdictFromString; parent and alias dictionaries are not consulted. If
-  // subdict_name is set, merges the named child's values over this dictionary's
-  // values and includes only the child's nested subdicts; otherwise includes
-  // this one's subdicts. ignore_keys excludes keys at the resulting top level.
-  // root_ignore_keys excludes this dictionary's keys before merging, preserving
-  // explicit child values (e.g. batch_step). Neither filter applies inside
-  // nested subdicts. Subdict names are preserved, including synthesized names
-  // like "[0]".
-  std::string FlattenSubdictToString(
-      const std::string& subdict_name = "",
-      const std::vector<std::string>& ignore_keys = {},
-      const std::vector<std::string>& root_ignore_keys = {}) const;
+  // Returns a detached copy of local bool, int, float and string values only,
+  // no subdicts, parent or aliases. Buttons are not copied.
+  std::unique_ptr<OptionsDict> CloneScalars() const;
+
+  // Copies local values from source, overwriting existing values.
+  // Subdicts are cloned as entire trees, not recursively merged.
+  void MergeFrom(const OptionsDict& source);
+
+  // Copies source subdicts, overwriting existing subdicts of the same name.
+  void CopySubdictsFrom(const OptionsDict& source);
+
+  // Removes a local value or subdict by name.
+  void Remove(std::string_view key);
+
+  // Serializes local scalar values and subdicts for AddSubdictFromString.
+  std::string Serialize() const;
 
   // Throws an exception for the first option in the dict that has not been read
   // to find syntax errors in options added using AddSubdictFromString.
@@ -272,6 +276,9 @@ class OptionsDict : TypeDict<bool>,
   bool HasSubdict(const std::string& name) const;
 
  private:
+  void CopyScalarsFrom(const OptionsDict& source);
+  void RemoveScalars(const std::string& key);
+
   static std::string GetOptionId(const OptionId& option_id) {
     return std::to_string(reinterpret_cast<intptr_t>(&option_id));
   }

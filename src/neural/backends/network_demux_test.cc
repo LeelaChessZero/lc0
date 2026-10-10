@@ -24,6 +24,7 @@
 #include "neural/backend.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
+#include "utils/atomic_vector.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -38,24 +39,28 @@ struct ChildConfiguration {
   std::string history;
   int updates = 0;
   std::atomic<int> computations = 0;
+  std::atomic<size_t> inputs = 0;
+  std::atomic<int> computed = 0;
 };
 
 class TestComputation : public BackendComputation {
  public:
-  explicit TestComputation(size_t capacity) : capacity_(capacity) {}
+  TestComputation(size_t capacity, ChildConfiguration& config)
+      : entries_(capacity), config_(config) {}
 
   size_t UsedBatchSize() const override { return entries_.size(); }
 
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override {
-    EXPECT_LT(entries_.size(), capacity_);
-    entries_.push_back(
-        {result, static_cast<float>(pos.pos.back().GetGamePly()),
-         static_cast<float>(pos.legal_moves.front().raw_data())});
+    entries_.emplace_back(
+        Entry{result, static_cast<float>(pos.pos.back().GetGamePly()),
+              static_cast<float>(pos.legal_moves.front().raw_data())});
+    ++config_.inputs;
     return ENQUEUED_FOR_EVAL;
   }
 
   void ComputeBlocking() override {
+    ++config_.computed;
     for (const auto& entry : entries_) {
       if (entry.result.q) *entry.result.q = entry.ply;
       if (entry.result.d) *entry.result.d = entry.move;
@@ -68,8 +73,8 @@ class TestComputation : public BackendComputation {
     float ply;
     float move;
   };
-  size_t capacity_;
-  std::vector<Entry> entries_;
+  AtomicVector<Entry> entries_;
+  ChildConfiguration& config_;
 };
 
 class TestBackend : public Backend {
@@ -85,7 +90,8 @@ class TestBackend : public Backend {
 
   std::unique_ptr<BackendComputation> CreateComputation() override {
     ++config_->computations;
-    return std::make_unique<TestComputation>(attributes_.maximum_batch_size);
+    return std::make_unique<TestComputation>(attributes_.maximum_batch_size,
+                                             *config_);
   }
 
   UpdateConfigurationResult UpdateConfiguration(
@@ -108,7 +114,6 @@ class TestBackend : public Backend {
 
 class TestBackendFactory : public BackendFactory {
  public:
-  // Make the no-children default selection independent of compiled backends.
   int GetPriority() const override { return 1000000; }
   std::string_view GetName() const override { return "demux-test"; }
 
@@ -116,6 +121,7 @@ class TestBackendFactory : public BackendFactory {
     OptionsDict child_options;
     child_options.AddSubdictFromString(
         options.Get<std::string>(SharedBackendParams::kBackendOptionsId));
+    EXPECT_FALSE(child_options.Exists<int>("demux_threads"));
     const int capacity = child_options.GetOrDefault<int>("capacity", 8);
     auto config = std::make_shared<ChildConfiguration>();
     config->max_batch = child_options.GetOrDefault<int>("max_batch", 0);
@@ -178,18 +184,21 @@ class DemuxTest : public testing::Test {
 };
 
 TEST_F(DemuxTest, RejectsNonpositiveBatchStepBeforeCreatingChildren) {
-  EXPECT_THROW(Create("backend=demux-test,batch_step=0"), Exception);
+  EXPECT_THROW(Create("backend=demux-test,batch_step=0,first()"), Exception);
   EXPECT_THROW(Create("backend=demux-test,batch_step=-1,first(),second()"),
                Exception);
   EXPECT_TRUE(factory_->children.empty());
 }
 
-TEST_F(DemuxTest, OwnsDeferredInputs) {
-  auto backend = Create("backend=demux-test,threads=1");
+TEST_F(DemuxTest, ChildOwnsImmediatelyForwardedInputs) {
+  auto backend = Create("backend=demux-test,demux_threads=1,first()");
   auto computation = backend->CreateComputation();
   EvalResult result{};
   AddInput(computation.get(), 7, result.AsPtr());
   EXPECT_EQ(computation->UsedBatchSize(), 1);
+  EXPECT_EQ(factory_->children[0]->computations, 1);
+  EXPECT_EQ(factory_->children[0]->inputs, 1);
+  EXPECT_EQ(factory_->children[0]->computed, 0);
   computation->ComputeBlocking();
   EXPECT_EQ(result.q, 7);
   EXPECT_EQ(result.d,
@@ -197,9 +206,10 @@ TEST_F(DemuxTest, OwnsDeferredInputs) {
 }
 
 TEST_F(DemuxTest, CollectsConcurrentlyWithinAdvertisedCapacity) {
-  auto backend = Create("backend=demux-test,(capacity=64),(capacity=64)");
+  auto backend =
+      Create("backend=demux-test,batch_step=3,(capacity=64),(capacity=64)");
   const size_t capacity = backend->GetAttributes().maximum_batch_size;
-  ASSERT_EQ(capacity, 128);
+  ASSERT_EQ(capacity, 127);
   for (int repetition = 0; repetition < 20; ++repetition) {
     auto computation = backend->CreateComputation();
     std::vector<EvalResult> results(capacity);
@@ -218,19 +228,79 @@ TEST_F(DemuxTest, CollectsConcurrentlyWithinAdvertisedCapacity) {
   }
 }
 
-TEST_F(DemuxTest, ChunksRoundedAssignmentsWithinSummedCapacity) {
-  auto backend =
-      Create("backend=demux-test,batch_step=3,(capacity=2),(capacity=5)");
-  ASSERT_EQ(backend->GetAttributes().maximum_batch_size, 7);
-  auto computation = backend->CreateComputation();
-  std::vector<EvalResult> results(7);
-  for (size_t i = 0; i < results.size(); ++i) {
-    AddInput(computation.get(), i, results[i].AsPtr());
+TEST_F(DemuxTest, GroupedRoutingRespectsConservativeCapacity) {
+  struct Case {
+    int first_capacity;
+    int second_capacity;
+    int group;
+    size_t maximum;
+  };
+  for (const auto& test : {Case{5, 5, 3, 8}, Case{5, 9, 3, 8}, Case{2, 5, 3, 2},
+                           Case{8, 10, 3, 14}, Case{8, 10, 1, 16}}) {
+    SCOPED_TRACE(testing::Message()
+                 << test.first_capacity << "/" << test.second_capacity
+                 << " group=" << test.group);
+    auto backend =
+        Create("backend=demux-test,batch_step=" + std::to_string(test.group) +
+               ",(capacity=" + std::to_string(test.first_capacity) +
+               "),(capacity=" + std::to_string(test.second_capacity) + ")");
+    ASSERT_EQ(backend->GetAttributes().maximum_batch_size, test.maximum);
+    EXPECT_EQ(backend->GetAttributes().recommended_batch_size, test.maximum);
+    const size_t offset = factory_->children.size() - 2;
+    // Creating computations, not publishing work, rotates the starting child.
+    for (size_t repetition = 0; repetition < 4; ++repetition) {
+      auto computation = backend->CreateComputation();
+      std::vector<EvalResult> results(test.maximum);
+      size_t counts[2] = {};
+      for (size_t i = 0; i < results.size(); ++i) {
+        AddInput(computation.get(), i, results[i].AsPtr());
+        ++counts[(repetition + i / test.group) % 2];
+        for (size_t child = 0; child < 2; ++child) {
+          EXPECT_EQ(factory_->children[offset + child]->inputs, counts[child]);
+          EXPECT_EQ(factory_->children[offset + child]->computed, 0);
+          EXPECT_EQ(factory_->children[offset + child]->computations,
+                    repetition + 1);
+        }
+      }
+      EXPECT_EQ(computation->UsedBatchSize(), test.maximum);
+      computation->ComputeBlocking();
+      for (size_t i = 0; i < results.size(); ++i) {
+        EXPECT_EQ(results[i].q, i);
+        EXPECT_EQ(
+            results[i].d,
+            Move::White(Square::FromIdx(12), Square::FromIdx(28)).raw_data());
+      }
+      for (size_t child = 0; child < 2; ++child) {
+        EXPECT_EQ(factory_->children[offset + child]->computed,
+                  counts[child] != 0);
+        factory_->children[offset + child]->inputs = 0;
+        factory_->children[offset + child]->computed = 0;
+      }
+    }
   }
-  computation->ComputeBlocking();
-  for (size_t i = 0; i < results.size(); ++i) EXPECT_EQ(results[i].q, i);
-  EXPECT_EQ(factory_->children[0]->computations, 3);
-  EXPECT_EQ(factory_->children[1]->computations, 1);
+}
+
+TEST_F(DemuxTest, StartingChildRotatesAtCreation) {
+  auto backend = Create("backend=demux-test,first(),second(),third()");
+  // Keep all computations alive and evaluate out of creation order.
+  std::vector<std::unique_ptr<BackendComputation>> computations;
+  std::vector<EvalResult> results(6);
+  for (size_t i = 0; i < results.size(); ++i) {
+    computations.push_back(backend->CreateComputation());
+    AddInput(computations.back().get(), i, results[i].AsPtr());
+    for (size_t child = 0; child < 3; ++child) {
+      EXPECT_EQ(factory_->children[child]->inputs, (i + 3 - child) / 3);
+      EXPECT_EQ(factory_->children[child]->computed, 0);
+    }
+  }
+  for (size_t i = computations.size(); i-- > 0;) {
+    computations[i]->ComputeBlocking();
+    EXPECT_EQ(results[i].q, i);
+  }
+  for (const auto& child : factory_->children) {
+    EXPECT_EQ(child->computations, 6);
+    EXPECT_EQ(child->computed, 2);
+  }
 }
 
 TEST_F(DemuxTest, PreservesAttributeFormulas) {
@@ -238,7 +308,7 @@ TEST_F(DemuxTest, PreservesAttributeFormulas) {
       "backend=demux-test,(capacity=8,recommended=3,search_threads=2,mlh=true),"
       "(capacity=10,recommended=5,search_threads=4,cpu=false,wdl=false)");
   const auto attributes = backend->GetAttributes();
-  EXPECT_EQ(attributes.maximum_batch_size, 18);
+  EXPECT_EQ(attributes.maximum_batch_size, 16);
   EXPECT_EQ(attributes.recommended_batch_size, 6);
   EXPECT_EQ(attributes.suggested_num_search_threads, 1);
   EXPECT_FALSE(attributes.has_mlh);
@@ -247,8 +317,9 @@ TEST_F(DemuxTest, PreservesAttributeFormulas) {
 }
 
 TEST_F(DemuxTest, PreservesChildSelection) {
-  for (const auto& options : {"", "demux-test()", "backend=demux-test,named()",
-                              "named(backend=demux-test)"}) {
+  for (const auto& options :
+       {"demux-test()", "backend=demux-test,()", "backend=demux-test,named()",
+        "named(backend=demux-test)"}) {
     auto backend = Create(options);
     EXPECT_EQ(backend->GetAttributes().maximum_batch_size, 8);
   }
@@ -258,25 +329,55 @@ TEST_F(DemuxTest, PreservesChildSelection) {
   EXPECT_THROW(Create("backend=unknown-demux-child,named()"), Exception);
 }
 
-TEST_F(DemuxTest, ForwardsThreadsAndChildOptions) {
+TEST_F(DemuxTest, StripsDemuxThreadsAndForwardsChildOptions) {
   auto backend = Create(
-      "backend=demux-test,threads=2,batch_step=3,max_batch=12,"
-      "first(),second(threads=1,batch_step=5,max_batch=9)");
+      "backend=demux-test,demux_threads=2,threads=7,batch_step=3,max_batch=12,"
+      "first(),second(demux_threads=1,threads=4,batch_step=5,max_batch=9)");
   ASSERT_EQ(factory_->children.size(), 2);
-  EXPECT_EQ(factory_->children[0]->threads, 2);
-  EXPECT_EQ(factory_->children[1]->threads, 1);
+  EXPECT_EQ(factory_->children[0]->threads, 7);
+  EXPECT_EQ(factory_->children[1]->threads, 4);
   EXPECT_EQ(factory_->children[0]->batch_step, 0);
   EXPECT_EQ(factory_->children[1]->batch_step, 5);
   EXPECT_EQ(factory_->children[0]->max_batch, 12);
   EXPECT_EQ(factory_->children[1]->max_batch, 9);
-  EXPECT_EQ(backend->GetAttributes().maximum_batch_size, 21);
+  EXPECT_EQ(backend->GetAttributes().maximum_batch_size, 18);
 }
 
-TEST_F(DemuxTest, FiltersOnlyRootBatchStepWithoutChildren) {
-  auto backend =
-      Create("backend=demux-test,threads=1,batch_step=3,max_batch=12");
+TEST_F(DemuxTest, PreservesNestedDemuxWorkerOptions) {
+  auto backend = Create(
+      "demux_threads=2,threads=7,"
+      "outer(backend=demux,demux_threads=1,"
+      "inner(backend=demux,demux_threads=3,threads=4,"
+      "leaf(backend=demux-test,demux_threads=1)))");
   ASSERT_EQ(factory_->children.size(), 1);
-  EXPECT_EQ(factory_->children[0]->threads, 1);
+  EXPECT_EQ(factory_->children[0]->threads, 4);
+  EXPECT_EQ(backend->GetAttributes().maximum_batch_size, 8);
+  auto computation = backend->CreateComputation();
+  computation->ComputeBlocking();
+}
+
+TEST_F(DemuxTest, RejectsMissingChildrenBeforeCreatingChildren) {
+  for (const auto& options : {"", "backend=demux-test",
+                              "backend=demux-test,demux_threads=1,batch_step=3,"
+                              "max_batch=12"}) {
+    SCOPED_TRACE(options);
+    try {
+      auto backend = Create(options);
+      FAIL() << "Expected missing children to be rejected";
+    } catch (const Exception& exception) {
+      EXPECT_STREQ(exception.what(),
+                   "demux requires at least one explicit child subdict.");
+    }
+  }
+  EXPECT_TRUE(factory_->children.empty());
+}
+
+TEST_F(DemuxTest, ExplicitSingleChildInheritsRootOptionsWithoutBatchStep) {
+  auto backend = Create(
+      "backend=demux-test,demux_threads=1,threads=7,batch_step=3,max_batch=12,"
+      "first()");
+  ASSERT_EQ(factory_->children.size(), 1);
+  EXPECT_EQ(factory_->children[0]->threads, 7);
   EXPECT_EQ(factory_->children[0]->batch_step, 0);
   EXPECT_EQ(factory_->children[0]->max_batch, 12);
   EXPECT_EQ(backend->GetAttributes().maximum_batch_size, 12);
@@ -304,13 +405,14 @@ TEST_F(DemuxTest, InitializesAndUpdatesSharedConfiguration) {
   options.Set<std::string>(SharedBackendParams::kWeightsId, "changed-weights");
   EXPECT_EQ(backend->UpdateConfiguration(options), Backend::NEED_RESTART);
   options.Set<std::string>(SharedBackendParams::kWeightsId, "parent-weights");
-  options.Set<std::string>(SharedBackendParams::kBackendOptionsId,
-                           "backend=demux-test,threads=2");
+  options.Set<std::string>(
+      SharedBackendParams::kBackendOptionsId,
+      "backend=demux-test,demux_threads=2,first(),second()");
   EXPECT_EQ(backend->UpdateConfiguration(options), Backend::NEED_RESTART);
 }
 
 TEST_F(DemuxTest, EmptyComputationCompletes) {
-  auto backend = Create("");
+  auto backend = Create("demux-test()");
   auto computation = backend->CreateComputation();
   EXPECT_EQ(computation->UsedBatchSize(), 0);
   computation->ComputeBlocking();

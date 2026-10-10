@@ -27,6 +27,8 @@
 
 #include "utils/optionsdict.h"
 
+#include <absl/strings/str_cat.h>
+
 #include <cassert>
 #include <cctype>
 #include <iomanip>
@@ -334,75 +336,96 @@ void OptionsDict::AddSubdictFromString(const std::string& str) {
 
 namespace {
 
-std::string QuoteString(const std::string& str) {
-  if (str.find('"') == std::string::npos) {
-    return "\"" + str + "\"";
-  }
-  if (str.find('\'') == std::string::npos) {
-    return "'" + str + "'";
-  }
-  throw Exception(
-      "Cannot serialize string containing both single and double quotes: " +
-      str);
+std::string QuoteString(std::string_view str) {
+  if (str.find('"') == std::string::npos) return absl::StrCat("\"", str, "\"");
+  if (str.find('\'') == std::string::npos) return absl::StrCat("'", str, "'");
+  throw Exception("Cannot quote string with both quote types.");
 }
 
 std::string FormatFloat(float val) {
   std::ostringstream oss;
   oss << std::setprecision(std::numeric_limits<float>::max_digits10) << val;
   std::string s = oss.str();
-  if (s.find('.') == std::string::npos && s.find('e') == std::string::npos &&
-      s.find('E') == std::string::npos) {
-    s += ".0";
-  }
+  if (s.find_first_of(".eE") == std::string::npos) s += ".0";
   return s;
 }
 
 }  // namespace
 
-std::string OptionsDict::FlattenSubdictToString(
-    const std::string& subdict_name,
-    const std::vector<std::string>& ignore_keys,
-    const std::vector<std::string>& root_ignore_keys) const {
-  std::map<std::string, std::variant<bool, int, float, std::string>>
-      merged_values;
-  std::map<std::string, const OptionsDict*> merged_subdicts;
-
-  auto collect_from_dict = [&](const OptionsDict& d, bool include_subdicts) {
-    auto collect_values = [&](const auto& values) {
-      for (const auto& [k, v] : values) merged_values[k] = v.Get();
-    };
-    collect_values(d.TypeDict<bool>::dict());
-    collect_values(d.TypeDict<int>::dict());
-    collect_values(d.TypeDict<float>::dict());
-    collect_values(d.TypeDict<std::string>::dict());
-    if (include_subdicts) {
-      for (const auto& [k, sub] : d.subdicts_) {
-        merged_subdicts[k] = &sub;
-      }
+void OptionsDict::CopyScalarsFrom(const OptionsDict& source) {
+  auto copy_values = [&]<typename T>() {
+    for (const auto& [key, value] : source.TypeDict<T>::dict()) {
+      Set<T>(key, value.Get());
     }
   };
+  copy_values.operator()<bool>();
+  copy_values.operator()<int>();
+  copy_values.operator()<float>();
+  copy_values.operator()<std::string>();
+}
 
-  collect_from_dict(*this, subdict_name.empty());
-  for (const auto& key : root_ignore_keys) {
-    merged_values.erase(key);
-    merged_subdicts.erase(key);
-  }
-  if (!subdict_name.empty()) {
-    collect_from_dict(GetSubdict(subdict_name), true);
-  }
+std::unique_ptr<OptionsDict> OptionsDict::CloneScalars() const {
+  auto result = std::make_unique<OptionsDict>();
+  result->CopyScalarsFrom(*this);
+  return result;
+}
 
-  for (const auto& key : ignore_keys) {
-    merged_values.erase(key);
-    merged_subdicts.erase(key);
+void OptionsDict::RemoveScalars(const std::string& key) {
+  TypeDict<bool>::mutable_dict()->erase(key);
+  TypeDict<Button>::mutable_dict()->erase(key);
+  TypeDict<int>::mutable_dict()->erase(key);
+  TypeDict<float>::mutable_dict()->erase(key);
+  TypeDict<std::string>::mutable_dict()->erase(key);
+}
+
+void OptionsDict::MergeFrom(const OptionsDict& source) {
+  if (&source == this) return;
+  // Remove old types first so copying preserves all types stored in source.
+  auto remove_values = [&]<typename T>() {
+    for (const auto& [key, value] : source.TypeDict<T>::dict()) {
+      RemoveScalars(key);
+    }
+  };
+  remove_values.operator()<bool>();
+  remove_values.operator()<int>();
+  remove_values.operator()<float>();
+  remove_values.operator()<std::string>();
+  CopyScalarsFrom(source);
+  CopySubdictsFrom(source);
+}
+
+void OptionsDict::CopySubdictsFrom(const OptionsDict& source) {
+  if (&source == this) return;
+  for (const auto& [name, subdict] : source.subdicts_) {
+    subdicts_.erase(name);
+    auto* child = AddSubdict(name);
+    child->CopyScalarsFrom(subdict);
+    child->CopySubdictsFrom(subdict);
   }
+}
+
+void OptionsDict::Remove(std::string_view key) {
+  const std::string name(key);
+  RemoveScalars(name);
+  subdicts_.erase(name);
+}
+
+std::string OptionsDict::Serialize() const {
+  std::map<std::string, std::variant<bool, int, float, std::string>> values;
+  auto collect_values = [&](const auto& dict) {
+    for (const auto& [key, value] : dict) values[key] = value.Get();
+  };
+  collect_values(TypeDict<bool>::dict());
+  collect_values(TypeDict<int>::dict());
+  collect_values(TypeDict<float>::dict());
+  collect_values(TypeDict<std::string>::dict());
 
   std::string result;
   auto append_entry = [&](const std::string& entry) {
-    if (!result.empty()) result += ", ";
-    result += entry;
+    absl::StrAppend(&result, result.empty() ? "" : ",", entry);
   };
 
-  for (const auto& [k, val] : merged_values) {
+  for (const auto& [k, val] : values) {
     const auto text = std::visit(
         [](const auto& value) -> std::string {
           using T = std::decay_t<decltype(value)>;
@@ -420,9 +443,8 @@ std::string OptionsDict::FlattenSubdictToString(
     append_entry(QuoteString(k) + "=" + text);
   }
 
-  for (const auto& [k, sub_ptr] : merged_subdicts) {
-    append_entry(QuoteString(k) + "(" + sub_ptr->FlattenSubdictToString() +
-                 ")");
+  for (const auto& [k, subdict] : subdicts_) {
+    append_entry(QuoteString(k) + "(" + subdict.Serialize() + ")");
   }
 
   return result;
