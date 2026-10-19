@@ -624,9 +624,12 @@ void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
             sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, blockSize),
             sycl::range<3>(1, 1, blockSize)),
         [=](sycl::nd_item<3> item_ct1) {
-          expandPlanes_kernel_Fp32_NCHW(output, masks, values, n, item_ct1,
-                                        shMasks_acc_ct1.get_pointer(),
-                                        shVals_acc_ct1.get_pointer());
+          expandPlanes_kernel_Fp32_NCHW(
+              output, masks, values, n, item_ct1,
+              shMasks_acc_ct1.get_multi_ptr<sycl::access::decorated::no>()
+                  .get(),
+              shVals_acc_ct1.get_multi_ptr<sycl::access::decorated::no>()
+                  .get());
         });
   });
 }
@@ -740,9 +743,12 @@ void expandPlanes_Fp16_NCHW(sycl::half* output, const uint64_t* masks,
               sycl::range<3>(1, 1, blocks) * sycl::range<3>(1, 1, blockSize),
               sycl::range<3>(1, 1, blockSize)),
           [=](sycl::nd_item<3> item_ct1) {
-            expandPlanes_kernel_Fp16_NCHW(output, masks, values, n, item_ct1,
-                                          shMasks_acc_ct1.get_pointer(),
-                                          shVals_acc_ct1.get_pointer());
+            expandPlanes_kernel_Fp16_NCHW(
+                output, masks, values, n, item_ct1,
+                shMasks_acc_ct1.get_multi_ptr<sycl::access::decorated::no>()
+                    .get(),
+                shVals_acc_ct1.get_multi_ptr<sycl::access::decorated::no>()
+                    .get());
           });
     });
   }
@@ -1075,7 +1081,9 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
             OutputTransform_SE_relu_InputTransform_kernel<float, activation,
                                                           use_bias, use_skip>(
                 N, C, se_K, output, input, (float*)skip, bias, w1, b1, w2, b2,
-                item_ct1, shared_data_acc_ct1.get_pointer(),
+                item_ct1,
+                shared_data_acc_ct1.get_multi_ptr<sycl::access::decorated::no>()
+                    .get(),
                 shared_sums_acc_ct1);
           });
     });

@@ -153,9 +153,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<64, 16>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                    activation, item_ct1,
-                                    sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<64, 16>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else {
@@ -178,9 +181,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<64, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                    activation, item_ct1,
-                                    sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<64, 32>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 128) {
@@ -198,9 +204,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<128, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<128, 32>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 192) {
@@ -218,9 +227,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<192, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<192, 32>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 256) {
@@ -238,9 +250,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<256, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<256, 32>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 320) {
@@ -258,9 +273,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<320, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<320, 32>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 352) {
@@ -278,9 +296,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<352, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<352, 32>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 384) {
@@ -298,9 +319,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<384, 32>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<384, 32>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else {
@@ -323,9 +347,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<64, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                    activation, item_ct1,
-                                    sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<64, 64>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 128) {
@@ -343,9 +370,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<128, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<128, 64>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 192) {
@@ -363,9 +393,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<192, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<192, 64>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 256) {
@@ -383,9 +416,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<256, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<256, 64>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 320) {
@@ -403,9 +439,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<320, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<320, 64>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else if (C == 384) {
@@ -423,9 +462,12 @@ bool Se_Fp16_NHWC(int N, int C, int numFc1Out, sycl::half* output,
             sycl::nd_range<3>(sycl::range<3>(1, 1, N) * sycl::range<3>(1, 1, C),
                               sycl::range<3>(1, 1, C)),
             [=](sycl::nd_item<3> item_ct1) {
-              SE_Layer_NHWC<384, 64>(output, skip, input, w1, b1, w2, b2, bPrev,
-                                     activation, item_ct1,
-                                     sharedData_acc_ct1.get_pointer());
+              SE_Layer_NHWC<384, 64>(
+                  output, skip, input, w1, b1, w2, b2, bPrev, activation,
+                  item_ct1,
+                  sharedData_acc_ct1
+                      .get_multi_ptr<sycl::access::decorated::no>()
+                      .get());
             });
       });
     } else {
@@ -742,8 +784,13 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
                     N, C, se_K, (sycl::half*)output, (const sycl::half*)input,
                     (sycl::half*)skip, (sycl::half*)bias, (sycl::half*)w1,
                     (sycl::half*)b1, (sycl::half*)w2, (sycl::half*)b2, item_ct1,
-                    dpct_local_acc_ct1.get_pointer(),
-                    shared_data_acc_ct1.get_pointer(), shared_sums_acc_ct1);
+                    dpct_local_acc_ct1
+                        .get_multi_ptr<sycl::access::decorated::no>()
+                        .get(),
+                    shared_data_acc_ct1
+                        .get_multi_ptr<sycl::access::decorated::no>()
+                        .get(),
+                    shared_sums_acc_ct1);
               });
         });
       }
@@ -789,7 +836,9 @@ void OutputInputTransform(int N, int C, int se_K, T* output, const T* input,
             OutputTransform_SE_relu_InputTransform_kernel<
                 sycl::half, activation, use_bias, use_skip>(
                 N, C, se_K, output, input, (sycl::half*)skip, bias, w1, b1, w2,
-                b2, item_ct1, shared_data_acc_ct1.get_pointer(),
+                b2, item_ct1,
+                shared_data_acc_ct1.get_multi_ptr<sycl::access::decorated::no>()
+                    .get(),
                 shared_sums_acc_ct1);
           });
     });
