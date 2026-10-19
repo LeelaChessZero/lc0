@@ -29,8 +29,8 @@ option('mkl_libdirs',
        description: 'Paths to MKL libraries')
 
 option('mkl_include',
-       type: 'array',
-       value: ['/opt/intel/mkl/include'],
+       type: 'string',
+       value: '/opt/intel/mkl/include',
        description: 'Paths to MKL libraries')
 
 option('dnnl_dir',
