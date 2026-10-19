@@ -39,6 +39,9 @@ if cc.get_id() == 'msvc'
 endif
 if host_machine.system() == 'windows'
   add_project_arguments('-DNOMINMAX', language : 'cpp')
+  # fopen, dup and fileno are standard C and POSIX; don't warn about them.
+  add_project_arguments('-D_CRT_SECURE_NO_WARNINGS',
+                        '-D_CRT_NONSTDC_NO_WARNINGS', language : 'cpp')
   add_project_arguments(cc.get_supported_arguments(['/source-charset:utf-8']), language : 'cpp')
 endif
 if ['arm', 'aarch64'].contains(host_machine.cpu_family())
