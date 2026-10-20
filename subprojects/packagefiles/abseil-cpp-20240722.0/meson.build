@@ -10,8 +10,7 @@ project(
 
 cpp = meson.get_compiler('cpp')
 
-flags = cpp.get_supported_arguments('/DNOMINMAX', '/D_CRT_SECURE_NO_WARNINGS',
-                                    '-Wno-sign-compare', '-Wno-gcc-compat')
+flags = cpp.get_supported_arguments('/DNOMINMAX', '-Wno-sign-compare', '-Wno-gcc-compat')
 add_project_arguments(flags, language: 'cpp')
 
 arch_cpp_flags = []
