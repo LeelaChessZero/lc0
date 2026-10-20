@@ -70,10 +70,10 @@ class NodeGarbageCollector {
     // Flips stop flag, wakes the worker thread and waits for it to stop, so
     // that exiting the program does not wait out the rest of its sleep.
     {
-      Mutex::Lock lock(stop_mutex_);
+      Mutex::Lock lock(gc_mutex_);
       stop_.store(true);
     }
-    stop_signal_.notify_all();
+    stop_signal_.notify_one();
     gc_thread_.join();
   }
 
@@ -105,12 +105,14 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
-    while (!stop_.load()) {
+    while (true) {
       {
-        Mutex::Lock lock(stop_mutex_);
-        stop_signal_.wait_for(lock.get_raw(),
-                              std::chrono::milliseconds(kGCIntervalMs),
-                              [this]() { return stop_.load(); });
+        Mutex::Lock lock(gc_mutex_);
+        if (stop_signal_.wait_for(lock.get_raw(),
+                                  std::chrono::milliseconds(kGCIntervalMs),
+                                  [this]() { return stop_.load(); })) {
+          return;
+        }
       }
       GarbageCollect();
     };
@@ -123,7 +125,6 @@ class NodeGarbageCollector {
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
   // Wakes Worker() from its sleep when stop_ is set.
-  Mutex stop_mutex_;
   std::condition_variable stop_signal_;
   std::thread gc_thread_;
 };
