@@ -30,9 +30,7 @@
 #include <algorithm>
 
 #include "default_backend.h"
-#include "neural/loader.h"
-#include "neural/shared_params.h"
-#include "utils/commandline.h"
+#include "utils/exception.h"
 #include "utils/logging.h"
 
 namespace lczero {
@@ -78,38 +76,4 @@ std::unique_ptr<Network> NetworkFactory::Create(
   }
   throw Exception("Unknown backend: " + network);
 }
-
-NetworkFactory::BackendConfiguration::BackendConfiguration(
-    const OptionsDict& options)
-    : weights_path(options.Get<std::string>(SharedBackendParams::kWeightsId)),
-      backend(options.Get<std::string>(SharedBackendParams::kBackendId)),
-      backend_options(
-          options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {}
-
-bool NetworkFactory::BackendConfiguration::operator==(
-    const BackendConfiguration& other) const {
-  return (weights_path == other.weights_path && backend == other.backend &&
-          backend_options == other.backend_options);
-}
-
-std::unique_ptr<Network> NetworkFactory::LoadNetwork(
-    const OptionsDict& options) {
-  std::string net_path =
-      options.Get<std::string>(SharedBackendParams::kWeightsId);
-  const std::string backend =
-      options.Get<std::string>(SharedBackendParams::kBackendId);
-  const std::string backend_options =
-      options.Get<std::string>(SharedBackendParams::kBackendOptionsId);
-
-  std::optional<WeightsFile> weights;
-  if (!net_path.empty()) weights = LoadWeights(net_path);
-  OptionsDict network_options(&options);
-  network_options.AddSubdictFromString(backend_options);
-
-  auto ptr = NetworkFactory::Get()->Create(backend, std::move(weights),
-                                           network_options);
-  network_options.CheckAllOptionsRead(backend);
-  return ptr;
-}
-
 }  // namespace lczero
