@@ -1703,7 +1703,7 @@ void SearchWorker::PickNodesToExtendTask(
       float visited_pol = 0.0f;
       for (Node* child : node->VisitedNodes()) {
         int index = child->Index();
-        visited_pol += current_pol[index];
+        visited_pol += node->GetEdgeToNode(child)->GetP();
         float q = child->GetQ(draw_score);
         current_util[index] = q + m_evaluator.GetMUtility(child, q);
       }
