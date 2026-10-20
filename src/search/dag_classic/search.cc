@@ -842,18 +842,6 @@ std::vector<EdgeAndNode> Search::GetBestChildrenNoTemperature(Node* parent,
         const auto b_rank = GetEdgeRank(b);
         if (a_rank != b_rank) return a_rank > b_rank;
 
-        // If both are terminal draws, try to make it shorter.
-        // Not safe to access IsTerminal if GetN is 0.
-        if (a_rank == kNonTerminal && a.GetN() != 0 && b.GetN() != 0 &&
-            a.IsTerminal() && b.IsTerminal()) {
-          if (a.IsTbTerminal() != b.IsTbTerminal()) {
-            // Prefer non-tablebase draws.
-            return a.IsTbTerminal() < b.IsTbTerminal();
-          }
-          // Prefer shorter draws.
-          return a.GetM(0.0f) < b.GetM(0.0f);
-        }
-
         // Neither is terminal, use standard rule.
         if (a_rank == kNonTerminal) {
           // Prefer largest playouts then eval then prior.
