@@ -1168,6 +1168,11 @@ if get_option('gtest')
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
   ), args: '--gtest_output=xml:optionsparser.xml', timeout: 90)
 
+  test('OptionsDictTest',
+    executable('optionsdict_test', 'src/utils/optionsdict_test.cc',
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest
+  ), args: '--gtest_output=xml:optionsdict.xml', timeout: 90)
+
   test('SyzygyTest',
     executable('syzygy_test', 'src/syzygy/syzygy_test.cc',
     include_directories: includes, link_with: lc0_lib, dependencies: gtest
