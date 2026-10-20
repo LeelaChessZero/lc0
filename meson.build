@@ -214,6 +214,19 @@ deps += dependency('absl_flat_hash_map', 'absl', modules:['absl::flat_hash_map']
                    default_options : ['warning_level=0', 'cpp_std=c++20'])
 
 deps += dependency('threads')
+# Android has no POSIX shared memory or named semaphores, so there the backend
+# stays in the engine's own process.
+if host_machine.system() != 'android'
+  common_files += [
+    'src/neural/backends/backend_process/backend_process.cc',
+    'src/neural/backends/backend_process/interprocess.cc',
+    'src/neural/backends/backend_process/child_process_backend.cc',
+  ]
+  if host_machine.system() != 'windows'
+    # shm_open and sem_open for the backend process on glibc < 2.34.
+    deps += cc.find_library('rt', required : false)
+  endif
+endif
 
 #############################################################################
 ## Platform specific files
