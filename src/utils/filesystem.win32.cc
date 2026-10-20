@@ -71,23 +71,23 @@ time_t GetFileTime(const std::string& filename) {
          s.ftLastWriteTime.dwLowDateTime;
 }
 
-std::string GetUserCacheDirectory() {
-  return std::string();
-}
-
-std::string GetUserConfigDirectory() {
-  return std::string();
-}
-
-std::string GetUserDataDirectory() {
-  return std::string();
-}
-
-std::vector<std::string> GetSystemConfigDirectoryList() {
+std::filesystem::path GetUserCacheDirectory() {
   return {};
 }
 
-std::vector<std::string> GetSystemDataDirectoryList() {
+std::filesystem::path GetUserConfigDirectory() {
+  return {};
+}
+
+std::filesystem::path GetUserDataDirectory() {
+  return {};
+}
+
+std::vector<std::filesystem::path> GetSystemConfigDirectoryList() {
+  return {};
+}
+
+std::vector<std::filesystem::path> GetSystemDataDirectoryList() {
   return {};
 }
 
