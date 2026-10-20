@@ -249,8 +249,9 @@ class OptionsDict : TypeDict<bool>,
   // is still in scope, when the parent pointer is used
   void AddSubdictFromString(const std::string& str);
 
-  // Throws an exception for the first option in the dict that has not been read
-  // to find syntax errors in options added using AddSubdictFromString.
+  // Throws an exception for the first option or subdictionary in the dict that
+  // has not been read to find syntax errors in options added using
+  // AddSubdictFromString.
   void CheckAllOptionsRead(const std::string& path_from_parent) const;
 
   bool HasSubdict(const std::string& name) const;
@@ -260,8 +261,26 @@ class OptionsDict : TypeDict<bool>,
     return std::to_string(reinterpret_cast<intptr_t>(&option_id));
   }
 
+  // Copyable atomic flag, set when the dict is fetched from its parent through
+  // GetSubdict() or GetMutableSubdict().
+  class ReadFlag {
+   public:
+    ReadFlag() = default;
+    ReadFlag(const ReadFlag& o) : value_{o.Get()} {}
+    ReadFlag& operator=(const ReadFlag& o) {
+      Set(o.Get());
+      return *this;
+    }
+    bool Get() const { return value_.load(std::memory_order::acquire); }
+    void Set(bool v) const { value_.store(v, std::memory_order::release); }
+
+   private:
+    mutable std::atomic<bool> value_ = false;
+  };
+
   const OptionsDict* parent_ = nullptr;
   std::map<std::string, OptionsDict> subdicts_;
+  ReadFlag was_read_;
   // Dictionaries where to search for "own" parameters. By default contains only
   // this.
   std::vector<const OptionsDict*> aliases_;

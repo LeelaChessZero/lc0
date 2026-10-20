@@ -40,6 +40,7 @@ const OptionsDict& OptionsDict::GetSubdict(const std::string& name) const {
   const auto iter = subdicts_.find(name);
   if (iter == subdicts_.end())
     throw Exception("Subdictionary not found: " + name);
+  iter->second.was_read_.Set(true);
   return iter->second;
 }
 
@@ -48,6 +49,7 @@ OptionsDict* OptionsDict::GetMutableSubdict(const std::string& name) {
   auto iter = subdicts_.find(name);
   if (iter == subdicts_.end())
     throw Exception("Subdictionary not found: " + name);
+  iter->second.was_read_.Set(true);
   return &iter->second;
 }
 
@@ -336,6 +338,9 @@ void OptionsDict::CheckAllOptionsRead(
   TypeDict<float>::EnsureNoUnusedOptions("floating point", s);
   TypeDict<std::string>::EnsureNoUnusedOptions("string", s);
   for (auto const& dict : subdicts_) {
+    if (!dict.second.was_read_.Get()) {
+      throw Exception("Unknown option or subdictionary: " + s + dict.first);
+    }
     dict.second.CheckAllOptionsRead(s + dict.first);
   }
 }
