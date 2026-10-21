@@ -2683,6 +2683,12 @@ const char* CublasGetErrorString(cublasStatus_t status) {
       return "CUBLAS_STATUS_NOT_SUPPORTED";
     case CUBLAS_STATUS_LICENSE_ERROR:
       return "CUBLAS_STATUS_LICENSE_ERROR";
+#ifdef USE_HIP
+    case HIPBLAS_STATUS_HANDLE_IS_NULLPTR:
+      return "HIPBLAS_STATUS_HANDLE_IS_NULLPTR";
+    case HIPBLAS_STATUS_INVALID_ENUM:
+      return "HIPBLAS_STATUS_INVALID_ENUM";
+#endif
   }
   return "unknown cublas error";
 }
