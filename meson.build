@@ -209,7 +209,7 @@ files += [
 includes += include_directories('src')
 
 deps += dependency('absl_flat_hash_map', 'absl', modules:['absl::flat_hash_map'],
-                   include_type: 'system',
+                   include_type: 'system', version: '>=20220623',
                    fallback: ['abseil-cpp', 'absl_container_dep'],
                    default_options : ['warning_level=0', 'cpp_std=c++20'])
 
