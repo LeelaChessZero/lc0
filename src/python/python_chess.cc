@@ -71,10 +71,9 @@ py::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves) {
 }
 
 py::object ToBoard(const GameState& gs) {
-  py::object chess = py::module::import("chess");
+  py::object chess_module = py::module::import("chess");
 
-  py::object board = chess.attr("Board")(
-      gs.startpos().value_or(ChessBoard::kStartposFen));
+  py::object board = chess_module.attr("Board")(gs.startpos());
 
   for (const auto& move : gs.move_history()) {
     board.attr("push_uci")(move);

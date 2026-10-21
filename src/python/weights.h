@@ -261,11 +261,8 @@ class Backend {
 class GameState {
  public:
   GameState(const std::optional<std::string> startpos,
-            const std::vector<std::string>& moves,
-            const bool is_c960)
-      : is_c960_(is_c960),
-        startpos_(startpos),
-        moves_(moves) {
+            const std::vector<std::string>& moves, const bool is_c960)
+      : is_c960_(is_c960), moves_(moves) {
     ChessBoard starting_board;
     int no_capture_ply;
     int full_moves;
@@ -327,8 +324,8 @@ class GameState {
     moves_.push_back(move);
   }
 
-  const std::optional<std::string>& startpos() const {
-    return startpos_;
+  const std::string startpos() const {
+    return PositionToFen(history_.Starting());
   }
 
   const std::vector<std::string>& move_history() const {
@@ -338,8 +335,6 @@ class GameState {
  private:
   PositionHistory history_;
   bool is_c960_;
-
-  std::optional<std::string> startpos_;
   std::vector<std::string> moves_;
 };
 
