@@ -134,7 +134,7 @@ int TransformForPosition(pblczero::NetworkFormat::InputFormat input_format,
 InputPlanes EncodePositionForNN(
     pblczero::NetworkFormat::InputFormat input_format,
     std::span<const Position> history, int history_planes,
-    FillEmptyHistory fill_empty_history, int* transform_out) {
+    FillEmptyHistory fill_empty_history, int* transform_out, bool swap_colors) {
   InputPlanes result(kAuxPlaneBase + 8);
 
   int transform = 0;
@@ -147,7 +147,7 @@ InputPlanes EncodePositionForNN(
   ChessBoard::Castlings castlings;
   {
     const ChessBoard& board = history.back().GetBoard();
-    const bool we_are_black = board.flipped();
+    const bool we_are_black = (board.flipped() != swap_colors);
     if (IsCanonicalFormat(input_format)) {
       transform = ChooseTransform(board);
     }
@@ -332,7 +332,7 @@ InputPlanes EncodePositionForNN(
     const PositionHistory& history, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out) {
   return EncodePositionForNN(input_format, history.GetPositions(),
-                             history_planes, fill_empty_history, transform_out);
+                             history_planes, fill_empty_history, transform_out, false);
 }
 
 namespace {
