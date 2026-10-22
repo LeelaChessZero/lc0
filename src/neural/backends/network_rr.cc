@@ -25,83 +25,145 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <condition_variable>
-#include <queue>
-#include <thread>
-
-#include "neural/factory.h"
+#include "neural/register.h"
+#include "neural/shared_params.h"
 #include "utils/exception.h"
 
 namespace lczero {
 namespace {
 
-class RoundRobinNetwork : public Network {
- public:
-  RoundRobinNetwork(const std::optional<WeightsFile>& weights,
-                    const OptionsDict& options) {
-    const auto parents = options.ListSubdicts();
-    if (parents.empty()) {
-      // If options are empty, or multiplexer configured in root object,
-      // initialize on root object and default backend.
-      auto backends = NetworkFactory::Get()->GetBackendsList();
-      AddBackend(backends[0], weights, options);
-    }
-
-    for (const auto& name : parents) {
-      AddBackend(name, weights, options.GetSubdict(name));
-    }
-  }
-
-  void AddBackend(const std::string& name,
-                  const std::optional<WeightsFile>& weights,
-                  const OptionsDict& opts) {
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
-
-    networks_.emplace_back(
-        NetworkFactory::Get()->Create(backend, weights, opts));
-
-    min_batch_size_ =
-        std::min(min_batch_size_, networks_.back()->GetMiniBatchSize());
-    is_cpu_ &= networks_.back()->IsCpu();
-
-    if (networks_.size() == 1) {
-      capabilities_ = networks_.back()->GetCapabilities();
-    } else {
-      capabilities_.Merge(networks_.back()->GetCapabilities());
-    }
-  }
-
-  std::unique_ptr<NetworkComputation> NewComputation() override {
-    const long long val = ++counter_;
-    return networks_[val % networks_.size()]->NewComputation();
-  }
-
-  const NetworkCapabilities& GetCapabilities() const override {
-    return capabilities_;
-  }
-
-  int GetMiniBatchSize() const override { return min_batch_size_; }
-
-  int GetThreads() const override { return networks_.size(); }
-
-  bool IsCpu() const override { return is_cpu_; }
-
-  ~RoundRobinNetwork() {}
-
- private:
-  std::vector<std::unique_ptr<Network>> networks_;
-  std::atomic<long long> counter_;
-  NetworkCapabilities capabilities_;
-  int min_batch_size_ = std::numeric_limits<int>::max();
-  bool is_cpu_ = true;
-};
-
-std::unique_ptr<Network> MakeRoundRobinNetwork(
-    const std::optional<WeightsFile>& weights, const OptionsDict& options) {
-  return std::make_unique<RoundRobinNetwork>(weights, options);
+BackendAttributes MergeAttributes(const BackendAttributes& in,
+                                  const BackendAttributes& other) {
+  BackendAttributes out = in;
+  out.has_mlh &= other.has_mlh;
+  out.has_wdl &= other.has_wdl;
+  out.runs_on_cpu |= other.runs_on_cpu;
+  out.suggested_num_search_threads += other.suggested_num_search_threads;
+  out.recommended_batch_size =
+      std::min(out.recommended_batch_size, other.recommended_batch_size);
+  out.maximum_batch_size =
+      std::min(out.maximum_batch_size, other.maximum_batch_size);
+  return out;
 }
 
-REGISTER_NETWORK("roundrobin", MakeRoundRobinNetwork, -999)
+struct ChildBackend {
+  std::unique_ptr<Backend> backend_;
+  std::string backend_name_;
+  std::string backend_opts_str_;
+};
+
+class RoundRobinBackend : public Backend {
+ public:
+  RoundRobinBackend(const OptionsDict& options)
+      : backend_opts_(
+            options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
+        weights_path_(
+            options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+    OptionsDict backend_options;
+    backend_options.AddSubdictFromString(backend_opts_);
+
+    const auto subdicts = backend_options.ListSubdicts();
+
+    if (subdicts.empty()) {
+      // If options are empty, or multiplexer configured in root object,
+      // initialize on root object and default backend.
+      auto backends = BackendManager::Get()->GetBackendNames();
+      OptionsDict child_opts(&options);
+      child_opts.Set<std::string>(SharedBackendParams::kBackendId, backends[0]);
+      AddBackend(backends[0], child_opts);
+    }
+
+    for (const auto& subdict_name : subdicts) {
+      const auto& child_dict = backend_options.GetSubdict(subdict_name);
+      const std::string child_backend =
+          child_dict.GetOrDefault<std::string>("backend", subdict_name);
+
+      // Children validate options independently. Backend-specific options for
+      // heterogeneous children must go in their respective subdicts.
+      auto child_options = backend_options.CloneScalars();
+      child_options->MergeFrom(child_dict);
+      child_options->Remove("backend");
+      auto child_opts_str = child_options->Serialize();
+
+      OptionsDict child_opts(&options);
+      child_opts.Set<std::string>(SharedBackendParams::kBackendId,
+                                  child_backend);
+      child_opts.Set<std::string>(SharedBackendParams::kBackendOptionsId,
+                                  child_opts_str);
+
+      AddBackend(child_backend, child_opts);
+    }
+
+    UpdateConfiguration(options);
+  }
+
+  void AddBackend(const std::string& name, const OptionsDict& opts) {
+    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
+    backends_.emplace_back(std::make_unique<ChildBackend>(ChildBackend{
+        BackendManager::Get()->CreateFromName(backend, opts),
+        opts.Get<std::string>(SharedBackendParams::kBackendId),
+        opts.Get<std::string>(SharedBackendParams::kBackendOptionsId)}));
+
+    auto attributes = backends_.back()->backend_->GetAttributes();
+    if (backends_.size() == 1) {
+      attributes_ = attributes;
+    } else {
+      attributes_ = MergeAttributes(attributes_, attributes);
+    }
+  }
+
+  Backend::UpdateConfigurationResult UpdateConfiguration(
+      const OptionsDict& options) override {
+    auto rv = Backend::UpdateConfiguration(options);
+    if (rv != UPDATE_OK) return rv;
+    if (backend_opts_ !=
+        options.Get<std::string>(SharedBackendParams::kBackendOptionsId)) {
+      return NEED_RESTART;
+    }
+    if (weights_path_ !=
+        options.Get<std::string>(SharedBackendParams::kWeightsId)) {
+      return NEED_RESTART;
+    }
+    for (auto& child : backends_) {
+      OptionsDict child_opts(&options);
+      child_opts.Set<std::string>(SharedBackendParams::kBackendId,
+                                  child->backend_name_);
+      child_opts.Set<std::string>(SharedBackendParams::kBackendOptionsId,
+                                  child->backend_opts_str_);
+      if (child->backend_->UpdateConfiguration(child_opts) == NEED_RESTART) {
+        return NEED_RESTART;
+      }
+    }
+    return UPDATE_OK;
+  }
+
+  std::unique_ptr<BackendComputation> CreateComputation() override {
+    const long long val = ++counter_;
+    return backends_[val % backends_.size()]->backend_->CreateComputation();
+  }
+
+  BackendAttributes GetAttributes() const override { return attributes_; }
+
+  ~RoundRobinBackend() {}
+
+ private:
+  std::vector<std::unique_ptr<ChildBackend>> backends_;
+  std::atomic<long long> counter_;
+  BackendAttributes attributes_;
+
+  const std::string backend_opts_;
+  const std::string weights_path_;
+};
+
+class RoundRobinFactory : public BackendFactory {
+  int GetPriority() const override { return -999; }
+  std::string_view GetName() const override { return "roundrobin"; }
+  std::unique_ptr<Backend> Create(const OptionsDict& options) override {
+    return std::make_unique<RoundRobinBackend>(options);
+  }
+};
+
+REGISTER_BACKEND(RoundRobinFactory)
 
 }  // namespace
 }  // namespace lczero
