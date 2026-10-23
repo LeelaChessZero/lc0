@@ -35,6 +35,7 @@
 #include "tools/describenet.h"
 #include "tools/leela2onnx.h"
 #include "tools/onnx2leela.h"
+#include "tools/perft.h"
 #include "utils/commandline.h"
 #include "utils/esc_codes.h"
 #include "utils/logging.h"
@@ -94,6 +95,7 @@ int main(int argc, const char** argv) {
       CommandLine::RegisterMode("selfplay", "Play games with itself");
       CommandLine::RegisterMode("benchmark", "Quick benchmark");
       CommandLine::RegisterMode("bench", "Very quick benchmark");
+      CommandLine::RegisterMode("perft", "Move path enumeration");
       CommandLine::RegisterMode("backendbench",
                                 "Quick benchmark of backend only");
       CommandLine::RegisterMode("leela2onnx", "Convert Leela network to ONNX.");
@@ -122,6 +124,10 @@ int main(int argc, const char** argv) {
       // Benchmark mode, shorter version.
       Benchmark benchmark;
       benchmark.Run(/*run_shorter_benchmark=*/true);
+    } else if (CommandLine::ConsumeCommand("perft")) {
+      // Perft.
+      Perft perft;
+      perft.Run();
     } else if (CommandLine::ConsumeCommand("backendbench")) {
       // Backend Benchmark mode.
       BackendBenchmark benchmark;
