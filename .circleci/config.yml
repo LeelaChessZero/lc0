@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 jobs:
   build:
     docker:
@@ -41,7 +41,7 @@ jobs:
             ninja -j 4
   "mac":
     macos:
-      xcode: 14.3.1
+      xcode: 15.4.0
     steps:
       - checkout
       - run:
@@ -69,7 +69,7 @@ jobs:
           command: lipo -create -o /tmp/lc0 build/lc0 build-arm/lc0
       - store_artifacts:
           path: /tmp/lc0
-          destination: lc0-macos_13.2.1
+          destination: lc0-macos_14.3.1
       - run:
           name: Prepare Workspace
           command: |
@@ -97,7 +97,7 @@ jobs:
             ninja
   "upload-github-release":
     macos:
-      xcode: 14.3.1
+      xcode: 15.4.0
     steps:
       - attach_workspace:
           at: /tmp/workspace
@@ -111,13 +111,13 @@ jobs:
       - run:
           name: Upload to GitHub Release
           command: |
-            mv /tmp/workspace/lc0 /tmp/lc0-$CIRCLE_TAG-macos_13.2.1
+            mv /tmp/workspace/lc0 /tmp/lc0-$CIRCLE_TAG-macos_14.3.1
             gh release upload \
               "$CIRCLE_TAG" \
-              /tmp/lc0-$CIRCLE_TAG-macos_13.2.1 \
+              /tmp/lc0-$CIRCLE_TAG-macos_14.3.1 \
               --clobber --repo LeelaChessZero/lc0
 workflows:
-  version: 2
+  version: 2.1
   builds:
     jobs:
       - build

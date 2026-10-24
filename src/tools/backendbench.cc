@@ -154,7 +154,8 @@ void BackendBenchmark::Run() {
         bool first = true;
         auto& end = ends[tid];
         // Ignore the first batch to let GPU queue fill for stable measurements.
-        while (j++ < batches) {
+        // It is not one of the --batches.
+        while (first || j++ < batches) {
           // Put i copies of tree root node into computation and compute.
           auto computation = backend->CreateComputation();
           for (int k = 0; k < i; k++) {
@@ -202,7 +203,7 @@ void BackendBenchmark::Run() {
         double diff = times[j].count() - mean;
         stddev += diff * diff;
       }
-      stddev = std::sqrt(stddev / (batches_done - 1));
+      stddev = batches_done > 1 ? std::sqrt(stddev / (batches_done - 1)) : 0;
       double cv = stddev / mean;
 
       std::sort(times.begin(), times.begin() + batches_done);
