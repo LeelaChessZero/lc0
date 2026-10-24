@@ -303,6 +303,9 @@ void MetalNetworkBuilder::build(int kInputPlanes, MultiHeadWeights& weights, Inp
     else {
         [graph setResultTensors:@[policy, value]];
     }
+
+    // Compile the graph.
+    [graph compileGraph];
 }
 
 void MetalNetworkBuilder::forwardEval(float * inputs, uint64_t * masks, int batchSize, std::vector<float *> output_mems)
@@ -311,6 +314,12 @@ void MetalNetworkBuilder::forwardEval(float * inputs, uint64_t * masks, int batc
         Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
         [graph runInferenceWithBatchSize:batchSize inputs:inputs masks:masks outputs:&output_mems[0]];
     }
+}
+
+bool MetalNetworkBuilder::isCompiled() const
+{
+    Lc0NetworkGraph * graph = [Lc0NetworkGraph getGraphAt:[NSNumber numberWithInt:this->gpu_id]];
+    return graph->_isCompiled == YES;
 }
 
 }  // namespace metal_backend
