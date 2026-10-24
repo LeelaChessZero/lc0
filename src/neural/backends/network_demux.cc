@@ -186,7 +186,7 @@ BackendAttributes AggregateDemuxAttributes(
   BackendAttributes result{
       .has_mlh = true,
       .has_wdl = true,
-      .runs_on_cpu = true,
+      .runs_on_cpu = false,
       .suggested_num_search_threads = 1,
       .recommended_batch_size = std::numeric_limits<int>::max(),
       .maximum_batch_size = std::numeric_limits<int>::max(),
@@ -195,7 +195,7 @@ BackendAttributes AggregateDemuxAttributes(
     const auto& attr = child->backend_->GetAttributes();
     result.has_mlh &= attr.has_mlh;
     result.has_wdl &= attr.has_wdl;
-    result.runs_on_cpu &= attr.runs_on_cpu;
+    result.runs_on_cpu |= attr.runs_on_cpu;
     result.recommended_batch_size =
         std::min(result.recommended_batch_size, attr.recommended_batch_size);
     result.maximum_batch_size =

@@ -32,7 +32,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -264,7 +263,7 @@ class OptionsDict : TypeDict<bool>,
   void CopySubdictsFrom(const OptionsDict& source);
 
   // Removes a local value or subdict by name.
-  void Remove(std::string_view key);
+  void Remove(const std::string& key);
 
   // Serializes local scalar values and subdicts for AddSubdictFromString.
   std::string Serialize() const;

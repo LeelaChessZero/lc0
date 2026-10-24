@@ -336,7 +336,7 @@ void OptionsDict::AddSubdictFromString(const std::string& str) {
 
 namespace {
 
-std::string QuoteString(std::string_view str) {
+std::string QuoteString(const std::string& str) {
   if (str.find('"') == std::string::npos) return absl::StrCat("\"", str, "\"");
   if (str.find('\'') == std::string::npos) return absl::StrCat("'", str, "'");
   throw Exception("Cannot quote string with both quote types.");
@@ -404,10 +404,9 @@ void OptionsDict::CopySubdictsFrom(const OptionsDict& source) {
   }
 }
 
-void OptionsDict::Remove(std::string_view key) {
-  const std::string name(key);
-  RemoveScalars(name);
-  subdicts_.erase(name);
+void OptionsDict::Remove(const std::string& key) {
+  RemoveScalars(key);
+  subdicts_.erase(key);
 }
 
 std::string OptionsDict::Serialize() const {
