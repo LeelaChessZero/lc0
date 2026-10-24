@@ -35,6 +35,7 @@ namespace lczero {
 namespace classic {
 
 enum class ContemptMode { PLAY, WHITE, BLACK, NONE };
+enum class CachePiercingBackpropMode { kNone, kAccumulate, kNode, kBlend };
 
 class BaseSearchParams {
  public:
@@ -92,6 +93,10 @@ class BaseSearchParams {
     return at_root ? kFpuValueAtRoot : kFpuValue;
   }
   int GetCacheHistoryLength() const { return kCacheHistoryLength; }
+  int GetCachePiercing() const { return kCachePiercing; }
+  CachePiercingBackpropMode GetCachePiercingBackprop() const {
+    return kCachePiercingBackprop;
+  }
   float GetPolicySoftmaxTemp() const { return kPolicySoftmaxTemp; }
   int GetMaxCollisionEvents() const { return kMaxCollisionEvents; }
   int GetMaxCollisionVisits() const { return kMaxCollisionVisits; }
@@ -230,6 +235,8 @@ class BaseSearchParams {
   static const OptionId kUCIOpponentId;
   static const OptionId kUCIRatingAdvId;
   static const OptionId kSearchSpinBackoffId;
+  static const OptionId kCachePiercingId;
+  static const OptionId kCachePiercingBackpropId;
   static const OptionId kGarbageCollectionDelayId;
 
  protected:
@@ -256,6 +263,8 @@ class BaseSearchParams {
   const bool kFpuAbsoluteAtRoot;
   const float kFpuValueAtRoot;
   const int kCacheHistoryLength;
+  const int kCachePiercing;
+  const CachePiercingBackpropMode kCachePiercingBackprop;
   const float kPolicySoftmaxTemp;
   const int kMaxCollisionEvents;
   const int kMaxCollisionVisits;
