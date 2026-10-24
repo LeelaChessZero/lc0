@@ -125,6 +125,11 @@ class SyclNetworkComputation : public NetworkComputation {
   ~SyclNetworkComputation();
 
   void AddInput(InputPlanes&& input) override {
+    // The buffers hold max_batch positions.
+    if (batch_size_ >= network_->GetMaxBatchSize()) {
+      throw Exception("Batch is larger than the sycl backend's max_batch of " +
+                      std::to_string(network_->GetMaxBatchSize()));
+    }
     const auto iter_mask =
         &inputs_outputs_->input_masks_mem_shared_[batch_size_ * kInputPlanes];
     const auto iter_val =
@@ -916,10 +921,12 @@ class SyclNetwork : public Network {
   int GetThreads() const override { return 1 + multi_stream_; }
 
   int GetMiniBatchSize() const override {
-     if (is_cpu_) return 47;
+     if (is_cpu_) return std::min(47, max_batch_size_);
        // Simple heuristic that seems to work for a wide range of GPUs.
-       return 2 * compute_units_;
+       return std::min(2 * compute_units_, max_batch_size_);
     }
+
+  int GetMaxBatchSize() const { return max_batch_size_; }
   
   std::unique_ptr<NetworkComputation> NewComputation() override {
     return std::make_unique<SyclNetworkComputation<DataType>>(this, wdl_,
