@@ -62,8 +62,10 @@ class HashKeyedCache {
   }
 
   // Inserts the element under key @key with value @val. Unless the key is
-  // already in the cache.
-  void Insert(uint64_t key, std::unique_ptr<V> val) {
+  // already in the cache. If the key is already in the cache, the new value is
+  // silently ignored and the old value is kept. If the key is not in the cache,
+  // the new value is moved to cache.
+  void Insert(uint64_t key, std::unique_ptr<V>&& val) {
     if (capacity_.load(std::memory_order_relaxed) == 0) return;
 
     SpinMutex::Lock lock(mutex_);
