@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -66,8 +67,13 @@ class NodeGarbageCollector {
   }
 
   ~NodeGarbageCollector() {
-    // Flips stop flag and waits for a worker thread to stop.
-    stop_.store(true);
+    // Flips stop flag, wakes the worker thread and waits for it to stop, so
+    // that exiting the program does not wait out the rest of its sleep.
+    {
+      Mutex::Lock lock(gc_mutex_);
+      stop_.store(true);
+    }
+    stop_signal_.notify_one();
     gc_thread_.join();
   }
 
@@ -99,8 +105,15 @@ class NodeGarbageCollector {
   }
 
   void Worker() {
-    while (!stop_.load()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(kGCIntervalMs));
+    while (true) {
+      {
+        Mutex::Lock lock(gc_mutex_);
+        if (stop_signal_.wait_for(lock.get_raw(),
+                                  std::chrono::milliseconds(kGCIntervalMs),
+                                  [this]() { return stop_.load(); })) {
+          return;
+        }
+      }
       GarbageCollect();
     };
   }
@@ -111,6 +124,8 @@ class NodeGarbageCollector {
 
   // When true, Worker() should stop and exit.
   std::atomic<bool> stop_{false};
+  // Wakes Worker() from its sleep when stop_ is set.
+  std::condition_variable stop_signal_;
   std::thread gc_thread_;
 };
 
