@@ -64,14 +64,7 @@ class RoundRobinBackend : public Backend {
 
     const auto subdicts = backend_options.ListSubdicts();
 
-    if (subdicts.empty()) {
-      // If options are empty, or multiplexer configured in root object,
-      // initialize on root object and default backend.
-      auto backends = BackendManager::Get()->GetBackendNames();
-      OptionsDict child_opts(&options);
-      child_opts.Set<std::string>(SharedBackendParams::kBackendId, backends[0]);
-      AddBackend(backends[0], child_opts);
-    }
+    if (subdicts.empty()) throw Exception("roundrobin needs child backends.");
 
     for (const auto& subdict_name : subdicts) {
       const auto& child_dict = backend_options.GetSubdict(subdict_name);
@@ -91,25 +84,18 @@ class RoundRobinBackend : public Backend {
       child_opts.Set<std::string>(SharedBackendParams::kBackendOptionsId,
                                   child_opts_str);
 
-      AddBackend(child_backend, child_opts);
-    }
+      backends_.emplace_back(std::make_unique<ChildBackend>(ChildBackend{
+          BackendManager::Get()->CreateFromName(child_backend, child_opts),
+          child_backend, child_opts_str}));
 
+      auto attributes = backends_.back()->backend_->GetAttributes();
+      if (backends_.size() == 1) {
+        attributes_ = attributes;
+      } else {
+        attributes_ = MergeAttributes(attributes_, attributes);
+      }
+    }
     UpdateConfiguration(options);
-  }
-
-  void AddBackend(const std::string& name, const OptionsDict& opts) {
-    const std::string backend = opts.GetOrDefault<std::string>("backend", name);
-    backends_.emplace_back(std::make_unique<ChildBackend>(ChildBackend{
-        BackendManager::Get()->CreateFromName(backend, opts),
-        opts.Get<std::string>(SharedBackendParams::kBackendId),
-        opts.Get<std::string>(SharedBackendParams::kBackendOptionsId)}));
-
-    auto attributes = backends_.back()->backend_->GetAttributes();
-    if (backends_.size() == 1) {
-      attributes_ = attributes;
-    } else {
-      attributes_ = MergeAttributes(attributes_, attributes);
-    }
   }
 
   Backend::UpdateConfigurationResult UpdateConfiguration(
