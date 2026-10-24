@@ -47,6 +47,9 @@ struct BackendAttributes {
   int suggested_num_search_threads;
   int recommended_batch_size;
   int maximum_batch_size;
+  // Classical unless the backend says otherwise.
+  pblczero::NetworkFormat::InputFormat input_format =
+      pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE;
 };
 
 struct EvalResultPtr {
