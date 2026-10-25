@@ -1004,6 +1004,7 @@ void ApplyDeblunder(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
 
+  bool entered_tb = false;
   for (size_t i = 0; i < data.moves.size(); i++) {
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
@@ -1011,13 +1012,23 @@ void ApplyDeblunder(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
         (board.ours() | board.theirs()).count() <=
             tablebase->max_cardinality()) {
       history.Pop();
+      entered_tb = true;
       break;
     }
   }
 
-  float activeZ[3] = {data.fileContents.back().result_q,
-                      data.fileContents.back().result_d,
-                      data.fileContents.back().plies_left};
+  float activeZ[3];
+  if (entered_tb) {
+    // Seed from the tablebase position one ply ahead, flipped to the
+    // perspective of the current position.
+    activeZ[0] = -data.fileContents[history.GetLength()].result_q;
+    activeZ[1] = data.fileContents[history.GetLength()].result_d;
+    activeZ[2] = data.fileContents[history.GetLength()].plies_left + 1.0f;
+  } else {
+    activeZ[0] = data.fileContents.back().result_q;
+    activeZ[1] = data.fileContents.back().result_d;
+    activeZ[2] = data.fileContents.back().plies_left;
+  }
   bool deblunderingStarted = false;
 
   while (true) {
