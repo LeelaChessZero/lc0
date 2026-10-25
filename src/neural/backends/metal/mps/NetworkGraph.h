@@ -38,6 +38,8 @@
 
 -(NSUInteger) sizeOfDimensions:(NSArray<NSNumber *> * __nonnull)dimensions;
 
+-(NSUInteger) sizeOfDimensionsFrom:(NSNumber * __nonnull)dimension;
+
 @end
 
 static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat16;
@@ -55,7 +57,7 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
     // Variables to track results of graph inference.
     NSArray<MPSGraphTensor *> * _resultTensors;
     NSArray<MPSGraphTensor *> * _targetTensors;
-    NSMutableDictionary<NSNumber *, MPSGraphTensorDataDictionary *> * _resultDataDicts;
+    NSMutableDictionary<NSNumber *, NSArray<MPSGraphTensorData *> *> * _resultDataDicts;
     NSMutableDictionary<NSString *, MPSGraphTensor *> * _readVariables;
 
     // Variables for triple buffering
@@ -63,6 +65,14 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
 
     // Global smolgen weights.
     float * __nullable _globalSmolgenWeights;
+
+    // Graph queue compilation and execution.
+    MPSGraphExecutable * _executable;
+    // Feed tensors in the order passed to compileWithDevice:feeds:... so that inputsArray
+    // at inference time uses the same ordering the compiled executable expects.
+    NSArray<MPSGraphTensor *> * _feedTensors;
+    BOOL _isGraphBuilt;
+    BOOL _isCompiled;
 }
 
 +(Lc0NetworkGraph * _Nonnull) getGraphAt:(NSNumber * _Nonnull)index;
@@ -71,6 +81,9 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                   index:(NSNumber * _Nonnull)index;
 
 -(nonnull instancetype) initWithDevice:(id<MTLDevice> __nonnull)device;
+
+-(void) compileGraph;
+
 
 -(nonnull MPSGraphTensor *) inputPlaceholderWithInputChannels:(NSUInteger)channels
                                                         label:(NSString * __nullable)label;
@@ -219,6 +232,8 @@ static MPSImageFeatureChannelFormat fcFormat = MPSImageFeatureChannelFormatFloat
                                               subBatchSize:(NSUInteger)subBatchSize;
 
 -(void) copyResultsToBuffers:(float * __nonnull * __nonnull)outputBuffers
-                subBatchSize:(NSUInteger)subBatchSize;
+                     splits:(NSUInteger)splits
+               subBatchSize:(NSUInteger)subBatchSize
+          lastSubBatchSize:(NSUInteger)lastSubBatchSize;
 
 @end
