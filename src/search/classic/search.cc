@@ -223,13 +223,25 @@ namespace {
 // WDL conversion formula based on random walk model.
 inline double WDLRescale(float& v, float& d, float wdl_rescale_ratio,
                          float wdl_rescale_diff, float sign, bool invert,
-                         float max_reasonable_s) {
+                         float max_reasonable_s, bool use_threshold = false) {
   if (invert) {
     wdl_rescale_diff = -wdl_rescale_diff;
     wdl_rescale_ratio = 1.0f / wdl_rescale_ratio;
   }
   auto w = (1 + v - d) / 2;
   auto l = (1 - v - d) / 2;
+  if (use_threshold) {
+    // Keep centipawn scores within resonable limits when l or d becomes close
+    // to zero.
+    const float wl_threshold = 0.006f;
+    const float d_threshold = 0.0004875f;
+    w = std::max(w, wl_threshold);
+    l = std::max(l, wl_threshold);
+    d = std::max(d, d_threshold);
+    const float scale = 1.0f / (w + l + d);
+    w *= scale;
+    l *= scale;
+  }
   // Safeguard against numerical issues; skip WDL transformation if WDL is too
   // extreme.
   const float eps = 0.0001f;
@@ -304,12 +316,22 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
                    played_history_.IsBlackToMove())
                       ? 1.0f
                       : -1.0f;
+      auto wl_copy = wl, d_copy = d;
       mu_uci = WDLRescale(
-          wl, d, params_.GetWDLRescaleRatio(),
+          wl_copy, d_copy, params_.GetWDLRescaleRatio(),
+
           contempt_mode_ == ContemptMode::NONE
               ? 0
               : params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(),
-          sign, true, params_.GetWDLMaxS());
+          sign, true, params_.GetWDLMaxS(), true);
+      if (params_.GetWDLRescaleDiff() != 0.0f &&
+          contempt_mode_ != ContemptMode::NONE &&
+          params_.GetWDLEvalObjectivity() != 0.0f) {
+        WDLRescale(
+            wl, d, params_.GetWDLRescaleRatio(),
+            params_.GetWDLRescaleDiff() * params_.GetWDLEvalObjectivity(), sign,
+            true, params_.GetWDLMaxS());
+      }
     }
     const auto q = edge.GetQ(default_q, draw_score);
     if (edge.IsTerminal() && wl != 0.0f) {
@@ -319,6 +341,8 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "centipawn_with_drawscore") {
       uci_info.score = 90 * tan(1.5637541897 * q);
     } else if (score_type == "centipawn") {
+      uci_info.score = 100.79055 * tan(1.56292199291664 * wl);
+    } else if (score_type == "centipawn_2020") {
       uci_info.score = 90 * tan(1.5637541897 * wl);
     } else if (score_type == "centipawn_2019") {
       uci_info.score = 295 * wl / (1 - 0.976953126 * std::pow(wl, 14));
@@ -331,17 +355,7 @@ void Search::SendUciInfo() REQUIRES(nodes_mutex_) REQUIRES(counters_mutex_) {
     } else if (score_type == "W-L") {
       uci_info.score = wl * 10000;
     } else if (score_type == "WDL_mu") {
-      // Reports the WDL mu value whenever it is reasonable, and defaults to
-      // centipawn otherwise.
-      const float centipawn_fallback_threshold = 0.996f;
-      float centipawn_score = 45 * tan(1.56728071628 * wl);
-      uci_info.score =
-          backend_attributes_.has_wdl && mu_uci != 0.0f &&
-                  std::abs(wl) + d < centipawn_fallback_threshold &&
-                  (std::abs(mu_uci) < 1.0f ||
-                   std::abs(centipawn_score) < std::abs(100 * mu_uci))
-              ? 100 * mu_uci
-              : centipawn_score;
+      uci_info.score = 100 * mu_uci;
     }
 
     auto wdl_w =
