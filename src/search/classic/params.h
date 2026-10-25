@@ -57,11 +57,8 @@ class BaseSearchParams {
   // Parameter getters.
   int GetMiniBatchSize() const { return kMiniBatchSize; }
   float GetCpuct(bool at_root) const { return at_root ? kCpuctAtRoot : kCpuct; }
-  float GetCpuctBase(bool at_root) const {
-    return at_root ? kCpuctBaseAtRoot : kCpuctBase;
-  }
-  float GetCpuctFactor(bool at_root) const {
-    return at_root ? kCpuctFactorAtRoot : kCpuctFactor;
+  float GetCpuctExponent(bool at_root) const {
+    return at_root ? kCpuctExponentAtRoot : kCpuctExponent;
   }
   bool GetTwoFoldDraws() const { return kTwoFoldDraws; }
   float GetTemperature() const { return options_.Get<float>(kTemperatureId); }
@@ -167,10 +164,8 @@ class BaseSearchParams {
   static const OptionId kMiniBatchSizeId;
   static const OptionId kCpuctId;
   static const OptionId kCpuctAtRootId;
-  static const OptionId kCpuctBaseId;
-  static const OptionId kCpuctBaseAtRootId;
-  static const OptionId kCpuctFactorId;
-  static const OptionId kCpuctFactorAtRootId;
+  static const OptionId kCpuctExponentId;
+  static const OptionId kCpuctExponentAtRootId;
   static const OptionId kRootHasOwnCpuctParamsId;
   static const OptionId kTwoFoldDrawsId;
   static const OptionId kTemperatureId;
@@ -244,10 +239,8 @@ class BaseSearchParams {
   //            trivial search optimizations.
   const float kCpuct;
   const float kCpuctAtRoot;
-  const float kCpuctBase;
-  const float kCpuctBaseAtRoot;
-  const float kCpuctFactor;
-  const float kCpuctFactorAtRoot;
+  const float kCpuctExponent;
+  const float kCpuctExponentAtRoot;
   const bool kTwoFoldDraws;
   const float kNoiseEpsilon;
   const float kNoiseAlpha;
