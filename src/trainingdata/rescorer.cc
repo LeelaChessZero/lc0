@@ -1004,7 +1004,6 @@ void ApplyDeblunder(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
                 &board, &rule50ply, &gameply);
   history.Reset(board, rule50ply, gameply);
 
-  bool entered_tb = false;
   for (size_t i = 0; i < data.moves.size(); i++) {
     history.Append(data.moves[i]);
     const auto& board = history.Last().GetBoard();
@@ -1012,13 +1011,14 @@ void ApplyDeblunder(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
         (board.ours() | board.theirs()).count() <=
             tablebase->max_cardinality()) {
       history.Pop();
-      entered_tb = true;
       break;
     }
   }
 
   float activeZ[3];
-  if (entered_tb) {
+  // If the scan stopped before the end of the game, a tablebase position was
+  // reached and the pass is seeded from that position.
+  if (history.GetLength() - 1 < data.moves.size()) {
     // Seed from the tablebase position one ply ahead, flipped to the
     // perspective of the current position.
     activeZ[0] = -data.fileContents[history.GetLength()].result_q;
