@@ -34,6 +34,7 @@
 #include "neural/shared_params.h"
 #include "utils/atomic_vector.h"
 #include "utils/fastmath.h"
+#include "utils/trace.h"
 
 namespace lczero {
 namespace {
@@ -99,9 +100,7 @@ class NetworkAsBackend : public Backend {
 class NetworkAsBackendComputation : public BackendComputation {
  public:
   NetworkAsBackendComputation(NetworkAsBackend* backend)
-      : backend_(backend),
-        computation_(backend_->network_->NewComputation()),
-        entries_(backend_->attrs_.maximum_batch_size) {}
+      : backend_(backend), entries_(backend_->attrs_.maximum_batch_size) {}
 
   size_t UsedBatchSize() const override { return entries_.size(); }
 
@@ -119,19 +118,22 @@ class NetworkAsBackendComputation : public BackendComputation {
   }
 
   void ComputeBlocking() override {
-    for (auto& entry : entries_) computation_->AddInput(std::move(entry.input));
-    computation_->ComputeBlocking();
+    auto computation = backend_->network_->NewComputation();
+    for (auto& entry : entries_) computation->AddInput(std::move(entry.input));
+    computation->ComputeBlocking();
+    LCTRACE_FUNCTION_SCOPE;
     for (size_t i = 0; i < entries_.size(); ++i) {
       const EvalResultPtr& result = entries_[i].result;
-      if (result.q) *result.q = computation_->GetQVal(i);
-      if (result.d) *result.d = computation_->GetDVal(i);
-      if (result.m) *result.m = computation_->GetMVal(i);
-      if (!result.p.empty()) SoftmaxPolicy(result.p, computation_.get(), i);
+      if (result.q) *result.q = computation->GetQVal(i);
+      if (result.d) *result.d = computation->GetDVal(i);
+      if (result.m) *result.m = computation->GetMVal(i);
+      if (!result.p.empty()) SoftmaxPolicy(result.p, computation.get(), i);
     }
   }
 
   void SoftmaxPolicy(std::span<float> dst,
                      const NetworkComputation* computation, int idx) {
+    LCTRACE_FUNCTION_SCOPE;
     const std::vector<Move>& moves = entries_[idx].legal_moves;
     const int transform = entries_[idx].transform;
     // Copy the values to the destination array and compute the maximum.
@@ -161,7 +163,6 @@ class NetworkAsBackendComputation : public BackendComputation {
   };
 
   NetworkAsBackend* backend_;
-  std::unique_ptr<NetworkComputation> computation_;
   AtomicVector<Entry> entries_;
 };
 

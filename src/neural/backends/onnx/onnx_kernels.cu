@@ -25,13 +25,13 @@
   Program grant you additional permission to convey the resulting work.
 */
 
-#include <cuda_bf16.h>
+#include <cstdint>
 
-#include "cuda_common.h"
-#include "onnx_kernels.h"
+#include "neural/backends/onnx/onnx_kernels.h"
+#include "utils/exception.h"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace onnx {
 
 template <unsigned bits_per_thread, typename DataType>
 __global__ void expandPlanes_kernel(DataType* output, const uint64_t* masks,
@@ -74,6 +74,14 @@ void expandPlanesOnnx(DataType* output, const void* input, unsigned n,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+void CudaError(cudaError_t status, const char* file, int line) {
+  if (status != cudaSuccess) {
+    auto err = std::string("CUDA error: ") + cudaGetErrorString(status) + " (" +
+               file + ":" + std::to_string(line) + ") ";
+    throw Exception(err);
+  }
+}
+
 template void expandPlanesOnnx<half>(half* output, const void* input,
                                      unsigned n, cudaStream_t stream);
 template void expandPlanesOnnx<float>(float* output, const void* input,
@@ -82,5 +90,5 @@ template void expandPlanesOnnx<__nv_bfloat16>(__nv_bfloat16* output,
                                               const void* input, unsigned n,
                                               cudaStream_t stream);
 
-}  // namespace cudnn_backend
+}  // namespace onnx
 }  // namespace lczero

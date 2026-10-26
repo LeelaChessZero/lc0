@@ -31,10 +31,19 @@
 #include "cuda_common.h"
 #include "neural/tables/activation_function.h"
 #include "neural/tables/attention_policy_map.h"
+#include "utils/exception.h"
+
+// This translation unit only instantiates the fp32 winograd transforms, which
+// are valid on every architecture, so enable the shared transform bodies
+// unconditionally. (fp16_kernels.cu gates the same bodies on native fp16
+// support because it instantiates the half versions.)
+#ifndef HAS_FP16_SUPPORT
+#define HAS_FP16_SUPPORT 1
+#endif
 #include "winograd_helper.inc"
 
 namespace lczero {
-namespace cudnn_backend {
+namespace NS_BACKEND {
 namespace {
 constexpr int kInputPlanes = 112;
 }  // namespace
@@ -117,9 +126,9 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   float b[4];
 
   // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[4];
+  constexpr bool is_16bit = sizeof(T) == 2;
+  if constexpr (is_16bit) {
+    T inp[4];
     copyAs<uint2>(&inp[0], &input[tensorIndex]);
 #pragma unroll
     for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
@@ -141,10 +150,10 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   }
 
   // write to memory
-  if (fp16) {
-    half op[4];
+  if constexpr (is_16bit) {
+    T op[4];
 #pragma unroll
-    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+    for (int i = 0; i < 4; i++) op[i] = (T)val[i];
     copyAs<uint2>(&output[tensorIndex], &op[0]);
   } else {
     copyAs<uint4>(&output[tensorIndex], &val[0]);
@@ -216,9 +225,9 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   float b[4];
 
   // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[4];
+  constexpr bool is_16bit = sizeof(T) == 2;
+  if constexpr (is_16bit) {
+    T inp[4];
     copyAs<uint2>(&inp[0], &input[tensorIndex]);
 #pragma unroll
     for (int i = 0; i < 4; i++) val[i] = (float)inp[i];
@@ -240,10 +249,10 @@ __global__ void addBiasBatched_kernel(T* output, const T* input, const T* bias,
   }
 
   // write to memory
-  if (fp16) {
-    half op[4];
+  if constexpr (is_16bit) {
+    T op[4];
 #pragma unroll
-    for (int i = 0; i < 4; i++) op[i] = (half)val[i];
+    for (int i = 0; i < 4; i++) op[i] = (T)val[i];
     copyAs<uint2>(&output[tensorIndex], &op[0]);
   } else {
     copyAs<uint4>(&output[tensorIndex], &val[0]);
@@ -343,7 +352,7 @@ void addBias_NCHW(T* c, T* a, T* b, int N, int C, int H, int W,
 template <typename dT, typename sT>
 __device__ dT readNCHW(const sT* input_tensor, int n, int c, int h, int w,
                        int Nin, int Cin, int H, int W) {
-  if (n >= Nin || c >= Cin) return 0;
+  if (n >= Nin || c >= Cin) return static_cast<dT>(0.0f);
 
   int index;
   index = n;
@@ -381,12 +390,13 @@ __global__ void NCHWtoNHWC_kernel(dT* output_tensor, const sT* input_tensor,
 
 template <typename DstType, typename SrcType>
 void convertNCHWtoNHWC(DstType* output_tensor, const SrcType* input_tensor,
-                       int Nin, int Cin, int Nout, int Cout, int H, int W) {
+                       int Nin, int Cin, int Nout, int Cout, int H, int W,
+                       cudaStream_t stream) {
   size_t numElements = Nout * Cout * H * W;
   const int blockSize = 256;
   int blocks = DivUp(numElements, blockSize);
-  NCHWtoNHWC_kernel<<<blocks, blockSize>>>(output_tensor, input_tensor, Nin,
-                                           Cin, Nout, Cout, H, W);
+  NCHWtoNHWC_kernel<<<blocks, blockSize, 0, stream>>>(
+      output_tensor, input_tensor, Nin, Cin, Nout, Cout, H, W);
 }
 
 template <typename DstType, typename SrcType>
@@ -437,65 +447,20 @@ __global__ void batchNorm_kernel(T* output, const T* input, const T* skipInput,
 template <typename T>
 void batchNorm(T* output, const T* input, const T* skipInput, int N, int C,
                int H, int W, float* means, float* var_multipliers,
-               ActivationFunction activation) {
+               ActivationFunction activation, cudaStream_t stream) {
   const int total_elements = N * C * H * W;
   const int kBlockSize = 256;
   int blocks = DivUp(total_elements, kBlockSize);
 
-  batchNorm_kernel<<<blocks, kBlockSize>>>(output, input, skipInput, N, C, H, W,
-                                           means, var_multipliers, activation);
+  batchNorm_kernel<<<blocks, kBlockSize, 0, stream>>>(
+      output, input, skipInput, N, C, H, W, means, var_multipliers, activation);
 
   ReportCUDAErrors(cudaGetLastError());
 }
 
-__global__ void expandPlanes_kernel_Fp32_NCHW(float* output,
-                                              const uint64_t* masks,
-                                              const float* values, int n) {
-  // Block size of 256, same mask/val for 64 consecutive threads.
-  constexpr int kNumShmemElements = 256 / 64;
-
-  __shared__ uint64_t shMasks[kNumShmemElements];
-  __shared__ float shVals[kNumShmemElements];
-
-  int index = threadIdx.x + blockDim.x * blockIdx.x;
-
-  int planeIndex = index >> 6;
-
-  if (planeIndex >= n) return;
-
-  // Load inputs to shared memory.
-  if (threadIdx.x < kNumShmemElements) {
-    shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
-    shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
-  }
-  __syncthreads();
-
-  uint64_t mask = shMasks[threadIdx.x >> 6];
-
-  int sqIndex = index & 0x3F;
-  float op = 0;
-
-  bool set = !!(mask & (1ull << sqIndex));
-  if (set) {
-    op = shVals[threadIdx.x >> 6];
-  }
-  output[index] = op;
-}
-
-void expandPlanes_Fp32_NCHW(float* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream) {
-  int threads = n * 8 * 8;  // Each thread writes a single element.
-  const int blockSize = 256;
-  int blocks = DivUp(threads, blockSize);
-  expandPlanes_kernel_Fp32_NCHW<<<blocks, blockSize, 0, stream>>>(output, masks,
-                                                                  values, n);
-  ReportCUDAErrors(cudaGetLastError());
-}
-
-// TODO: Can optimize using shared memory if this becomes a bottleneck.
-__global__ void expandPlanes_kernel_Fp16_NHWC(half* output,
-                                              const uint64_t* masks,
-                                              const float* values, int n) {
+template <typename T>
+__global__ void expandPlanes_kernel_NHWC(T* output, const uint64_t* masks,
+                                         const T* values, int n) {
   const int index = threadIdx.x + blockDim.x * blockIdx.x;
   if (index >= n * 8 * 8) return;
 
@@ -505,66 +470,61 @@ __global__ void expandPlanes_kernel_Fp16_NHWC(half* output,
 
   uint64_t mask = masks[boardIndex * kInputPlanes + planeIndex];
 
-  half op = 0;
+  T op = static_cast<T>(0.0f);
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
-    float val = values[boardIndex * kInputPlanes + planeIndex];
-    op = (half)val;
+    op = values[boardIndex * kInputPlanes + planeIndex];
   }
   output[index] = op;
 }
 
-void expandPlanes_Fp16_NHWC(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream) {
+template <typename T>
+void expandPlanes_NHWC(T* output, const uint64_t* masks, const T* values, int n,
+                       cudaStream_t stream) {
   int threads = n * 8 * 8;  // Each thread writes a single element.
   const int kBlockSize = 256;
   int blocks = DivUp(threads, kBlockSize);
-  expandPlanes_kernel_Fp16_NHWC<<<blocks, kBlockSize, 0, stream>>>(
-      output, masks, values, n);
+  expandPlanes_kernel_NHWC<<<blocks, kBlockSize, 0, stream>>>(output, masks,
+                                                              values, n);
   ReportCUDAErrors(cudaGetLastError());
 }
 
-__global__ void expandPlanes_kernel_Fp16_NCHW(half* output,
-                                              const uint64_t* masks,
-                                              const float* values, int n) {
-  // block size of 256, same mask/val for 64 consecutive threads
-  constexpr int kNumShmemElements = 256 / 64;
+template <typename T>
+__global__ void expandPlanes_kernel_NCHW(T* output, const uint64_t* masks,
+                                         const T* values, unsigned n) {
+  unsigned index = threadIdx.x + blockDim.x * blockIdx.x;
 
-  __shared__ uint64_t shMasks[kNumShmemElements];
-  __shared__ half shVals[kNumShmemElements];
-
-  int index = threadIdx.x + blockDim.x * blockIdx.x;
-
-  int planeIndex = index >> 6;
+  index *= 2;
+  unsigned planeIndex = index >> 6;
 
   if (planeIndex >= n) return;
 
-  // load inputs to shared memory
-  if (threadIdx.x < kNumShmemElements) {
-    shMasks[threadIdx.x] = masks[planeIndex + threadIdx.x];
-    shVals[threadIdx.x] = values[planeIndex + threadIdx.x];
-  }
-  __syncthreads();
-
-  uint64_t mask = shMasks[threadIdx.x >> 6];
+  uint64_t mask = masks[planeIndex];
 
   int sqIndex = index & 0x3F;
-  half op = 0;
+  T op[2] = {static_cast<T>(0.0f), static_cast<T>(0.0f)};
 
   bool set = !!(mask & (1ull << sqIndex));
   if (set) {
-    op = (half)shVals[threadIdx.x >> 6];
+    op[0] = values[planeIndex];
   }
-  output[index] = op;
+  sqIndex++;
+  set = !!(mask & (1ull << sqIndex));
+  if (set) {
+    op[1] = values[planeIndex];
+  }
+  output[index + 0] = op[0];
+  output[index + 1] = op[1];
 }
 
-void expandPlanes_Fp16_NCHW(half* output, const uint64_t* masks,
-                            const float* values, int n, cudaStream_t stream) {
-  int threads = n * 8 * 8;  // each thread writes a single element
+template <typename T>
+void expandPlanes_NCHW(T* output, const uint64_t* masks, const T* values,
+                            int n, cudaStream_t stream) {
+  unsigned threads = n * 8 * 8 / 2;  // each thread writes two elements.
   const int blockSize = 256;
-  int blocks = DivUp(threads, blockSize);
-  expandPlanes_kernel_Fp16_NCHW<<<blocks, blockSize, 0, stream>>>(output, masks,
-                                                                  values, n);
+  unsigned blocks = DivUp(threads, blockSize);
+  expandPlanes_kernel_NCHW<<<blocks, blockSize, 0, stream>>>(output, masks,
+                                                             values, n);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -685,9 +645,12 @@ __global__ void globalAvgPool_kernel(T* output, const T* input,
   }
 
 // Compute warp wide sum (for entire plane - elementsPerWarp elements).
+// offsets stay < 32 so each 32-lane subgroup reduces its own plane; only lane 0
+// of the subgroup (laneId==0) reads the result, so the down-shuffle's upper-half
+// reads are discarded and a 64-lane wavefront yields two correct plane sums.
 #pragma unroll
   for (int offset = 1; offset < 32; offset *= 2) {
-    S += __shfl_down_sync(0xFFFFFFFF, S, offset);
+    S += __shfl_down_sync(LC0_FULL_WARP_MASK, S, offset);
   }
 
   float avg = S / elementsPerWarp;
@@ -704,14 +667,14 @@ __global__ void globalAvgPool_kernel(T* output, const T* input,
 
 template <typename T>
 void globalAvgPool(int N, int C, T* output, const T* input,
-                   const T* prevLayerBias, bool nhwc) {
+                   const T* prevLayerBias, bool nhwc, cudaStream_t stream) {
   const int kPlaneSize = 64;
   if (nhwc) {
     assert((std::is_same<half, T>::value));
     // For NHWC fp16, simply launch N blocks, each with C threads.
-    globalAvgPool_kernel_NHWC_fp16<<<N, C>>>((half*)output, (half*)input,
-                                             (half*)prevLayerBias,
-                                             N * C * kPlaneSize, N * C);
+    globalAvgPool_kernel_NHWC_fp16<<<N, C, 0, stream>>>(
+        (half*)output, (half*)input, (half*)prevLayerBias, N * C * kPlaneSize,
+        N * C);
   } else {
     // For NCHW layout (used with fp32),
     // each warp processes a full plane (64 elements), and writes a single
@@ -722,8 +685,8 @@ void globalAvgPool(int N, int C, T* output, const T* input,
     const int kBlockSize = kWarpsPerBlock * 32;
 
     int blocks = DivUp(kTotalWarps, kWarpsPerBlock);
-    globalAvgPool_kernel<<<blocks, kBlockSize>>>(output, input, prevLayerBias,
-                                                 N * C * kPlaneSize, N * C, C);
+    globalAvgPool_kernel<<<blocks, kBlockSize, 0, stream>>>(
+        output, input, prevLayerBias, N * C * kPlaneSize, N * C, C);
   }
   ReportCUDAErrors(cudaGetLastError());
 }
@@ -731,18 +694,18 @@ void globalAvgPool(int N, int C, T* output, const T* input,
 template <typename T>
 void globalScale(int N, int C, T* output, const T* input, const T* scaleBias,
                  const T* prevLayerBias, bool nhwc,
-                 ActivationFunction activation) {
+                 ActivationFunction activation, cudaStream_t stream) {
   // Each thread writes one output.
   const int kBlockSize = 256;
   const int kBlocks = DivUp(N * 8 * 8 * C, kBlockSize);
 
   if (nhwc) {
     assert((std::is_same<half, T>::value));
-    globalScale_kernel_fp16_nhwc<<<kBlocks, kBlockSize>>>(
+    globalScale_kernel_fp16_nhwc<<<kBlocks, kBlockSize, 0, stream>>>(
         (half*)output, (half*)input, (half*)scaleBias, (half*)prevLayerBias,
         N * C * 8 * 8, C, 8 * 8 * C, activation);
   } else {
-    globalScale_kernel<<<kBlocks, kBlockSize>>>(
+    globalScale_kernel<<<kBlocks, kBlockSize, 0, stream>>>(
         output, input, scaleBias, prevLayerBias, N * C * 8 * 8, C, activation);
   }
   ReportCUDAErrors(cudaGetLastError());
@@ -814,7 +777,7 @@ __device__ __forceinline__ float clamp(float val, float low, float high) {
 }
 
 namespace {
-constexpr float kTwiceHalfMax = 131008.0f; // Twice the max finite fp16 value.
+constexpr float kTwiceHalfMax = 131008.0f;  // Twice the max finite fp16 value.
 }  // namespace
 
 // softmax along C dimension which is assumed to be 64
@@ -830,9 +793,9 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input,
   float ex[2];
 
   // Load from memory
-  const bool fp16 = std::is_same<half, T>::value;
-  if (fp16) {
-    half inp[2];
+  constexpr bool is_16bit = sizeof(T) == 2;
+  if constexpr (is_16bit) {
+    T inp[2];
     copyAs<int>(&inp[0], &input[index * 2]);
     x[0] = (float)inp[0];
     x[1] = (float)inp[1];
@@ -852,30 +815,31 @@ __global__ void softmax_opt_64_kernel(T* output, const T* input,
     x[0] += x[2];
     x[1] += x[3];
   }
-  if (fp16) {
+  if constexpr (std::is_same<half, T>::value) {
     // Guard against Inf from fp16 overflow.
     x[0] = clamp(x[0], -kTwiceHalfMax, kTwiceHalfMax);
     x[1] = clamp(x[1], -kTwiceHalfMax, kTwiceHalfMax);
   }
   float threadMax = max(x[0], x[1]);
   float maxval = warpMax(threadMax);
-  maxval = __shfl_sync(0xFFFFFFFF, maxval, 0);
+  maxval = subgroupBroadcast0(maxval);
 
   ex[0] = exp(x[0] - maxval);
   ex[1] = exp(x[1] - maxval);
 
   float threadSum = ex[0] + ex[1];
   float Sum = warpReduce(threadSum);
-  Sum = __shfl_sync(0xFFFFFFFF, Sum, 0);
+  Sum = subgroupBroadcast0(Sum);
 
-  ex[0] = ex[0] / Sum;
-  ex[1] = ex[1] / Sum;
+  const float inv_sum = 1.0f / Sum;
+  ex[0] = ex[0] * inv_sum;
+  ex[1] = ex[1] * inv_sum;
 
   // Store to memory
-  if (fp16) {
-    half op[2];
-    op[0] = (half)ex[0];
-    op[1] = (half)ex[1];
+  if constexpr (is_16bit) {
+    T op[2];
+    op[0] = (T)ex[0];
+    op[1] = (T)ex[1];
     copyAs<int>(&output[index * 2], &op[0]);
   } else {
     copyAs<uint2>(&output[index * 2], &ex[0]);
@@ -909,13 +873,13 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
     maxval = x;
   }
 
-  __syncthreads();
+  lc0SyncThreads();
 
   // Get max across warp first, and then update across C dimension
   float warpmax = warpMax(x);
   if ((c & 0x1F) == 0) atomicMaxFloat(&maxval, warpmax);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float ex = exp(x - maxval);
 
@@ -925,7 +889,7 @@ __global__ void softmax_kernel(T* output, const T* input, const T* input2) {
   // update shared memory sum across C dimension
   if ((c & 0x1F) == 0) atomicAdd(&sum, val);
 
-  __syncthreads();
+  lc0SyncThreads();
 
   float op = ex / sum;
 
@@ -937,7 +901,7 @@ void Softmax(int N, int C, T* output, const T* input, const T* input2,
              cudaStream_t stream) {
   if (C == 64) {
     int size = N * 32;  // Total no of threads needed
-    const int kBlockSize = 256;
+    const int kBlockSize = 128;  // Four independent softmax rows per block.
     int blocks = DivUp(size, kBlockSize);
     softmax_opt_64_kernel<T>
         <<<blocks, kBlockSize, 0, stream>>>(output, input, input2, size);
@@ -961,14 +925,14 @@ __device__ __forceinline__ float shared_sum_for_layer_norm(float x) {
 
   // compute sum across C dimension using the warp wide partial sums
   if (threadIdx.x == 0) sum[threadIdx.z][threadIdx.y] = s;
-  __syncthreads();
+  lc0SyncThreads();
 
   if (threadIdx.x == 0 && threadIdx.y == 0) {
     float cSum = 0;
     for (int j = 0; j < blockDim.y; j++) cSum += sum[threadIdx.z][j];
     sum[threadIdx.z][0] = cSum;
   }
-  __syncthreads();
+  lc0SyncThreads();
 
   // s now contains the sum across C dimension
   return sum[threadIdx.z][0];
@@ -983,9 +947,17 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
                                   const T* betas, float ep, float alpha,
                                   ActivationFunction act) {
   int n = blockIdx.x * blockDim.z + threadIdx.z;
-  if (n >= N) return;
   int c = (threadIdx.y * 32 + threadIdx.x) * 16;
-  bool oobThread = c >= C;
+  // An out-of-range row (n >= N) must NOT early-return: shared_sum_for_layer_norm
+  // calls lc0SyncThreads(), and on a 64-lane wavefront two threadIdx.z rows share
+  // one wavefront, so returning the padding row while its partner survives is a
+  // partial-wavefront barrier -> GPU fault on AMD (it is benign on NVIDIA only
+  // because whole 32-lane warps exit). Instead fold it into oobThread so the
+  // padding row skips every load/store (each guarded by !oobThread) yet still
+  // reaches both barriers. Padding rows own their own sum[threadIdx.z] slot, so
+  // valid rows are never corrupted. Arch-unified: identical results on NVIDIA.
+  bool oobThread = (c >= C) || (n >= N);
+  if (n >= N) n = N - 1;  // keep index arithmetic in-bounds; loads are guarded
 
   int biasIndex = c;
   int tensorIndex = n * C + c;
@@ -993,11 +965,11 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   float val[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   float oth[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  const bool fp16 = std::is_same<half, T>::value;
+  constexpr bool is_16bit = sizeof(T) == 2;
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
+    if constexpr (is_16bit) {
+      T inp[8];
       copyAs<uint4>(&inp[0], &input[tensorIndex]);
       for (int i = 0; i < 8; i++) val[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &input[tensorIndex + 8]);
@@ -1023,8 +995,8 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
   if (!oobThread) {
     if (skip != nullptr) {
       // Load from memory (16 elements a time)
-      if (fp16) {
-        half inp[8];
+      if constexpr (is_16bit) {
+        T inp[8];
         copyAs<uint4>(&inp[0], &skip[tensorIndex]);
         for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
         copyAs<uint4>(&inp[0], &skip[tensorIndex + 8]);
@@ -1040,7 +1012,7 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
 
   // 1. Compute mean
   float s = 0;
-  if (!oobThread)
+  if (!oobThread) {
     if (skip != nullptr) {
       for (int i = 0; i < 16; i++) {
         val[i] = activate(val[i], act) * alpha + oth[i];
@@ -1052,25 +1024,27 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
         s += val[i];
       }
     }
+  }
 
   s = shared_sum_for_layer_norm(s);
   float mean = s / C;
 
   // 2. Compute varience
   s = 0;
-  if (!oobThread)
+  if (!oobThread) {
     for (int i = 0; i < 16; i++) {
       float d = val[i] - mean;
       float d_sq = d * d;
       s += d_sq;
     }
+  }
   s = shared_sum_for_layer_norm(s);
   float var = s / C;
 
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
+    if constexpr (is_16bit) {
+      T inp[8];
       copyAs<uint4>(&inp[0], &gammas[biasIndex]);
       for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &gammas[biasIndex + 8]);
@@ -1093,8 +1067,8 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
 
   if (!oobThread) {
     // Load from memory (16 elements a time)
-    if (fp16) {
-      half inp[8];
+    if constexpr (is_16bit) {
+      T inp[8];
       copyAs<uint4>(&inp[0], &betas[biasIndex]);
       for (int i = 0; i < 8; i++) oth[i] = (float)inp[i];
       copyAs<uint4>(&inp[0], &betas[biasIndex + 8]);
@@ -1113,11 +1087,11 @@ __global__ void layer_norm_kernel(int N, int C, T* output, const T* input,
 
   if (!oobThread) {
     // Write to memory
-    if (fp16) {
-      half op[8];
-      for (int i = 0; i < 8; i++) op[i] = (half)val[i];
+    if constexpr (is_16bit) {
+      T op[8];
+      for (int i = 0; i < 8; i++) op[i] = (T)val[i];
       copyAs<uint4>(&output[tensorIndex], &op[0]);
-      for (int i = 0; i < 8; i++) op[i] = (half)val[i + 8];
+      for (int i = 0; i < 8; i++) op[i] = (T)val[i + 8];
       copyAs<uint4>(&output[tensorIndex + 8], &op[0]);
     } else {
       copyAs<uint4>(&output[tensorIndex], &val[0]);
@@ -1172,54 +1146,34 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
 
   int threadInGroup = threadIdx.y * 24 + threadIdx.x;
 
-  // phase 1 : compute promotion_offsets by multiplying keys and ppo matrices
+  // Phase 1: cooperatively compute the 4x8 promotion-offset matrix. The 192
+  // threads form 32 groups of 6 workers, one group per output dot product.
   const T* keys_start =
       keys + n * 64 * C + C * 56;  // we are interested only in last 8 out of 64
                                    // 'rows' of keys matrix
-  __shared__ float promotion_offsets[4][8];
+  constexpr int kPromotionOffsets = 4 * 8;
+  constexpr int kWorkersPerOffset = 6;
+  __shared__ float promotion_partials[kPromotionOffsets][kWorkersPerOffset];
 
-  // only 32 threads out of 192 in the group are active in this phase, and each
-  // thread computes one element of the promotion_offsets matrix
-  // TODO: opt idea1, can use more threads to reduce the length of the loop for
-  // the matrix multiply (do parallel reduction of partial sums later)
-  //       opt idea2, the below loop for matrix mul has very poor memory access
-  //       pattern, can do the loop over 32, and do parallel reductions
-  if (threadInGroup < 32) {
-    int x = threadInGroup % 4;
-    int y = threadInGroup / 4;
+  const int offset = threadInGroup / kWorkersPerOffset;
+  const int worker = threadInGroup % kWorkersPerOffset;
+  const int ppo_row = offset % 4;
+  const int keys_row = offset / 4;
 
-    float S = 0;
-    for (int i = 0; i < C;
-         i++) {  // TODO: modify to loop over 32 instead of C (doing parallel
-                 // reductions for the 32 sums)
-      float a = (float)keys_start[y * C + i];
-      float b =
-          (float)ppo[x * C + i];  // weight matrix is transposed (col major)
-      S += a * b;
-    }
-
-    // write the product (promotion_offsets) in shared memory
-    promotion_offsets[x][y] = S;
+  float partial = 0;
+  for (int i = worker; i < C; i += kWorkersPerOffset) {
+    const float a = (float)keys_start[keys_row * C + i];
+    const float b = (float)ppo[ppo_row * C + i];
+    partial += a * b;
   }
+  // This layout makes the 192 worker writes contiguous in linear thread order.
+  promotion_partials[offset][worker] = partial;
 
-  __syncthreads();
+  lc0SyncThreads();
 
-  // phase 2: add the last "row" to the other 3
-  // #knight offset is added to the other three
-  // promotion_offsets = promotion_offsets[:, :3, :] + promotion_offsets[:, 3:4,
-  // :]
-  // Only 24 threads in the group are active in this phase
-  if (threadInGroup < 32) {
-    int x = threadInGroup % 4;
-    int y = threadInGroup / 4;
-    if (x < 3) {
-      promotion_offsets[x][y] += promotion_offsets[3][y];
-    }
-  }
-
-  __syncthreads();
-
-  // phase 3: add 8x8 chunk of policy_attn_logits matrix to promotion offsets
+  // Add the knight offset while consuming the promotion offsets, avoiding a
+  // separate shared-memory update phase and block-wide synchronization.
+  // Then add the 8x8 chunk of policy_attn_logits to the resulting offsets.
   //          the output is 3x8x8 (written as 8 * 24)
   // All threads are active in this phase and they compute one element each
   int w = x / 3;
@@ -1229,7 +1183,16 @@ __global__ void promotion_logits_kernel(int C, T* output, const T* keys,
   // 7 to rank 8
   float n_promo_logit =
       (float)policy_attn_logits[n * output_stride + (48 + y) * 64 + (56 + w)];
-  float promo_offset = promotion_offsets[c][w];
+  const int promotion_offset = w * 4 + c;
+  const int knight_offset = w * 4 + 3;
+  float promotion_sum = 0;
+  float knight_sum = 0;
+#pragma unroll
+  for (int i = 0; i < kWorkersPerOffset; i++) {
+    promotion_sum += promotion_partials[promotion_offset][i];
+    knight_sum += promotion_partials[knight_offset][i];
+  }
+  float promo_offset = promotion_sum + knight_sum;
 
   float op = n_promo_logit + promo_offset;
 
@@ -1260,7 +1223,8 @@ __global__ void preprocess_for_attention_body_kernel(
   if (c >= input_size) {
     // concatenate from position encoding array
     if (is_pe_dense_embedding) {
-      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size + (c - input_size)]);
+      op = (T)(encoding[n * 64 * encoding_size + hw * encoding_size +
+                        (c - input_size)]);
     } else {
       op = (T)(encoding[64 * hw + (c - input_size)]);
     }
@@ -1274,6 +1238,36 @@ __global__ void preprocess_for_attention_body_kernel(
   output[n * 64 * outputC + hw * outputC + c] = op;
 }
 
+__global__ void preprocess_for_attention_body_fp16x8_kernel(
+    half* output, const half* input, const half* encoding, int input_size,
+    int encoding_size) {
+  constexpr int kContextSize = 64;
+  constexpr int kElementsPerThread = 8;
+
+  const int n = blockIdx.x;
+  const int hw = blockIdx.y;
+  const int c = threadIdx.x * kElementsPerThread;
+  const int output_size = input_size + encoding_size;
+  const int output_index =
+      n * kContextSize * output_size + hw * output_size + c;
+
+  half values[kElementsPerThread];
+  if (c < input_size) {
+    const int input_base =
+        n * input_size * kContextSize + c * kContextSize + hw;
+#pragma unroll
+    for (int i = 0; i < kElementsPerThread; i++) {
+      values[i] = input[input_base + i * kContextSize];
+    }
+  } else {
+    const int encoding_index = n * kContextSize * encoding_size +
+                               hw * encoding_size + c - input_size;
+    copyAs<uint4>(&values[0], &encoding[encoding_index]);
+  }
+
+  copyAs<uint4>(&output[output_index], &values[0]);
+}
+
 template <typename T>
 void inputPreprocessForAttentionBody(T* output, const T* input,
                                      const T* encoding, int N, int input_size,
@@ -1285,6 +1279,22 @@ void inputPreprocessForAttentionBody(T* output, const T* input,
   // Each thread computes a single output element
   dim3 gridSize = dim3(N, 64);
   int blockSize = input_size + encoding_size;
+  if constexpr (std::is_same<half, T>::value) {
+    constexpr int kElementsPerThread = 8;
+    // Keep every vector wholly within either the input or encoding region.
+    const bool use_vector_dense =
+        is_pe_dense_embedding && input_size > 0 && encoding_size > 0 &&
+        input_size % kElementsPerThread == 0 &&
+        encoding_size % kElementsPerThread == 0 &&
+        blockSize % kElementsPerThread == 0;
+    if (use_vector_dense) {
+      preprocess_for_attention_body_fp16x8_kernel
+          <<<gridSize, blockSize / kElementsPerThread, 0, stream>>>(
+              output, input, encoding, input_size, encoding_size);
+      return;
+    }
+  }
+
   preprocess_for_attention_body_kernel<T><<<gridSize, blockSize, 0, stream>>>(
       output, input, encoding, input_size, encoding_size,
       is_pe_dense_embedding);
@@ -1327,6 +1337,64 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+template <typename T, int kWorkPerThread>
+__global__ void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
+                                         int depth, int d_model, T* k, T* q,
+                                         T* b1, T* v, T* b2) {
+  const int i = (blockIdx.x * blockDim.x + threadIdx.x) * kWorkPerThread;
+  if (i >= block_size) return;
+  const int h = i % heads;
+  const int n = i / heads;
+  int w;
+  T* res[kWorkPerThread];
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = k + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = q + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = b1 + i * 64 * 64 + w * 64 * 64;
+    offsets[i + w + 2 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = v + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 3 * block_size] = res[w];
+  }
+
+  for (w = 0; w < kWorkPerThread; w++) {
+    res[w] = b2 + h * depth + 64 * d_model * n + w * depth;
+    offsets[i + w + 4 * block_size] = res[w];
+  }
+}
+
+template <typename T>
+void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
+                       int d_model, T* k, T* q, T* b1, T* v, T* b2,
+                       cudaStream_t stream) {
+  const int block_size = heads * max_batch;
+  // Process two elements per thread to use 128 bit store instructions.
+  constexpr int kWorkPerThread = 2;
+  constexpr int kWorkGroupSize = 128;
+  if (block_size % kWorkPerThread != 0) {
+    // Handle odd block sizes.
+    int grid = DivUp(block_size, kWorkGroupSize);
+    genOffsetPointers_kernel<T, 1><<<grid, kWorkGroupSize, 0, stream>>>(
+        offsets, heads, block_size, depth, d_model, k, q, b1, v, b2);
+  } else {
+    // Handle even block size
+    int grid = DivUp(block_size, kWorkGroupSize * kWorkPerThread);
+    genOffsetPointers_kernel<T, kWorkPerThread>
+        <<<grid, kWorkGroupSize, 0, stream>>>(offsets, heads, block_size, depth,
+                                              d_model, k, q, b1, v, b2);
+  }
+}
+
 // Template instantiation.
 template void copyTypeConverted<half, float>(half* op, float* ip, int N,
                                              cudaStream_t stream);
@@ -1340,11 +1408,13 @@ template void copyTypeConverted<half, half>(half* op, half* ip, int N,
 template void batchNorm<float>(float* output, const float* input,
                                const float* skipInput, int N, int C, int H,
                                int W, float* means, float* var_multipliers,
-                               ActivationFunction activation);
+                               ActivationFunction activation,
+                               cudaStream_t stream);
 template void batchNorm<half>(half* output, const half* input,
                               const half* skipInput, int N, int C, int H, int W,
                               float* means, float* var_multipliers,
-                              ActivationFunction activation);
+                              ActivationFunction activation,
+                              cudaStream_t stream);
 
 template void addVectors<float>(float* c, float* a, float* b, int size,
                                 int asize, int bsize, ActivationFunction act,
@@ -1386,18 +1456,36 @@ template void addBias_NCHW<half>(half* c, half* a, half* b, int N, int C, int H,
 
 template void globalAvgPool<float>(int N, int C, float* output,
                                    const float* input,
-                                   const float* prevLayerBias, bool nhwc);
+                                   const float* prevLayerBias, bool nhwc,
+                                   cudaStream_t stream);
 template void globalAvgPool<half>(int N, int C, half* output, const half* input,
-                                  const half* prevLayerBias, bool nhwc);
+                                  const half* prevLayerBias, bool nhwc,
+                                  cudaStream_t stream);
+
+template void expandPlanes_NHWC<float>(float* output, const uint64_t* masks,
+                                       const float* values, int n,
+                                       cudaStream_t stream);
+template void expandPlanes_NHWC<half>(half* output, const uint64_t* masks,
+                                      const half* values, int n,
+                                      cudaStream_t stream);
+
+template void expandPlanes_NCHW<float>(float* output, const uint64_t* masks,
+                                       const float* values, int n,
+                                       cudaStream_t stream);
+template void expandPlanes_NCHW<half>(half* output, const uint64_t* masks,
+                                      const half* values, int n,
+                                      cudaStream_t stream);
 
 template void globalScale<float>(int N, int C, float* output,
                                  const float* input, const float* scaleBias,
                                  const float* prevLayerBias, bool nhwc,
-                                 ActivationFunction activation);
+                                 ActivationFunction activation,
+                                 cudaStream_t stream);
 template void globalScale<half>(int N, int C, half* output, const half* input,
                                 const half* scaleBias,
                                 const half* prevLayerBias, bool nhwc,
-                                ActivationFunction activation);
+                                ActivationFunction activation,
+                                cudaStream_t stream);
 
 template void PolicyMap<float>(int N, float* output, const float* input,
                                const short* indices, int inputSize,
@@ -1409,7 +1497,7 @@ template void PolicyMap<half>(int N, half* output, const half* input,
                               int outputSize, cudaStream_t stream);
 
 template void FilterTransform<float>(int N, int C, float* transformedFilter,
-                                     const float* filter);
+                                     const float* filter, cudaStream_t stream);
 
 template void InputTransform<float, true>(int N, int C,
                                           float* transformed_input,
@@ -1584,15 +1672,16 @@ template void ComputePromotionLogits<float>(int N, int C, float* output,
 template void convertNCHWtoNHWC<half, float>(half* output_tensor,
                                              const float* input_tensor, int Nin,
                                              int Cin, int Nout, int Cout, int H,
-                                             int W);
+                                             int W, cudaStream_t stream);
 template void convertNCHWtoNHWC<float, float>(float* output_tensor,
                                               const float* input_tensor,
                                               int Nin, int Cin, int Nout,
-                                              int Cout, int H, int W);
+                                              int Cout, int H, int W,
+                                              cudaStream_t stream);
 template void convertNCHWtoNHWC<half, half>(half* output_tensor,
                                             const half* input_tensor, int Nin,
                                             int Cin, int Nout, int Cout, int H,
-                                            int W);
+                                            int W, cudaStream_t stream);
 
 template void inputPreprocessForAttentionBody<half>(
     half* output, const half* input, const half* encoding, int N,
@@ -1613,5 +1702,121 @@ template void applyInputGating<float>(float* output, const float* input,
                                       const float* mult, const float* add,
                                       int N, int C, int output_size,
                                       cudaStream_t stream);
+
+template void genOffsetPointers<float>(float** offsets, int heads,
+                                       int max_batch, int depth, int d_model,
+                                       float* k, float* q, float* b1, float* v,
+                                       float* b2, cudaStream_t stream);
+template void genOffsetPointers<half>(half** offsets, int heads, int max_batch,
+                                      int depth, int d_model, half* k, half* q,
+                                      half* b1, half* v, half* b2,
+                                      cudaStream_t stream);
+
+#if LC0_CUDA_BF16_SUPPORTED
+template void copyTypeConverted<__nv_bfloat16, float>(__nv_bfloat16* op,
+                                                      float* ip, int N,
+                                                      cudaStream_t stream);
+template void copyTypeConverted<float, __nv_bfloat16>(float* op,
+                                                      __nv_bfloat16* ip, int N,
+                                                      cudaStream_t stream);
+template void copyTypeConverted<__nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* op, __nv_bfloat16* ip, int N, cudaStream_t stream);
+
+template void batchNorm<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* skipInput, int N, int C, int H, int W, float* means,
+    float* var_multipliers, ActivationFunction activation,
+    cudaStream_t stream);
+
+template void addVectors<__nv_bfloat16>(
+    __nv_bfloat16* c, __nv_bfloat16* a, __nv_bfloat16* b, int size, int asize,
+    int bsize, ActivationFunction act, cudaStream_t stream);
+
+template void addVectorsHNC_NHC<__nv_bfloat16>(__nv_bfloat16* a,
+                                               __nv_bfloat16* b, int N, int H,
+                                               int C, cudaStream_t stream);
+
+template void addBiasBatched<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* bias, int Batch, int N, int C,
+    ActivationFunction activation, cudaStream_t stream);
+
+template void addBiasBatched<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* bias, int Batch, int N, int C, int Nstride,
+    ActivationFunction activation, cudaStream_t stream);
+
+template void addBias_NCHW<__nv_bfloat16>(
+    __nv_bfloat16* c, __nv_bfloat16* a, __nv_bfloat16* b, int N, int C, int H,
+    int W, ActivationFunction activation, cudaStream_t stream);
+
+template void globalAvgPool<__nv_bfloat16>(
+    int N, int C, __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* prevLayerBias, bool nhwc, cudaStream_t stream);
+
+template void expandPlanes_NHWC<__nv_bfloat16>(__nv_bfloat16* output,
+                                               const uint64_t* masks,
+                                               const __nv_bfloat16* values,
+                                               int n, cudaStream_t stream);
+
+template void expandPlanes_NCHW<__nv_bfloat16>(__nv_bfloat16* output,
+                                               const uint64_t* masks,
+                                               const __nv_bfloat16* values,
+                                               int n, cudaStream_t stream);
+
+template void globalScale<__nv_bfloat16>(
+    int N, int C, __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* scaleBias, const __nv_bfloat16* prevLayerBias,
+    bool nhwc, ActivationFunction activation, cudaStream_t stream);
+
+template void PolicyMap<__nv_bfloat16>(
+    int N, __nv_bfloat16* output, const __nv_bfloat16* input,
+    const short* indices, int inputSize, int usedSize, int outputSize,
+    cudaStream_t stream);
+
+template void Softmax<__nv_bfloat16>(int N, int C, __nv_bfloat16* output,
+                                     const __nv_bfloat16* input,
+                                     const __nv_bfloat16* input2,
+                                     cudaStream_t stream);
+
+template void LayerNorm<__nv_bfloat16>(int N, int C, __nv_bfloat16* output,
+                                       const __nv_bfloat16* input,
+                                       const __nv_bfloat16* bias,
+                                       const __nv_bfloat16* skip,
+                                       const __nv_bfloat16* gammas,
+                                       const __nv_bfloat16* betas, float ep,
+                                       float alpha, ActivationFunction act,
+                                       cudaStream_t stream);
+
+template void ComputePromotionLogits<__nv_bfloat16>(
+    int N, int C, __nv_bfloat16* output, const __nv_bfloat16* keys,
+    const __nv_bfloat16* ppo, const __nv_bfloat16* policy_attn_logits,
+    cudaStream_t stream);
+
+template void convertNCHWtoNHWC<__nv_bfloat16, float>(
+    __nv_bfloat16* output_tensor, const float* input_tensor, int Nin, int Cin,
+    int Nout, int Cout, int H, int W, cudaStream_t stream);
+
+template void convertNCHWtoNHWC<__nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* output_tensor, const __nv_bfloat16* input_tensor, int Nin,
+    int Cin, int Nout, int Cout, int H, int W, cudaStream_t stream);
+
+template void inputPreprocessForAttentionBody<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* encoding, int N, int input_size, int encoding_size,
+    bool is_pe_dense_embedding, cudaStream_t stream);
+
+template void applyInputGating<__nv_bfloat16>(__nv_bfloat16* output,
+                                             const __nv_bfloat16* input,
+                                             const __nv_bfloat16* mult,
+                                             const __nv_bfloat16* add, int N,
+                                             int C, int output_size,
+                                             cudaStream_t stream);
+
+template void genOffsetPointers<__nv_bfloat16>(
+    __nv_bfloat16** offsets, int heads, int max_batch, int depth, int d_model,
+    __nv_bfloat16* k, __nv_bfloat16* q, __nv_bfloat16* b1, __nv_bfloat16* v,
+    __nv_bfloat16* b2, cudaStream_t stream);
+#endif
 }  // namespace cudnn_backend
 }  // namespace lczero

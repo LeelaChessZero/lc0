@@ -35,17 +35,21 @@
 
 namespace lczero {
 
-float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
+float LayerAdapter::Iterator::ExtractValue(const std::byte* ptr,
                                            const LayerAdapter* adapter) {
   switch (adapter->encoding_) {
     case pblczero::Weights::Layer::LINEAR16: {
-      float theta = *ptr / static_cast<float>(0xffff);
+      float theta =
+          *reinterpret_cast<const uint16_t*>(ptr) / static_cast<float>(0xffff);
       return adapter->min_ * (1 - theta) + adapter->max_ * theta;
     }
     case pblczero::Weights::Layer::FLOAT16:
-      return FP16toFP32(*ptr);
+      return FP16toFP32(*reinterpret_cast<const uint16_t*>(ptr));
     case pblczero::Weights::Layer::BFLOAT16:
-      return BF16toFP32(*ptr);
+      return BF16toFP32(*reinterpret_cast<const uint16_t*>(ptr));
+    case pblczero::Weights::Layer::FLOAT32: {
+      return *reinterpret_cast<const float*>(ptr);
+    }
     [[unlikely]] default:  // To silence a couple of warnings.
 #if defined(ABSL_UNREACHABLE)
       ABSL_UNREACHABLE();
@@ -54,21 +58,24 @@ float LayerAdapter::Iterator::ExtractValue(const uint16_t* ptr,
 #else
       __assume(false);
 #endif
-
   }
 }
 
 LayerAdapter::LayerAdapter(const pblczero::Weights::Layer& layer)
-    : data_(reinterpret_cast<const uint16_t*>(layer.params().data())),
-      size_(layer.params().size() / sizeof(uint16_t)),
+    : encoding_(layer.has_encoding() ? layer.encoding()
+                                     : pblczero::Weights::Layer::LINEAR16),
+      element_size_(encoding_ == pblczero::Weights::Layer::FLOAT32
+                        ? sizeof(float)
+                        : sizeof(uint16_t)),
+      data_(reinterpret_cast<const std::byte*>(layer.params().data())),
+      size_(layer.params().size() / element_size_),
       min_(layer.min_val()),
-      max_(layer.max_val()),
-      encoding_(layer.has_encoding() ? layer.encoding()
-                                     : pblczero::Weights::Layer::LINEAR16) {
+      max_(layer.max_val()) {
   switch (encoding_) {
     case pblczero::Weights::Layer::LINEAR16:
     case pblczero::Weights::Layer::FLOAT16:
     case pblczero::Weights::Layer::BFLOAT16:
+    case pblczero::Weights::Layer::FLOAT32:
       break;
     default:
       throw Exception("Unknown layer encoding " +
@@ -83,7 +90,7 @@ float LayerAdapter::Iterator::operator*() const {
   return ExtractValue(data_, adapter_);
 }
 float LayerAdapter::Iterator::operator[](size_t idx) const {
-  return ExtractValue(data_ + idx, adapter_);
+  return ExtractValue(data_ + idx * adapter_->element_size_, adapter_);
 }
 
 }  // namespace lczero

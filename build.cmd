@@ -2,7 +2,7 @@
 setlocal
 
 rem 1. Set the following for the options you want to build.
-set CUDNN=true
+set CUDNN=false
 set CUDA=true
 set DX12=false
 set OPENCL=false
@@ -11,6 +11,7 @@ set DNNL=false
 set OPENBLAS=false
 set EIGEN=false
 set TEST=false
+set CUTLASS=true
 
 if "%CUDA%"=="true" (
   if not defined CUDA_PATH (
@@ -71,6 +72,7 @@ meson setup build --backend %backend% --buildtype release -Ddx=%DX12% -Dcudnn=%C
 -Dmkl_include="%MKL_PATH%\include" -Dmkl_libdirs="%MKL_PATH%\lib\intel64" -Ddnnl_dir="%DNNL_PATH%" ^
 -Dopencl_libdirs="%OPENCL_LIB_PATH%" -Dopencl_include="%OPENCL_INCLUDE_PATH%" ^
 -Dopenblas_include="%OPENBLAS_PATH%\include" -Dopenblas_libdirs="%OPENBLAS_PATH%\lib" ^
+-Dcutlass="%CUTLASS%" ^
 -Ddefault_library=static
 
 if errorlevel 1 exit /b

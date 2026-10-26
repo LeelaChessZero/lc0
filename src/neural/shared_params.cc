@@ -35,7 +35,7 @@ const OptionId SharedBackendParams::kPolicySoftmaxTemp{
     "Policy softmax temperature. Higher values make priors of move candidates "
     "closer to each other, widening the search."};
 const OptionId SharedBackendParams::kHistoryFill{
-    "history-fill-new", "HistoryFill",
+    "history-fill", "HistoryFill",
     "Neural network uses 7 previous board positions in addition to the current "
     "one. During the first moves of the game such historical positions don't "
     "exist, but they can be synthesized. This parameter defines when to "

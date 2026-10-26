@@ -951,7 +951,8 @@ void OutputTransform(int N, int C, int se_K, T* output, const T* input,
             OutputTransform_kernel<T, use_se, activation, use_bias, use_skip,
                                    skipInput_nhcw, output_nhcw>(
                 N, C, se_K, output, input, skip, bias, w1, b1, w2, b2, item_ct1,
-                shared_data_acc_ct1.get_pointer());
+                shared_data_acc_ct1.get_multi_ptr<sycl::access::decorated::no>()
+                    .get());
           });
     });
   }

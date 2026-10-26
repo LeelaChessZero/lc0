@@ -99,7 +99,7 @@ InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {
   if (IsCanonicalFormat(typed_format) && data.invariance_info != 0) {
     // Undo transformation here as it makes the calling code simpler.
     int transform = data.invariance_info;
-    for (size_t i = 0; i <= result.size(); i++) {
+    for (size_t i = 0; i < result.size(); i++) {
       auto v = result[i].mask;
       if (v == 0 || v == ~0ULL) continue;
       if ((transform & TransposeTransform) != 0) {
@@ -115,6 +115,10 @@ InputPlanes PlanesFromTrainingData(const V6TrainingData& data) {
     }
   }
   return result;
+}
+
+InputPlanes PlanesFromTrainingData(const V7TrainingData& data) {
+  return PlanesFromTrainingData(static_cast<const V6TrainingData&>(data));
 }
 
 TrainingDataReader::TrainingDataReader(std::string filename)
@@ -205,7 +209,7 @@ bool TrainingDataReader::ReadChunk(V6TrainingData* data) {
         data->played_idx = 0;
         data->best_idx = 0;
         data->policy_kld = 0.0f;
-        data->reserved = 0;
+        data->q_st = 0.0f;
         return true;
       }
       case 6: {

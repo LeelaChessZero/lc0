@@ -6,7 +6,7 @@
 .clangd/
 .juggler/
 build/
-builddir/
+builddir
 __pycache__/
 compile_commands.json
 CUDA_NN/

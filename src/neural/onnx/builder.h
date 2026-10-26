@@ -98,6 +98,8 @@ class OnnxBuilder {
   std::string Pad(const std::string& name, const std::string& input,
                   std::initializer_list<int> pads);
   std::string Selu(const std::string& name, const std::string& input);
+  std::string Elu(const std::string& name, const std::string& input,
+                  float alpha = 1.0);
   std::string Slice(const std::string& name, const std::string& input,
                     std::initializer_list<int> starts,
                     std::initializer_list<int> ends);
