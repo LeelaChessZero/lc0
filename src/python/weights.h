@@ -262,7 +262,7 @@ class GameState {
  public:
   GameState(const std::optional<std::string> startpos,
             const std::vector<std::string>& moves, const bool is_c960)
-      : is_c960_(is_c960), moves_(moves) {
+      : is_c960_(is_c960) {
     ChessBoard starting_board;
     int no_capture_ply;
     int full_moves;
@@ -276,6 +276,7 @@ class GameState {
       auto board = history_.Last().GetBoard();
       Move move = board.ParseMove(m);
       history_.Append(move);
+      moves_.push_back(move);
     }
   }
 
@@ -321,21 +322,28 @@ class GameState {
     auto board = history_.Last().GetBoard();
     Move m = board.ParseMove(move);
     history_.Append(m);
-    moves_.push_back(move);
+    moves_.push_back(m);
   }
 
   const std::string startpos() const {
     return PositionToFen(history_.Starting());
   }
 
-  const std::vector<std::string>& move_history() const {
-    return moves_;
+  std::vector<std::string> move_history() const {
+    std::vector<std::string> result;
+    result.reserve(moves_.size());
+    for (size_t i = 0; i < moves_.size(); ++i) {
+      Move m = moves_[i];
+      if (history_.GetPositionAt(i).IsBlackToMove()) m.Flip();
+      result.push_back(m.ToString(is_c960_));
+    }
+    return result;
   }
 
  private:
   PositionHistory history_;
   bool is_c960_;
-  std::vector<std::string> moves_;
+  std::vector<Move> moves_;
 };
 
 }  // namespace python
