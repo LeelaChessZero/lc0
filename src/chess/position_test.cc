@@ -161,6 +161,24 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveNeverRepeated) {
   EXPECT_FALSE(history.DidRepeatSinceLastZeroingMove());
 }
 
+TEST(PositionHistory, IllegalEnPassantMoveisNotMarked) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen("4r1k1/3p4/8/4P3/8/8/8/4K1N1 b - - 0 1");
+  history.Reset(board, 0, 1);
+
+  for (const char* uci : {"d7d5", "g1f3", "g8h8", "f3g1", "h8g8",
+                          "g1f3", "g8h8", "f3g1"}) {
+    history.Append(history.Last().GetBoard().ParseMove(uci));
+  }
+
+  EXPECT_EQ(history.ComputeGameResult(), GameResult::UNDECIDED);
+
+  history.Append(history.Last().GetBoard().ParseMove("h8g8"));
+  EXPECT_EQ(history.Last().GetRepetitions(), 2);
+  EXPECT_EQ(history.ComputeGameResult(), GameResult::DRAW);
+}
+
 }  // namespace lczero
 
 int main(int argc, char** argv) {
