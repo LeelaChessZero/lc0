@@ -115,13 +115,33 @@ elif get_option('malloc') != ''
   deps += cc.find_library(get_option('malloc'), required: true)
 endif
 
-# ONNX and HLO protobufs.
+# ONNX, HLO, and neural executable protobufs.
 onnx_pb = gen.process('proto/onnx.proto',
   preserve_path_from : meson.current_source_dir())
 files += onnx_pb
 
 files += gen.process('proto/hlo.proto',
   preserve_path_from : meson.current_source_dir())
+
+if get_option('lc0ex-runtime')
+  files += gen.process('proto/lc0ex.proto',
+    preserve_path_from : meson.current_source_dir())
+  files += gen.process('proto/lc0ex_metadata.proto',
+    preserve_path_from : meson.current_source_dir())
+
+  cu_driver = cc.find_library('cuda', required: true)
+  deps += cu_driver
+
+  foreach d : get_option('cudnn_include')
+    if run_command('scripts/checkdir.py', d, check : false).returncode() == 0
+      includes += include_directories(d, is_system: true)
+    endif
+  endforeach
+
+  files += 'src/neural/backends/lc0ex-cuda/runtime/lc0ex_cuda.cc'
+  files += 'src/neural/backends/lc0ex-cuda/network_lc0ex_cuda.cc'
+  has_backends = true
+endif
 
 #############################################################################
 ## Main files

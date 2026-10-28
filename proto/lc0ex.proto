@@ -1,0 +1,201 @@
+/*
+  This file is part of Leela Chess Zero.
+  Copyright (C) 2026 The LCZero Authors
+
+  Leela Chess is free software: you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  Leela Chess is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with Leela Chess.  If not, see <http://www.gnu.org/licenses/>.
+
+  Additional permission under GNU GPL version 3 section 7
+
+  If you modify this Program, or any covered work, by linking or
+  combining it with NVIDIA Corporation's libraries from the NVIDIA CUDA
+  Toolkit and the NVIDIA CUDA Deep Neural Network library (or a
+  modified version of those libraries), containing parts covered by the
+  terms of the respective license agreement, the licensors of this
+  Program grant you additional permission to convey the resulting work.
+*/
+
+syntax = "proto2";
+
+package pblczero;
+
+// Target for which an executable was compiled.
+message Target {
+  enum Vendor {
+    VENDOR_UNKNOWN = 0;
+    VENDOR_NVIDIA = 1;
+  }
+
+  required Vendor vendor = 1;
+
+  // Vendor-specific architecture identifier, e.g. "sm_80" or "sm_90a" for
+  // NVIDIA.
+  required string architecture = 2;
+}
+
+// One contiguous device-memory allocation.
+message Allocation {
+  required uint64 size_bytes = 1;
+  // Must be a nonzero power of two.
+  required uint64 alignment_bytes = 2;
+}
+
+// A serialized neural-network executable.
+message NeuralExecutable {
+
+  // Must be 0x1c0e. This catches common wrong-file errors before processing
+  // the rest of the message.
+  required fixed32 magic = 1;
+
+  // The current format generation (currently, 1).
+  required uint32 format = 2;
+  // Opaque metadata for identifying and validating the executable, such as its
+  // minimum supported Lc0 version.
+  optional bytes metadata = 3;
+
+  required Target target = 4;
+
+  repeated Binary binaries = 10;
+  repeated Parameter parameters = 12;
+  repeated Kernel kernels = 14;
+  repeated Program programs = 15;
+
+  // One persistent allocation shared by all programs. Omitted when the executable
+  // has no persistent storage.
+  optional Allocation persistent_allocation = 16;
+
+  // Named persistent buffers. Execution buffers are listed by their Program.
+  repeated Buffer buffers = 13;
+}
+
+// An embedded binary module. A binary may contain any number of exported symbols.
+message Binary {
+  enum Format {
+    FORMAT_UNKNOWN = 0;
+    FORMAT_CUBIN = 1;
+  }
+
+  required Format format = 1;
+  required bytes data = 2;
+}
+
+// A typed named memory range supplied to the runtime. Internal unnamed ranges
+// are referenced directly by kernel arguments and are not listed here.
+message Buffer {
+  // Types value match ONNX TensorProto.DataType. Only types currently used by this
+  // executable format are listed.
+  enum DataType {
+    DATA_TYPE_UNKNOWN = 0;
+    DATA_TYPE_F32 = 1;
+    DATA_TYPE_U8 = 2;
+    DATA_TYPE_F16 = 10;
+    DATA_TYPE_U64 = 13;
+    DATA_TYPE_BF16 = 16;
+  }
+
+  message Layout {
+    repeated int64 strides = 1;
+  }
+
+  required string name = 1;
+  required uint64 offset = 2;
+  required DataType data_type = 3;
+  repeated uint64 shape = 4;
+  optional Layout layout = 5;
+}
+
+// Kernel ABI parameter types supported by the initial format generation.
+enum ParameterType {
+  PARAMETER_TYPE_UNKNOWN = 0;
+  PARAMETER_TYPE_U32 = 1;
+  PARAMETER_TYPE_POINTER = 2;
+  // A pointer-sized zero value supplied by the runtime. This type is valid in
+  // Kernel.parameters but does not consume a Node.Argument.
+  PARAMETER_TYPE_NULL_POINTER = 3;
+}
+
+// A runtime-supplied value. Its value is provided separately for each
+// invocation.
+message Parameter {
+  required string name = 1;
+  required ParameterType type = 2;
+}
+
+// A function exported by one of the embedded binaries.
+message Kernel {
+  required uint32 binary_idx = 1;
+  required string function = 2;
+
+  // Complete parameter list in ABI order. Every Node referencing this kernel
+  // must provide arguments with the same sequence of effective types, except
+  // PARAMETER_TYPE_NULL_POINTER slots, which the runtime supplies.
+  repeated ParameterType parameters = 3;
+
+  // Autotuned or profiled execution runtime of this kernel in nanoseconds.
+  optional uint64 runtime_ns = 4;
+}
+
+// One executable variant. Metadata is opaque to this format and describes the
+// conditions under which the runtime may select the program.
+message Program {
+  required string name = 1;
+  optional bytes metadata = 2;
+  optional Allocation execution_allocation = 3;
+  repeated Buffer buffers = 4;
+  repeated Node nodes = 5;
+}
+
+// A kernel invocation in the dependency graph.
+message Node {
+  // A parameter name, allocation location, or module symbol. Exactly one
+  // source must be present.
+  message Argument {
+    message AllocationLocation {
+      enum AllocationKind {
+        ALLOCATION_UNKNOWN = 0;
+        ALLOCATION_PERSISTENT = 1;
+        ALLOCATION_EXECUTION = 2;
+      }
+
+      required AllocationKind kind = 1;
+      required uint64 offset = 2;
+    }
+
+    message Symbol {
+      required uint32 binary_idx = 1;
+      required string symbol_name = 2;
+    }
+
+    optional string parameter_name = 1;
+    optional AllocationLocation allocation = 2;
+    optional Symbol symbol = 3;
+  }
+
+  required uint32 kernel_idx = 1;
+
+  // Indices of nodes in this Program that must complete before this node starts.
+  repeated uint32 dependencies = 2;
+  // Arguments for non-null-pointer kernel parameters in ABI order. Allocation
+  // locations and symbols have effective type PARAMETER_TYPE_POINTER, while a
+  // parameter has its declared type. PARAMETER_TYPE_NULL_POINTER slots do not
+  // consume an argument.
+  repeated Argument arguments = 3;
+
+  // Launch dimensions in x, y, z order. Each field must contain between one and
+  // three nonzero values; omitted trailing dimensions are one.
+  repeated uint32 grid = 4;
+  repeated uint32 block = 5;
+
+  // Dynamic shared memory requested for this launch.
+  required uint32 dynamic_shared_memory_bytes = 6;
+}
