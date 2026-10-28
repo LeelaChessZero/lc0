@@ -51,7 +51,6 @@
 #include "neural/onnx/converter.h"
 #include "neural/register.h"
 #include "neural/shared_params.h"
-#include "network_fingerprint.h"
 #include "proto/lc0ex_metadata.pb.h"
 #include "runtime/lc0ex_cuda.h"
 #include "utils/atomic_vector.h"
@@ -161,19 +160,6 @@ pblczero::NeuralExecutable LoadExecutableFile(const std::string& path) {
   pblczero::NeuralExecutable executable;
   executable.ParseFromString(serialized);
   return executable;
-}
-
-void CheckNetworkFingerprint(const WeightsFile& weights,
-                             const pblczero::NeuralExecutable& executable) {
-  pblczero::Net executable_fingerprint;
-  executable_fingerprint.ParseFromString(executable.metadata());
-
-  const auto network_fingerprint = lc0ex::BuildNetworkFingerprint(weights);
-  if (network_fingerprint.OutputAsString() !=
-      executable_fingerprint.OutputAsString()) {
-    throw Exception(
-        "The lc0ex executable was created for a different network architecture.");
-  }
 }
 
 bool HasMatchingShape(const lc0ex::BufferInfo& buffer,
@@ -469,7 +455,6 @@ class Lc0exCudaBackend final : public Backend {
     }
 
     const auto executable_proto = LoadExecutableFile(lc0ex_path);
-    CheckNetworkFingerprint(weights, executable_proto);
 
     const int gpu = backend_options.GetOrDefault<int>("gpu", 0);
     runtime_ = lc0ex::CreateLc0exCudaRuntime(gpu);

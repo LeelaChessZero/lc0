@@ -139,7 +139,6 @@ if get_option('lc0ex-runtime')
   endforeach
 
   files += 'src/neural/backends/lc0ex-cuda/runtime/lc0ex_cuda.cc'
-  files += 'src/neural/backends/lc0ex-cuda/network_fingerprint.cc'
   files += 'src/neural/backends/lc0ex-cuda/network_lc0ex_cuda.cc'
   has_backends = true
 endif

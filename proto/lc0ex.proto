@@ -60,7 +60,7 @@ message NeuralExecutable {
   // The current format generation (currently, 1).
   required uint32 format = 2;
   // Opaque metadata for identifying and validating the executable, such as its
-  // minimum supported Lc0 version and network architecture fingerprint.
+  // minimum supported Lc0 version.
   optional bytes metadata = 3;
 
   required Target target = 4;
