@@ -947,6 +947,14 @@ bool ChessBoard::IsLegalMove(Move move,
   }
 }
 
+void ChessBoard::DropIllegalEnPassant() {
+  if (en_passant().empty()) return;
+  for (const Move& m : GenerateLegalMoves()) {
+    if (m.is_en_passant()) return;
+  }
+  pawns_ &= kPawnMask;
+}
+
 MoveList ChessBoard::GenerateLegalMoves() const {
   const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
   MoveList result = GeneratePseudolegalMoves();
@@ -1088,6 +1096,7 @@ void ChessBoard::SetFromFen(std::string_view fen, int* rule50_ply, int* moves) {
       complain("no pawn to capture en passant");
     }
     pawns_.set(Square(file, kRank8));
+    DropIllegalEnPassant();
     pos += 2;
   }
   if (skip_whitespace("after en passant")) return;

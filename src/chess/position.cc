@@ -42,6 +42,7 @@ Position::Position(const Position& parent, Move m)
   us_board_ = parent.us_board_;
   const bool is_zeroing = us_board_.ApplyMove(m);
   us_board_.Mirror();
+  us_board_.DropIllegalEnPassant();
   if (is_zeroing) rule50_ply_ = 0;
 }
 
