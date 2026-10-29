@@ -31,7 +31,6 @@ TEST(Position, SetFenGetFen) {
   ChessBoard board;
   std::vector<std::string> source_fens = {
       "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 1 1",
-      // has en_passant space e3 - black to move
       "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 1 1",
       // has en_passant space c6 - white to move
       "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
