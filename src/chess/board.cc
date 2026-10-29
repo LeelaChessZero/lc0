@@ -949,8 +949,15 @@ bool ChessBoard::IsLegalMove(Move move,
 
 void ChessBoard::DropIllegalEnPassant() {
   if (en_passant().empty()) return;
-  for (const Move& m : GenerateLegalMoves()) {
-    if (m.is_en_passant()) return;
+  const File ep_file = (*en_passant().begin()).file();
+  const BitBoard candidates =
+      kPawnAttacks[Square(ep_file, kRank4).as_idx()] & our_pieces_ & pawns_;
+  const KingAttackInfo king_attack_info = GenerateKingAttackInfo();
+  const Square to(ep_file, kRank6);
+  for (const Square from : candidates) {
+    if (IsLegalMove(Move::WhiteEnPassant(from, to), king_attack_info)) {
+      return;
+    }
   }
   pawns_ &= kPawnMask;
 }
