@@ -159,9 +159,7 @@ class BaseSearchParams {
   }
   bool GetSearchSpinBackoff() const { return kSearchSpinBackoff; }
 
-  float GetGarbageCollectionDelay() const {
-    return kGarbageCollectionDelay;
-  }
+  float GetGarbageCollectionDelay() const { return kGarbageCollectionDelay; }
 
   // Search parameter IDs.
   static const OptionId kMiniBatchSizeId;
@@ -305,13 +303,40 @@ class SearchParams : public BaseSearchParams {
     return options_.Get<int>(kMaxPrefetchBatchId);
   }
   int GetSolidTreeThreshold() const { return kSolidTreeThreshold; }
+  bool UsePolicyPostProcessing() const { return kUsePolicyPostProcessing; }
+  int GetForcedExplorationVisits() const {
+    return options_.Get<int>(kForcedExplorationVisitsId);
+  }
+  float GetForcedExplorationMaxPolicy() const {
+    return options_.Get<float>(kForcedExplorationMaxPolicyId) / 100.0f;
+  }
+  float GetSingleChildForcedBoost() const {
+    return options_.Get<float>(kSingleChildForcedBoostId) / 100.0f;
+  }
+  float GetPolicyPostProcessingUtilityAlpha() const {
+    return options_.Get<float>(kPolicyPostProcessingUtilityAlphaId);
+  }
+  float GetPolicyPostProcessingWeightTemperature() const {
+    return options_.Get<float>(kPolicyPostProcessingWeightTemperatureId);
+  }
+  float GetTemperatureSimulatedCpuct() const {
+    return options_.Get<float>(kTemperatureSimulatedCpuctId);
+  }
 
   // Search parameter IDs.
   static const OptionId kMaxPrefetchBatchId;
   static const OptionId kSolidTreeThresholdId;
+  static const OptionId kForcedExplorationVisitsId;
+  static const OptionId kForcedExplorationMaxPolicyId;
+  static const OptionId kSingleChildForcedBoostId;
+  static const OptionId kUsePolicyPostProcessingId;
+  static const OptionId kPolicyPostProcessingUtilityAlphaId;
+  static const OptionId kPolicyPostProcessingWeightTemperatureId;
+  static const OptionId kTemperatureSimulatedCpuctId;
 
  private:
   const int kSolidTreeThreshold;
+  const bool kUsePolicyPostProcessing;
 };
 }  // namespace classic
 }  // namespace lczero
