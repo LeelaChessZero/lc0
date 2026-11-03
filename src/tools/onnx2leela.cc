@@ -31,6 +31,7 @@
 #include <fstream>
 #include <set>
 
+#include "neural/loader.h"
 #include "proto/net.pb.h"
 #include "proto/onnx.pb.h"
 #include "tools/describenet.h"
@@ -415,6 +416,13 @@ bool MaybeFixOnnx(pblczero::ModelProto& model, const OptionsDict& dict,
   return updated;
 }
 
+bool IsEpContextModel(const pblczero::ModelProto& model) {
+  for (const auto& node : model.graph().node()) {
+    if (node.op_type() == "EPContext") return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 void ConvertOnnxToLeela() {
@@ -428,6 +436,8 @@ void ConvertOnnxToLeela() {
   auto onnx_model = ReadFileToString(dict.Get<std::string>(kInputFilenameId));
   pblczero::ModelProto model;
   model.ParseFromString(onnx_model);
+
+  bool is_ctx = IsEpContextModel(model);
 
   pblczero::Net out_weights;
   out_weights.set_magic(0x1c0);
@@ -481,15 +491,22 @@ void ConvertOnnxToLeela() {
     onnx->set_output_mlh(dict.Get<std::string>(kOnnxOutputMlhId));
   }
 
-  if (MaybeFixOnnx(model, dict, data_type)) {
-    onnx->set_model(model.OutputAsString());
-  } else {
+  if (is_ctx) {
     onnx->set_model(onnx_model);
+    onnx->set_is_ep_context(true);
+  } else {
+    if (MaybeFixOnnx(model, dict, data_type)) {
+      onnx->set_model(model.OutputAsString());
+    } else {
+      onnx->set_model(onnx_model);
+    }
   }
+  
   if (dict.Get<bool>(kValidateModelId) &&
       !ValidateNetwork(out_weights, model)) {
     return;
   }
+
   WriteStringToGzFile(dict.Get<std::string>(kOutputFilenameId),
                       out_weights.OutputAsString());
   ShowNetworkFormatInfo(out_weights);
