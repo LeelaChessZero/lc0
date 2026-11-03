@@ -102,6 +102,8 @@ class ChessBoard {
   MoveList GenerateLegalMoves() const;
   // Check whether pseudolegal move is legal.
   bool IsLegalMove(Move move, const KingAttackInfo& king_attack_info) const;
+  // Remove en passant marker if en passant is not legal.
+  void DropIllegalEnPassant();
 
   // Parses a move from move_str.
   // The input string should be in the "normal" notation rather than from the
