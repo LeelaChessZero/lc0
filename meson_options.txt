@@ -250,6 +250,11 @@ option('lc0',
        value: true,
        description: 'Build Lc0')
 
+option('lc0ex-runtime',
+       type: 'boolean',
+       value: false,
+       description: 'Build the lc0ex executable runtime')
+
 option('rescorer',
        type: 'boolean',
        value: false,
