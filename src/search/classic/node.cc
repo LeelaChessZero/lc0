@@ -175,6 +175,8 @@ float Edge::GetP() const {
   return ret;
 }
 
+bool Edge::IsZeroPolicy() const { return p_ == 0; }
+
 std::string Edge::DebugString() const {
   std::ostringstream oss;
   oss << "Move: " << move_.ToString(true) << " p_: " << p_
