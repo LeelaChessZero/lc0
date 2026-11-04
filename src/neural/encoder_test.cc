@@ -20,6 +20,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
+#include <random>
+#include <vector>
+
 namespace lczero {
 
 auto kAllSquaresMask = std::numeric_limits<std::uint64_t>::max();
@@ -529,6 +534,134 @@ TEST(EncodePositionForNN, EncodeEarlyGameFlipFormat3) {
   their_king_plane = encoded_planes[11];
   EXPECT_EQ(their_king_plane.mask, 1ull << 43);
   EXPECT_EQ(their_king_plane.value, 1.0f);
+}
+
+namespace {
+
+constexpr pblczero::NetworkFormat::InputFormat kInputFormats[] = {
+    pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+    pblczero::NetworkFormat::INPUT_112_WITH_CASTLING_PLANE,
+    pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION,
+    pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_HECTOPLIES,
+    pblczero::NetworkFormat::
+        INPUT_112_WITH_CANONICALIZATION_HECTOPLIES_ARMAGEDDON,
+    pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2,
+    pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON};
+
+// Expects the positions CompactHistoryForNN lists to encode as `history` does.
+void ExpectCompactHistoryEncodesTheSame(std::span<const Position> history) {
+  // With a history fill, EncodePositionForNN does not return for a v2 format
+  // when the oldest position is neither a repeat nor the start of the count
+  // for the 50 move rule.
+  const bool oldest_ends_search =
+      history[0].GetRule50Ply() == 0 || history[0].GetRepetitions() != 0;
+  for (const auto input_format : kInputFormats) {
+    const bool is_v2 =
+        input_format ==
+            pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2 ||
+        input_format == pblczero::NetworkFormat::
+                            INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON;
+    std::array<int, kCompactHistory> indices;
+    const int count = CompactHistoryForNN(input_format, history, indices);
+    ASSERT_GE(count, 1);
+    ASSERT_LE(count, kCompactHistory);
+    ASSERT_EQ(indices[count - 1], static_cast<int>(history.size()) - 1);
+    std::vector<Position> compact_history;
+    for (int i = 0; i < count; ++i) {
+      if (i > 0) ASSERT_LT(indices[i - 1], indices[i]);
+      compact_history.push_back(history[indices[i]]);
+    }
+    for (const auto fill : {FillEmptyHistory::NO, FillEmptyHistory::FEN_ONLY,
+                            FillEmptyHistory::ALWAYS}) {
+      if (is_v2 && fill != FillEmptyHistory::NO && !oldest_ends_search) {
+        continue;
+      }
+      int transform = -1;
+      int compact_transform = -1;
+      const InputPlanes planes =
+          EncodePositionForNN(input_format, history, 8, fill, &transform);
+      const InputPlanes compact_planes = EncodePositionForNN(
+          input_format, compact_history, 8, fill, &compact_transform);
+      ASSERT_EQ(transform, compact_transform);
+      ASSERT_EQ(planes.size(), compact_planes.size());
+      for (size_t i = 0; i < planes.size(); ++i) {
+        ASSERT_EQ(planes[i].mask, compact_planes[i].mask)
+            << "plane " << i << ", input format " << input_format << ", "
+            << history.size() << " positions";
+        ASSERT_EQ(planes[i].value, compact_planes[i].value);
+      }
+    }
+  }
+}
+
+}  // namespace
+
+TEST(CompactHistoryForNN, ListsTheMostPositions) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen(ChessBoard::kStartposFen);
+  history.Reset(board, 0, 1);
+  // After 1. e4 e5 both sides move a piece out and back, a new one each time.
+  // The position after 1... e5 then returns every fourth ply, with three
+  // positions in between that are not repeats.
+  for (const char* move :
+       {"e2e4", "e7e5", "g1f3", "g8f6", "f3g1", "f6g8", "g1h3", "g8h6",
+        "h3g1", "h6g8", "b1c3", "b8c6", "c3b1", "c6b8", "b1a3", "b8a6",
+        "a3b1", "a6b8", "g1e2", "g8e7", "e2g1", "e7g8", "f1e2", "f8e7",
+        "e2f1", "e7f8", "f1d3", "f8d6", "d3f1", "d6f8", "f1c4", "f8c5",
+        "c4f1", "c5f8", "f1b5", "f8b4", "b5f1", "b4f8"}) {
+    history.Append(history.Last().GetBoard().ParseMove(move));
+  }
+  const std::span<const Position> positions = history.GetPositions();
+
+  std::array<int, kCompactHistory> indices;
+  EXPECT_EQ(
+      CompactHistoryForNN(pblczero::NetworkFormat::INPUT_CLASSICAL_112_PLANE,
+                          positions, indices),
+      kMoveHistory);
+  EXPECT_EQ(indices[0], static_cast<int>(positions.size()) - kMoveHistory);
+  // The v2 formats encode every fourth position and need one of the three
+  // between each two.
+  ASSERT_EQ(CompactHistoryForNN(
+                pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2,
+                positions, indices),
+            kCompactHistory);
+  EXPECT_EQ(indices[0], static_cast<int>(positions.size()) - 29);
+
+  ExpectCompactHistoryEncodesTheSame(positions);
+}
+
+TEST(CompactHistoryForNN, EncodesTheSameAsTheWholeHistory) {
+  std::mt19937 random(20261001);
+  ChessBoard board;
+  board.SetFromFen(ChessBoard::kStartposFen);
+  for (int game = 0; game < 100; ++game) {
+    PositionHistory history;
+    history.Reset(board, 0, 1);
+    // Each side's last move, the older one first.
+    std::array<Move, 2> last_moves;
+    for (int ply = 0; ply < 120; ++ply) {
+      const MoveList moves = history.Last().GetBoard().GenerateLegalMoves();
+      if (moves.empty()) break;
+      Move move = moves[random() % moves.size()];
+      // Moving the same piece back makes the repeats the v2 formats look for.
+      const Move move_back =
+          Move::White(last_moves[0].to(), last_moves[0].from());
+      if (ply >= 2 && random() % 4 != 0 &&
+          std::find(moves.begin(), moves.end(), move_back) != moves.end()) {
+        move = move_back;
+      }
+      last_moves = {last_moves[1], move};
+      history.Append(move);
+
+      const std::span<const Position> positions = history.GetPositions();
+      ExpectCompactHistoryEncodesTheSame(positions);
+      // A history may also start in the middle of a game.
+      ExpectCompactHistoryEncodesTheSame(
+          positions.subspan(random() % positions.size()));
+      if (HasFatalFailure()) return;
+    }
+  }
 }
 
 }  // namespace lczero

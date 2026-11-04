@@ -1,4 +1,15 @@
-﻿v0.33.0-rc0 (2026-09-05)
+﻿v0.34.0-dev
+~~~~~~~
+* The backend now runs in a process of its own, `lc0 backendprocess`, which
+  the engine starts, restarts after a crash and ends when it exits. A backend
+  that crashes no longer ends the engine: the batches it was evaluating go to
+  the new process and the search carries on. There is no option for it, and
+  Android builds keep the backend in the engine's process.
+* Positions and results cross between the two in shared memory, about 40 MiB
+  for each backend process. On Linux that comes out of /dev/shm, which a
+  container may have to be given more of (Docker's default is 64 MiB).
+
+v0.33.0-rc0 (2026-09-05)
 ~~~~~~~
 This release includes improvements across the cuda, onnx and demux backends,
 along with several search, benchmarking, and training-data fixes.
