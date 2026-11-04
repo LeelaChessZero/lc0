@@ -25,7 +25,9 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+#include <algorithm>
 #include <cassert>
+#include <sstream>
 
 #include "neural/backends/xla/xla_runner.h"
 #include "neural/factory.h"
@@ -180,7 +182,7 @@ XlaNetwork::XlaNetwork(std::unique_ptr<XlaRunner> runner,
 // XlaRunner.
 XlaNetworkOptions FillXlaRunnerFromOnnx(
     const pblczero::OnnxModel& onnx_model, XlaRunner* runner,
-    size_t max_batch_size, size_t steps,
+    const std::vector<size_t>& batch_sizes,
     std::optional<pblczero::XlaShapeProto::Type> io_type) {
   pblczero::ModelProto onnx;
   onnx.ParseFromString(onnx_model.model());
@@ -220,8 +222,7 @@ XlaNetworkOptions FillXlaRunnerFromOnnx(
   }
   onnx2hlo_options.io_type = io_type;
 
-  for (size_t i = 0; i < steps; ++i) {
-    size_t batch_size = max_batch_size * (i + 1) / steps;
+  for (size_t batch_size : batch_sizes) {
     CERR << "Building HLO for batch size " << batch_size << "...";
     auto conversion = ConvertOnnxToHlo(onnx, batch_size, onnx2hlo_options);
     add_tensors(conversion.constants, constant_to_parameter_idx);
@@ -277,37 +278,80 @@ std::unique_ptr<Network> MakeXlaNetwork(const std::optional<WeightsFile>& w,
                                         const OptionsDict& opts) {
   if (!w) throw Exception("The XLA backend requires a network file.");
   int device = opts.GetOrDefault<int>("device", 0);
-  // Note: if the plugin_path does NOT contain a slash, it's looked up in the
-  // LD_LIBRARY_PATH (and a few other system defined places). If it does
-  // contain a slash, it's looked up at the exact relative or absolute path.
-  auto runner = std::make_unique<XlaRunner>(
-      opts.GetOrDefault<std::string>("plugin_path",
-                                     "./pjrt_c_api_gpu_plugin.so")
-          .c_str(),
-      device);
-  int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
-  int steps = opts.GetOrDefault<int>("steps", 16);
+  bool is_tpu = opts.GetOrDefault<bool>("tpu", false);
+
+  std::string default_plugin =
+      is_tpu ? "libtpu.so" : "./pjrt_c_api_gpu_plugin.so";
+  std::string plugin_path =
+      opts.GetOrDefault<std::string>("plugin_path", default_plugin);
+
+  auto runner = std::make_unique<XlaRunner>(plugin_path.c_str(), device);
+
+  std::vector<size_t> batch_sizes;
+  if (opts.Exists<std::string>("batch_buckets")) {
+    std::string buckets_str = opts.Get<std::string>("batch_buckets");
+    std::stringstream ss(buckets_str);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+      if (!item.empty()) {
+        batch_sizes.push_back(std::stoul(item));
+      }
+    }
+  } else if (is_tpu) {
+    // TPU MXUs work with 128x128 systolic matrix multipliers.
+    // Compiling a small set of power-of-2 / MXU-aligned buckets minimizes
+    // startup compilation latency (saving ~15 minutes) and eliminates Colab timeouts.
+    int max_batch_size = opts.GetOrDefault<int>("max_batch", 256);
+    for (size_t b : {16UL, 64UL, 128UL, 256UL}) {
+      if (b <= static_cast<size_t>(max_batch_size)) {
+        batch_sizes.push_back(b);
+      }
+    }
+    if (batch_sizes.empty() ||
+        batch_sizes.back() < static_cast<size_t>(max_batch_size)) {
+      batch_sizes.push_back(max_batch_size);
+    }
+  } else {
+    int max_batch_size = opts.GetOrDefault<int>("max_batch", 512);
+    int steps = opts.GetOrDefault<int>("steps", 16);
+    for (size_t i = 0; i < static_cast<size_t>(steps); ++i) {
+      batch_sizes.push_back(max_batch_size * (i + 1) / steps);
+    }
+  }
+
+  std::sort(batch_sizes.begin(), batch_sizes.end());
+  batch_sizes.erase(std::unique(batch_sizes.begin(), batch_sizes.end()),
+                    batch_sizes.end());
+  if (batch_sizes.empty()) {
+    batch_sizes.push_back(16);
+  }
+
+  std::string default_datatype = is_tpu ? "bf16" : "f32";
+  std::string datatype_str =
+      opts.GetOrDefault<std::string>("datatype", default_datatype);
 
   XlaNetworkOptions options;
   std::optional<pblczero::XlaShapeProto::Type> io_type;
   if (opts.Exists<std::string>("io_datatype")) {
     io_type = StringToXlaType(opts.Get<std::string>("io_datatype"));
+  } else if (is_tpu) {
+    io_type = pblczero::XlaShapeProto::BF16;
   }
+
   if (w->has_onnx_model()) {
     options = FillXlaRunnerFromOnnx(w->onnx_model(), runner.get(),
-                                    max_batch_size, steps, io_type);
+                                    batch_sizes, io_type);
   } else {
-    CERR << "Converting weights to ONNX first.";
+    CERR << "Converting weights to ONNX first (" << datatype_str << ").";
     WeightsToOnnxConverterOptions onnx_converter_options;
     onnx_converter_options.data_type =
-        WeightsToOnnxConverterOptions::StringToDataType(
-            opts.GetOrDefault<std::string>("datatype", "f32"));
+        WeightsToOnnxConverterOptions::StringToDataType(datatype_str);
     onnx_converter_options.opset = 22;  // For full onnx bfloat16 support.
     onnx_converter_options.alt_mish =
         opts.GetOrDefault<bool>("alt_mish", false);
     auto converted = ConvertWeightsToOnnx(*w, onnx_converter_options);
     options = FillXlaRunnerFromOnnx(converted.onnx_model(), runner.get(),
-                                    max_batch_size, steps, io_type);
+                                    batch_sizes, io_type);
   }
 
   return std::make_unique<XlaNetwork>(std::move(runner), options,
