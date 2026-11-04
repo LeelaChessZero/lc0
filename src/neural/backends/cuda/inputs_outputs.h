@@ -160,11 +160,16 @@ struct InputsOutputs {
             cudaMemsetAsync(mem, 0, tensor_mem_size, compute_stream_));
       }
       ReportCUBLASErrors(cublasCreate(&cublas_));
-#if !defined(USE_HIP) && CUDART_VERSION < 11010
+#if !defined(USE_HIP)
       // See CudaNetwork constructor in network_cuda.cc.
-      ReportCUBLASErrors(cublasSetMathMode(
-          cublas_, cublasDisableTensorCores ? CUBLAS_PEDANTIC_MATH
-                                            : CUBLAS_TENSOR_OP_MATH));
+      if (cublasDisableTensorCores) {
+        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_PEDANTIC_MATH));
+      }
+#if CUDART_VERSION < 11010
+      else {
+        ReportCUBLASErrors(cublasSetMathMode(cublas_, CUBLAS_TENSOR_OP_MATH));
+      }
+#endif
 #endif
       ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
     } else {

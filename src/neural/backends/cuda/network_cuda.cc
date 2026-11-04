@@ -324,15 +324,17 @@ class CudaNetwork : public Network {
                                                 cudaEventDisableTiming));
       ReportCUBLASErrors(cublasCreate(&cublas_));
       ReportCUBLASErrors(cublasSetStream(cublas_, compute_stream_));
-#if !defined(USE_HIP) && CUDART_VERSION < 11010
+#if !defined(USE_HIP)
       // CUBLAS_TENSOR_OP_MATH was deprecated in CUDA 11.0 while using
-      // CUBLAS_PEDANTIC_MATH was a workaround for a TU11x bug (apparently
-      // fixed in CUDA 11.1) and hipBLAS has no equivalent.
+      // CUBLAS_PEDANTIC_MATH is a workaround for a TU11x bug (apparently not
+      // yet fixed) and hipBLAS has no equivalent.
+#if CUDART_VERSION < 11010
       if (has_tensor_cores_)
         ReportCUBLASErrors(cublasSetMathMode(
             cublas_,
             CUBLAS_TENSOR_OP_MATH));  // Deprecated on CUDA 11.0 and later
-      else if (fp16)
+#endif
+      if (!has_tensor_cores_ && fp16)
         ReportCUBLASErrors(cublasSetMathMode(
             cublas_,
             CUBLAS_PEDANTIC_MATH));  // Explicitly set PEDANTIC_MATH mode to
