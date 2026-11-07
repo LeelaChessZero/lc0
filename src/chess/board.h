@@ -39,6 +39,11 @@ namespace lczero {
 // Initializes internal magic bitboard structures.
 void InitializeMagicBitboards();
 
+// Slider attacks from `square` given the `occupied` squares. Require
+// InitializeMagicBitboards() to have been called.
+BitBoard ComputeRookAttacks(Square square, BitBoard occupied);
+BitBoard ComputeBishopAttacks(Square square, BitBoard occupied);
+
 // Represents king attack info used during legal move detection.
 class KingAttackInfo {
  public:

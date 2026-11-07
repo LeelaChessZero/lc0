@@ -410,6 +410,14 @@ static inline BitBoard GetBishopAttacks(const Square bishop_square,
 
 }  // namespace
 
+BitBoard ComputeRookAttacks(Square square, BitBoard occupied) {
+  return GetRookAttacks(square, occupied);
+}
+
+BitBoard ComputeBishopAttacks(Square square, BitBoard occupied) {
+  return GetBishopAttacks(square, occupied);
+}
+
 void InitializeMagicBitboards() {
 #if defined(NO_PEXT)
   // Set magic numbers for all board squares.
