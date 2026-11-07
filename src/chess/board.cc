@@ -369,10 +369,11 @@ static void BuildAttacksTable(MagicParams* magic_params,
   }
 }
 
+}  // namespace
+
 // Returns the rook attacks bitboard for the given rook board square and the
 // given occupied piece bitboard.
-static inline BitBoard GetRookAttacks(const Square rook_square,
-                                      const BitBoard pieces) {
+BitBoard GetRookAttacks(const Square rook_square, const BitBoard pieces) {
   // Calculate magic index.
   const uint8_t square = rook_square.as_idx();
 
@@ -390,8 +391,7 @@ static inline BitBoard GetRookAttacks(const Square rook_square,
 
 // Returns the bishop attacks bitboard for the given bishop board square and
 // the given occupied piece bitboard.
-static inline BitBoard GetBishopAttacks(const Square bishop_square,
-                                        const BitBoard pieces) {
+BitBoard GetBishopAttacks(const Square bishop_square, const BitBoard pieces) {
   // Calculate magic index.
   const uint8_t square = bishop_square.as_idx();
 
@@ -406,16 +406,6 @@ static inline BitBoard GetBishopAttacks(const Square bishop_square,
 
   // Return attacks bitboard.
   return bishop_magic_params[square].attacks_table_[index];
-}
-
-}  // namespace
-
-BitBoard ComputeRookAttacks(Square square, BitBoard occupied) {
-  return GetRookAttacks(square, occupied);
-}
-
-BitBoard ComputeBishopAttacks(Square square, BitBoard occupied) {
-  return GetBishopAttacks(square, occupied);
 }
 
 void InitializeMagicBitboards() {

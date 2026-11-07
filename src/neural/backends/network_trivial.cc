@@ -248,10 +248,10 @@ inline u64 ShiftSides(u64 b) {
   return ((b & ~kFileHMask) << 1) | ((b & ~kFileAMask) >> 1);
 }
 inline u64 RookAtt(int sq, u64 occ) {
-  return ComputeRookAttacks(Square::FromIdx(sq), BitBoard(occ)).as_int();
+  return GetRookAttacks(Square::FromIdx(sq), BitBoard(occ)).as_int();
 }
 inline u64 BishopAtt(int sq, u64 occ) {
-  return ComputeBishopAttacks(Square::FromIdx(sq), BitBoard(occ)).as_int();
+  return GetBishopAttacks(Square::FromIdx(sq), BitBoard(occ)).as_int();
 }
 inline u64 OurPawnAttacks(u64 p) {
   return ((p & ~kFileAMask) << 7) | ((p & ~kFileHMask) << 9);
