@@ -330,7 +330,12 @@ class Lc0exCudaExecutable final : public Executable {
       std::span<const std::byte> source,
       std::optional<std::size_t> size_bytes = std::nullopt) override {
     const std::size_t copy_size = size_bytes.value_or(source.size());
-    if (copy_size == 0 || !persistent_allocation_.address_) return;
+    if (copy_size > source.size() ||
+        copy_size > persistent_allocation_.size_bytes_) {
+      throw Exception("Host copy of " + std::to_string(copy_size) +
+                      " bytes exceeds the lc0ex persistent allocation.");
+    }
+    if (copy_size == 0) return;
 
     SetCurrent();
     LC0EX_CUDA_CHECK(cuMemcpyHtoD(persistent_allocation_.address_,
@@ -676,23 +681,29 @@ Lc0exCudaExecutionSlot* Lc0exCudaExecutable::AcquireExecutionSlot() {
     return free_slot->get();
   }
 
-  auto slot = std::make_unique<Lc0exCudaExecutionSlot>();
-  slot->allocation_.size_bytes_ = execution_pool_allocation_.size_bytes_;
-  slot->allocation_.alignment_bytes_ =
+  // The slot is registered before acquiring resources, so that they are
+  // released on failure (here) or on executable destruction.
+  execution_slots_.push_back(std::make_unique<Lc0exCudaExecutionSlot>());
+  auto& slot = *execution_slots_.back();
+  slot.allocation_.size_bytes_ = execution_pool_allocation_.size_bytes_;
+  slot.allocation_.alignment_bytes_ =
       execution_pool_allocation_.alignment_bytes_;
-
-  SetCurrent();
-  LC0EX_CUDA_CHECK(cuStreamCreate(&slot->stream_, CU_STREAM_DEFAULT));
-  if (slot->allocation_.size_bytes_ != 0) {
-    const auto memory = AllocateDeviceMemory(
-        slot->allocation_.size_bytes_, slot->allocation_.alignment_bytes_);
-    slot->allocation_.base_ = memory.first;
-    slot->allocation_.address_ = memory.second;
+  try {
+    SetCurrent();
+    LC0EX_CUDA_CHECK(cuStreamCreate(&slot.stream_, CU_STREAM_DEFAULT));
+    if (slot.allocation_.size_bytes_ != 0) {
+      const auto memory = AllocateDeviceMemory(
+          slot.allocation_.size_bytes_, slot.allocation_.alignment_bytes_);
+      slot.allocation_.base_ = memory.first;
+      slot.allocation_.address_ = memory.second;
+    }
+  } catch (...) {
+    DestroyExecutionSlot(slot);
+    execution_slots_.pop_back();
+    throw;
   }
-  auto* result = slot.get();
-  execution_slots_.push_back(std::move(slot));
-  result->in_use_ = true;
-  return result;
+  slot.in_use_ = true;
+  return &slot;
 }
 
 void Lc0exCudaExecutable::ReleaseExecutionSlot(Lc0exCudaExecutionSlot* slot) {
