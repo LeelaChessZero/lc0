@@ -66,7 +66,6 @@ constexpr u64 kFileAMask = 0x0101010101010101ULL;
 constexpr u64 kFileHMask = 0x8080808080808080ULL;
 
 constexpr int kSeeVal[8] = {100, 320, 330, 500, 950, 20000, 0, 0};
-constexpr int kPhaseInc[6] = {0, 1, 1, 2, 4, 0};
 constexpr int kMgVal[6] = {82, 337, 365, 477, 1025, 0};
 constexpr int kEgVal[6] = {94, 281, 297, 512, 936, 0};
 
@@ -215,15 +214,26 @@ constexpr Tables MakeTables() {
 
 constexpr Tables kT = MakeTables();
 
+// Material+PST tapered for each game phase (0..24), used by the policy.
+struct TaperedPst {
+  int16_t v[25][6][64];
+};
+constexpr TaperedPst MakeTaperedPst() {
+  TaperedPst t{};
+  for (int ph = 0; ph <= 24; ++ph) {
+    for (int pt = 0; pt < 6; ++pt) {
+      for (int sq = 0; sq < 64; ++sq) {
+        t.v[ph][pt][sq] = (kT.mg[pt][sq] * ph + kT.eg[pt][sq] * (24 - ph)) / 24;
+      }
+    }
+  }
+  return t;
+}
+constexpr TaperedPst kTaperedPst = MakeTaperedPst();
+
 inline u64 Bit(int sq) { return 1ULL << sq; }
 inline int Lsb(u64 x) { return std::countr_zero(x); }
-// Portable popcount which doesn't rely on -mpopcnt (avoids a libgcc call).
-inline int PopCount(u64 x) {
-  x -= (x >> 1) & 0x5555555555555555ULL;
-  x = (x & 0x3333333333333333ULL) + ((x >> 2) & 0x3333333333333333ULL);
-  x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0FULL;
-  return (x * 0x0101010101010101ULL) >> 56;
-}
+inline int PopCount(u64 x) { return std::popcount(x); }
 inline u64 FillUp(u64 b) {
   b |= b << 8;
   b |= b << 16;
@@ -365,6 +375,8 @@ struct EvalInfo {
   int phase;
   u64 att_us;    // Squares attacked by us.
   u64 att_them;  // Squares attacked by them.
+  u64 att2_us;   // Squares attacked by us at least twice.
+  u64 att2_them;
   u64 by_us[6];  // Squares attacked by our pieces of a given type.
   u64 by_them[6];
   int threat[64];  // Estimated gain of the opponent capturing our piece there.
@@ -383,25 +395,22 @@ inline int Taper(int mg, int eg, int phase) {
 }
 
 int EvaluatePosition(const Pos& p, const Params& w, EvalInfo* info) {
-  int mg = 0, eg = 0, phase = 0;
-  int npm_us = 0, npm_them = 0;
-  for (int t = 0; t < 6; ++t) {
-    for (u64 x = p.pc[t] & p.us; x; x &= x - 1) {
-      const int sq = Lsb(x);
-      mg += kT.mg[t][sq];
-      eg += kT.eg[t][sq];
-      phase += kPhaseInc[t];
-      npm_us += kSeeVal[t] * (t != P && t != K);
-    }
-    for (u64 x = p.pc[t] & p.them; x; x &= x - 1) {
-      const int sq = Lsb(x) ^ 56;
-      mg -= kT.mg[t][sq];
-      eg -= kT.eg[t][sq];
-      phase += kPhaseInc[t];
-      npm_them += kSeeVal[t] * (t != P && t != K);
-    }
+  // Pawns and kings; other pieces' PST is added in the mobility loop.
+  int mg = kT.mg[K][p.our_king] - kT.mg[K][p.their_king ^ 56];
+  int eg = kT.eg[K][p.our_king] - kT.eg[K][p.their_king ^ 56];
+  for (u64 x = p.pc[P] & p.us; x; x &= x - 1) {
+    const int sq = Lsb(x);
+    mg += kT.mg[P][sq];
+    eg += kT.eg[P][sq];
   }
-  phase = std::min(phase, 24);
+  for (u64 x = p.pc[P] & p.them; x; x &= x - 1) {
+    const int sq = Lsb(x) ^ 56;
+    mg -= kT.mg[P][sq];
+    eg -= kT.eg[P][sq];
+  }
+  const int phase =
+      std::min(24, PopCount(p.pc[N] | p.pc[B]) + 2 * PopCount(p.pc[R]) +
+                       4 * PopCount(p.pc[Q]));
   info->phase = phase;
 
   const u64 our_pawns = p.pc[P] & p.us;
@@ -433,6 +442,8 @@ int EvaluatePosition(const Pos& p, const Params& w, EvalInfo* info) {
     for (int t = N; t <= Q; ++t) {
       for (u64 x = p.pc[t] & p.us; x; x &= x - 1) {
         const int sq = Lsb(x);
+        mg += kT.mg[t][sq];
+        eg += kT.eg[t][sq];
         u64 a;
         if (t == N) {
           a = kT.knight[sq];
@@ -461,6 +472,8 @@ int EvaluatePosition(const Pos& p, const Params& w, EvalInfo* info) {
     for (int t = N; t <= Q; ++t) {
       for (u64 x = p.pc[t] & p.them; x; x &= x - 1) {
         const int sq = Lsb(x);
+        mg -= kT.mg[t][sq ^ 56];
+        eg -= kT.eg[t][sq ^ 56];
         u64 a;
         if (t == N) {
           a = kT.knight[sq];
@@ -486,6 +499,8 @@ int EvaluatePosition(const Pos& p, const Params& w, EvalInfo* info) {
   }
   info->att_us = att_us;
   info->att_them = att_them;
+  info->att2_us = att2_us;
+  info->att2_them = att2_them;
   // King safety: grows quadratically with the number of attackers.
   if (nattackers_us >= 2) {
     mg += w.king_attack * king_att_us * nattackers_us / 2;
@@ -581,8 +596,16 @@ int EvaluatePosition(const Pos& p, const Params& w, EvalInfo* info) {
   cp += std::max(with_capture, without);
 
   // Drawish material: no pawns for the stronger side and little extra.
-  if (cp > 0 && !our_pawns && npm_us - npm_them < 400) cp /= 4;
-  if (cp < 0 && !their_pawns && npm_them - npm_us < 400) cp /= 4;
+  if ((cp > 0 && !our_pawns) || (cp < 0 && !their_pawns)) {
+    auto npm = [&](u64 side) {
+      return kSeeVal[N] * PopCount(p.pc[N] & side) +
+             kSeeVal[B] * PopCount(p.pc[B] & side) +
+             kSeeVal[R] * PopCount(p.pc[R] & side) +
+             kSeeVal[Q] * PopCount(p.pc[Q] & side);
+    };
+    const int diff = npm(p.us) - npm(p.them);
+    if (cp > 0 ? diff < 400 : -diff < 400) cp /= 4;
+  }
   return cp;
 }
 
@@ -598,7 +621,7 @@ constexpr int kClass[8] = {0, 1, 1, 2, 3, 4, 0, 0};
 void ComputePolicy(const Pos& p, const EvalInfo& info, const Params& w,
                    std::span<const Move> moves, std::span<float> out,
                    float inv_softmax_temp) {
-  const int phase = info.phase;
+  const auto& pst = kTaperedPst.v[info.phase];
   const float material_scale = inv_softmax_temp / w.policy_temp;
   const float pst_scale = material_scale * w.pst_weight;
 
@@ -651,12 +674,20 @@ void ComputePolicy(const Pos& p, const EvalInfo& info, const Params& w,
         victim = p.type[to];
       }
       // Positional delta (material change of promotion included).
-      const int pos_delta = Taper(kT.mg[new_t][to] - kT.mg[t][from],
-                                  kT.eg[new_t][to] - kT.eg[t][from], phase);
+      const int pos_delta = pst[new_t][to] - pst[t][from];
       int material = kSeeVal[victim];
       if (info.att_them & Bit(to)) {
-        const u64 att = AttackersTo(p, to, p.occ) & ~Bit(from);
-        material = See(p, from, to, new_t, material, p.us, p.them, att);
+        // With a single attacker worth at least the moving piece and the
+        // square defended, they won't gain by capturing: skip SEE.
+        // (Pawn pushes don't attack the destination themselves.)
+        const bool self_attacks = t != P || victim != kNone;
+        const bool defended =
+            ((self_attacks ? info.att2_us : info.att_us) & Bit(to)) != 0;
+        if (!defended || (info.att2_them & Bit(to)) ||
+            LvaValue(info.by_them, to) < kSeeVal[new_t]) {
+          const u64 att = AttackersTo(p, to, p.occ) & ~Bit(from);
+          material = See(p, from, to, new_t, material, p.us, p.them, att);
+        }
       }
       if (material >= 0 && info.threat[from] > 0) {
         material += info.threat[from] * w.escape_pct / 100;
