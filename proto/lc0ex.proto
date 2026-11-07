@@ -184,6 +184,8 @@ message Node {
   required uint32 kernel_idx = 1;
 
   // Indices of nodes in this Program that must complete before this node starts.
+  // Each index must refer to an earlier node, so nodes are listed in
+  // topological order.
   repeated uint32 dependencies = 2;
   // Arguments for non-null-pointer kernel parameters in ABI order. Allocation
   // locations and symbols have effective type PARAMETER_TYPE_POINTER, while a

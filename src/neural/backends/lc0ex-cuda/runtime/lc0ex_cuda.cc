@@ -43,6 +43,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "layout.h"
 #include "utils/exception.h"
 
 namespace lczero {
@@ -83,40 +84,12 @@ constexpr std::uint32_t kFormat = 1;
 
 void IgnoreCuda(CUresult status) { (void)status; }
 
-std::size_t ElementSize(pblczero::Buffer::DataType type) {
-  switch (type) {
-    case pblczero::Buffer::DATA_TYPE_F32:
-      return sizeof(float);
-    case pblczero::Buffer::DATA_TYPE_U8:
-      return sizeof(std::uint8_t);
-    case pblczero::Buffer::DATA_TYPE_F16:
-      return sizeof(std::uint16_t);
-    case pblczero::Buffer::DATA_TYPE_U64:
-      return sizeof(std::uint64_t);
-    case pblczero::Buffer::DATA_TYPE_BF16:
-      return sizeof(std::uint16_t);
-    case pblczero::Buffer::DATA_TYPE_UNKNOWN:
-      break;
-  }
-  throw Exception("Unsupported or unknown buffer data type.");
-}
-
 std::uint64_t BufferSize(const pblczero::Buffer& buffer) {
   std::uint64_t elements = 1;
   for (const auto dimension : buffer.shape()) {
     elements *= dimension;
   }
   return elements * ElementSize(buffer.data_type());
-}
-
-std::vector<std::int64_t> DefaultStrides(
-    const std::vector<std::uint64_t>& shape) {
-  std::vector<std::int64_t> strides(shape.size(), 1);
-  if (shape.empty()) return strides;
-  for (std::size_t i = shape.size() - 1; i > 0; --i) {
-    strides[i - 1] = strides[i] * static_cast<std::int64_t>(shape[i]);
-  }
-  return strides;
 }
 
 BufferInfo MakeBufferInfo(const pblczero::Buffer& buffer) {
@@ -130,119 +103,20 @@ BufferInfo MakeBufferInfo(const pblczero::Buffer& buffer) {
     strides = DefaultStrides(shape);
   }
   return {
-      std::string(buffer.name()),
-      buffer.data_type(),
-      std::move(shape),
-      std::move(strides),
-      BufferSize(buffer),
-      buffer.offset(),
+      std::string(buffer.name()), buffer.data_type(), std::move(shape),
+      std::move(strides),         BufferSize(buffer), buffer.offset(),
   };
-}
-
-void CopyStridedHtoD(const std::vector<std::uint64_t>& shape,
-                     const std::vector<std::int64_t>& dst_strides,
-                     const std::vector<std::int64_t>& src_strides,
-                     std::size_t elem_size, const std::byte* src,
-                     CUdeviceptr dst) {
-  if (shape.empty()) {
-    LC0EX_CUDA_CHECK(cuMemcpyHtoD(dst, src, elem_size));
-    return;
-  }
-  std::size_t contiguous_dim = shape.size();
-  std::size_t contiguous_bytes = elem_size;
-  while (contiguous_dim > 0) {
-    std::size_t dim = contiguous_dim - 1;
-    if (dim == shape.size() - 1) {
-      if (dst_strides[dim] == 1 && src_strides[dim] == 1) {
-        contiguous_bytes *= shape[dim];
-        contiguous_dim = dim;
-      } else {
-        break;
-      }
-    } else {
-      if (dst_strides[dim] ==
-              dst_strides[dim + 1] *
-                  static_cast<std::int64_t>(shape[dim + 1]) &&
-          src_strides[dim] ==
-              src_strides[dim + 1] *
-                  static_cast<std::int64_t>(shape[dim + 1])) {
-        contiguous_bytes *= shape[dim];
-        contiguous_dim = dim;
-      } else {
-        break;
-      }
-    }
-  }
-
-  auto copy_dim = [&](auto& self, std::size_t dim, const std::byte* s,
-                      CUdeviceptr d) -> void {
-    if (dim >= contiguous_dim) {
-      LC0EX_CUDA_CHECK(cuMemcpyHtoD(d, s, contiguous_bytes));
-      return;
-    }
-    for (std::uint64_t i = 0; i < shape[dim]; ++i) {
-      self(self, dim + 1, s + i * src_strides[dim] * elem_size,
-           d + i * dst_strides[dim] * elem_size);
-    }
-  };
-  copy_dim(copy_dim, 0, src, dst);
-}
-
-void CopyStridedDtoH(const std::vector<std::uint64_t>& shape,
-                     const std::vector<std::int64_t>& dst_strides,
-                     const std::vector<std::int64_t>& src_strides,
-                     std::size_t elem_size, CUdeviceptr src,
-                     std::byte* dst) {
-  if (shape.empty()) {
-    LC0EX_CUDA_CHECK(cuMemcpyDtoH(dst, src, elem_size));
-    return;
-  }
-  std::size_t contiguous_dim = shape.size();
-  std::size_t contiguous_bytes = elem_size;
-  while (contiguous_dim > 0) {
-    std::size_t dim = contiguous_dim - 1;
-    if (dim == shape.size() - 1) {
-      if (dst_strides[dim] == 1 && src_strides[dim] == 1) {
-        contiguous_bytes *= shape[dim];
-        contiguous_dim = dim;
-      } else {
-        break;
-      }
-    } else {
-      if (dst_strides[dim] ==
-              dst_strides[dim + 1] *
-                  static_cast<std::int64_t>(shape[dim + 1]) &&
-          src_strides[dim] ==
-              src_strides[dim + 1] *
-                  static_cast<std::int64_t>(shape[dim + 1])) {
-        contiguous_bytes *= shape[dim];
-        contiguous_dim = dim;
-      } else {
-        break;
-      }
-    }
-  }
-
-  auto copy_dim = [&](auto& self, std::size_t dim, CUdeviceptr s,
-                      std::byte* d) -> void {
-    if (dim >= contiguous_dim) {
-      LC0EX_CUDA_CHECK(cuMemcpyDtoH(d, s, contiguous_bytes));
-      return;
-    }
-    for (std::uint64_t i = 0; i < shape[dim]; ++i) {
-      self(self, dim + 1, s + i * src_strides[dim] * elem_size,
-           d + i * dst_strides[dim] * elem_size);
-    }
-  };
-  copy_dim(copy_dim, 0, src, dst);
 }
 
 std::array<unsigned int, 3> LaunchDimensions(
     const std::vector<std::uint32_t>& dimensions) {
-  std::array<unsigned int, 3> result = {1, 1, 1};
-  for (std::size_t i = 0; i < dimensions.size(); ++i) {
-    result[i] = dimensions[i];
+  if (dimensions.empty() || dimensions.size() > 3 ||
+      absl::c_linear_search(dimensions, 0u)) {
+    throw Exception(
+        "lc0ex launch dimensions must contain one to three nonzero values.");
   }
+  std::array<unsigned int, 3> result = {1, 1, 1};
+  absl::c_copy(dimensions, result.begin());
   return result;
 }
 
@@ -281,14 +155,17 @@ struct Lc0exCudaArgument {
 
   Kind kind_ = Kind::kAllocation;
   std::size_t index_ = 0;
-  pblczero::Node::Argument::AllocationLocation::AllocationKind allocation_kind_ =
-      pblczero::Node::Argument::AllocationLocation::ALLOCATION_UNKNOWN;
+  pblczero::Node::Argument::AllocationLocation::AllocationKind
+      allocation_kind_ =
+          pblczero::Node::Argument::AllocationLocation::ALLOCATION_UNKNOWN;
   std::uint64_t offset_ = 0;
   CUdeviceptr symbol_ = 0;
 };
 
 struct Lc0exCudaNode {
   CUfunction function_ = nullptr;
+  // Whether any argument is a runtime Parameter.
+  bool has_parameters_ = false;
   std::array<unsigned int, 3> grid_ = {1, 1, 1};
   std::array<unsigned int, 3> block_ = {1, 1, 1};
   unsigned int dynamic_shared_memory_bytes_ = 0;
@@ -300,17 +177,34 @@ class Lc0exCudaExecutable;
 class Lc0exCudaExecution;
 class Lc0exCudaProgram;
 
+// An instantiated CUDA graph of one Program bound to one slot's allocation.
+// The source graph is kept alive so that its node handles can be used to
+// update kernel parameters of the instantiated graph.
+struct Lc0exCudaSlotGraph {
+  CUgraph graph_ = nullptr;
+  CUgraphExec graph_exec_ = nullptr;
+  std::vector<CUgraphNode> nodes_;
+};
+
+void DestroySlotGraph(Lc0exCudaSlotGraph& graph) {
+  if (graph.graph_exec_) IgnoreCuda(cuGraphExecDestroy(graph.graph_exec_));
+  if (graph.graph_) IgnoreCuda(cuGraphDestroy(graph.graph_));
+  graph = {};
+}
+
 struct Lc0exCudaExecutionSlot {
   Lc0exCudaAllocation allocation_;
   CUstream stream_ = nullptr;
-  CUgraphExec graph_exec_ = nullptr;
-  const Lc0exCudaProgram* captured_program_ = nullptr;
+  // Graphs are cached per Program, so that alternating between programs (e.g.
+  // batch sizes) does not re-instantiate them.
+  std::unordered_map<const Lc0exCudaProgram*, Lc0exCudaSlotGraph> graphs_;
   bool in_use_ = false;
 };
 
 void DestroyExecutionSlot(Lc0exCudaExecutionSlot& slot) {
   if (slot.stream_) IgnoreCuda(cuStreamSynchronize(slot.stream_));
-  if (slot.graph_exec_) IgnoreCuda(cuGraphExecDestroy(slot.graph_exec_));
+  for (auto& [program, graph] : slot.graphs_) DestroySlotGraph(graph);
+  slot.graphs_.clear();
   if (slot.allocation_.base_) IgnoreCuda(cuMemFree(slot.allocation_.base_));
   if (slot.stream_) IgnoreCuda(cuStreamDestroy(slot.stream_));
 }
@@ -498,12 +392,21 @@ class Lc0exCudaExecution final : public Execution {
   ~Lc0exCudaExecution() override;
 
   Buffer& GetBuffer(const BufferInfo& info) override {
-    return *buffers_[program_->buffer_indices_.find(info.name)->second];
+    const auto iter = program_->buffer_indices_.find(info.name);
+    if (iter == program_->buffer_indices_.end()) {
+      throw Exception("The lc0ex program '" + program_->info_.name +
+                      "' has no buffer '" + info.name + "'.");
+    }
+    return *buffers_[iter->second];
   }
 
   Parameter& GetParameter(std::string_view name) override {
-    return parameters_[program_->parameter_indices_.find(std::string(name))
-                           ->second];
+    const auto iter = program_->parameter_indices_.find(std::string(name));
+    if (iter == program_->parameter_indices_.end()) {
+      throw Exception("The lc0ex program '" + program_->info_.name +
+                      "' has no parameter '" + std::string(name) + "'.");
+    }
+    return parameters_[iter->second];
   }
 
   void ResetParameters() override {
@@ -568,51 +471,7 @@ class Lc0exCudaExecution final : public Execution {
     }
   }
 
-  void Run() override {
-    executable_->SetCurrent();
-    in_flight_ = true;
-    if (slot_->graph_exec_ != nullptr && slot_->captured_program_ == program_) {
-      LC0EX_CUDA_CHECK(cuGraphLaunch(slot_->graph_exec_, slot_->stream_));
-      return;
-    }
-    if (slot_->graph_exec_ != nullptr) {
-      cuGraphExecDestroy(slot_->graph_exec_);
-      slot_->graph_exec_ = nullptr;
-    }
-    CUgraph graph = nullptr;
-    LC0EX_CUDA_CHECK(cuGraphCreate(&graph, 0));
-
-    std::vector<CUgraphNode> graph_nodes(program_->nodes_.size(), nullptr);
-    for (std::size_t i = 0; i < program_->nodes_.size(); ++i) {
-      const auto& node = program_->nodes_[i];
-
-      CUDA_KERNEL_NODE_PARAMS params{};
-      params.func = node.function_;
-      params.gridDimX = node.grid_[0];
-      params.gridDimY = node.grid_[1];
-      params.gridDimZ = node.grid_[2];
-      params.blockDimX = node.block_[0];
-      params.blockDimY = node.block_[1];
-      params.blockDimZ = node.block_[2];
-      params.sharedMemBytes = node.dynamic_shared_memory_bytes_;
-      params.kernelParams = const_cast<void**>(launch_arguments_[i].data());
-      params.extra = nullptr;
-
-      std::vector<CUgraphNode> deps;
-      deps.reserve(node.dependencies_.size());
-      for (const auto dep_idx : node.dependencies_) {
-        deps.push_back(graph_nodes[dep_idx]);
-      }
-
-      LC0EX_CUDA_CHECK(cuGraphAddKernelNode(
-          &graph_nodes[i], graph, deps.data(), deps.size(), &params));
-    }
-
-    LC0EX_CUDA_CHECK(cuGraphInstantiate(&slot_->graph_exec_, graph, 0));
-    LC0EX_CUDA_CHECK(cuGraphDestroy(graph));
-    slot_->captured_program_ = program_;
-    LC0EX_CUDA_CHECK(cuGraphLaunch(slot_->graph_exec_, slot_->stream_));
-  }
+  void Run() override;
 
   void Synchronize() override {
     if (!in_flight_) return;
@@ -629,7 +488,80 @@ class Lc0exCudaExecution final : public Execution {
   std::vector<Lc0exCudaParameter> parameters_;
   std::vector<std::vector<void*>> launch_arguments_;
   std::vector<std::vector<CUdeviceptr>> allocation_argument_values_;
+
+ private:
+  CUDA_KERNEL_NODE_PARAMS MakeKernelNodeParams(std::size_t node_index);
+  void BuildGraph(Lc0exCudaSlotGraph& graph);
 };
+
+CUDA_KERNEL_NODE_PARAMS Lc0exCudaExecution::MakeKernelNodeParams(
+    std::size_t node_index) {
+  const auto& node = program_->nodes_[node_index];
+  CUDA_KERNEL_NODE_PARAMS params{};
+  params.func = node.function_;
+  params.gridDimX = node.grid_[0];
+  params.gridDimY = node.grid_[1];
+  params.gridDimZ = node.grid_[2];
+  params.blockDimX = node.block_[0];
+  params.blockDimY = node.block_[1];
+  params.blockDimZ = node.block_[2];
+  params.sharedMemBytes = node.dynamic_shared_memory_bytes_;
+  params.kernelParams = launch_arguments_[node_index].data();
+  params.extra = nullptr;
+  return params;
+}
+
+void Lc0exCudaExecution::BuildGraph(Lc0exCudaSlotGraph& graph) {
+  try {
+    LC0EX_CUDA_CHECK(cuGraphCreate(&graph.graph_, 0));
+    graph.nodes_.assign(program_->nodes_.size(), nullptr);
+    std::vector<CUgraphNode> dependencies;
+    for (std::size_t i = 0; i < program_->nodes_.size(); ++i) {
+      // Dependencies refer to earlier nodes; this is checked at load time.
+      dependencies.clear();
+      for (const auto dependency : program_->nodes_[i].dependencies_) {
+        dependencies.push_back(graph.nodes_[dependency]);
+      }
+      const auto params = MakeKernelNodeParams(i);
+      LC0EX_CUDA_CHECK(cuGraphAddKernelNode(&graph.nodes_[i], graph.graph_,
+                                            dependencies.data(),
+                                            dependencies.size(), &params));
+    }
+    LC0EX_CUDA_CHECK(cuGraphInstantiate(&graph.graph_exec_, graph.graph_, 0));
+  } catch (...) {
+    DestroySlotGraph(graph);
+    throw;
+  }
+}
+
+void Lc0exCudaExecution::Run() {
+  if (in_flight_) {
+    throw Exception("An lc0ex execution must be synchronized before rerun.");
+  }
+  for (const auto& parameter : parameters_) {
+    if (!parameter.IsSet()) {
+      throw Exception("The lc0ex parameter '" + parameter.GetInfo().name +
+                      "' is not set.");
+    }
+  }
+
+  executable_->SetCurrent();
+  auto& graph = slot_->graphs_[program_];
+  if (graph.graph_exec_ == nullptr) {
+    BuildGraph(graph);
+  } else {
+    // Kernel node arguments are copied into the graph when it is built, so
+    // runtime parameter values must be refreshed on every launch.
+    for (std::size_t i = 0; i < program_->nodes_.size(); ++i) {
+      if (!program_->nodes_[i].has_parameters_) continue;
+      const auto params = MakeKernelNodeParams(i);
+      LC0EX_CUDA_CHECK(cuGraphExecKernelNodeSetParams(
+          graph.graph_exec_, graph.nodes_[i], &params));
+    }
+  }
+  LC0EX_CUDA_CHECK(cuGraphLaunch(graph.graph_exec_, slot_->stream_));
+  in_flight_ = true;
+}
 
 const ParameterInfo& Lc0exCudaParameter::GetInfo() const {
   return execution_->program_->parameters_[slot_];
@@ -651,6 +583,16 @@ void Lc0exCudaParameter::Reset() {
   pointer_ = 0;
 }
 
+// A host copy transfers a logical row-major prefix of the buffer.
+void CheckHostCopyBounds(const BufferInfo& info, std::size_t host_size,
+                         std::size_t size_bytes) {
+  if (size_bytes > host_size || size_bytes > info.size_bytes) {
+    throw Exception("Host copy of " + std::to_string(size_bytes) +
+                    " bytes exceeds the bounds of lc0ex buffer '" + info.name +
+                    "'.");
+  }
+}
+
 void Lc0exCudaBuffer::CopyFromHost(std::span<const std::byte> source,
                                    std::optional<std::size_t> size_bytes) {
   const std::size_t copy_size = size_bytes.value_or(source.size());
@@ -658,14 +600,20 @@ void Lc0exCudaBuffer::CopyFromHost(std::span<const std::byte> source,
 
   executable_->SetCurrent();
   const auto default_strides = DefaultStrides(info_->shape);
+  CheckHostCopyBounds(*info_, source.size(), copy_size);
   if (info_->strides == default_strides) {
     LC0EX_CUDA_CHECK(cuMemcpyHtoD(address_, source.data(), copy_size));
     return;
   }
 
   const auto elem_size = ElementSize(info_->data_type);
-  CopyStridedHtoD(info_->shape, info_->strides, default_strides, elem_size,
-                  source.data(), address_);
+  ForEachContiguousChunk(
+      PrefixShape(info_->shape, elem_size, copy_size), info_->strides,
+      default_strides, elem_size,
+      [&](std::int64_t dst_offset, std::int64_t src_offset, std::size_t size) {
+        LC0EX_CUDA_CHECK(cuMemcpyHtoD(address_ + dst_offset,
+                                      source.data() + src_offset, size));
+      });
 }
 
 void Lc0exCudaBuffer::CopyToHost(std::span<std::byte> destination,
@@ -675,14 +623,20 @@ void Lc0exCudaBuffer::CopyToHost(std::span<std::byte> destination,
 
   executable_->SetCurrent();
   const auto default_strides = DefaultStrides(info_->shape);
+  CheckHostCopyBounds(*info_, destination.size(), copy_size);
   if (info_->strides == default_strides) {
     LC0EX_CUDA_CHECK(cuMemcpyDtoH(destination.data(), address_, copy_size));
     return;
   }
 
   const auto elem_size = ElementSize(info_->data_type);
-  CopyStridedDtoH(info_->shape, default_strides, info_->strides, elem_size,
-                  address_, destination.data());
+  ForEachContiguousChunk(
+      PrefixShape(info_->shape, elem_size, copy_size), default_strides,
+      info_->strides, elem_size,
+      [&](std::int64_t dst_offset, std::int64_t src_offset, std::size_t size) {
+        LC0EX_CUDA_CHECK(cuMemcpyDtoH(destination.data() + dst_offset,
+                                      address_ + src_offset, size));
+      });
 }
 
 Lc0exCudaExecutable::~Lc0exCudaExecutable() {
@@ -753,6 +707,150 @@ std::unique_ptr<Execution> Lc0exCudaExecutable::CreateExecution(
   execution->Initialize();
   return execution;
 }
+
+// Checks the references and invariants of an executable that the builders
+// below rely on, so that malformed files produce an error instead of
+// out-of-bounds accesses.
+class ExecutableValidator {
+ public:
+  explicit ExecutableValidator(const pblczero::NeuralExecutable& source)
+      : source_(source) {}
+
+  void Validate() {
+    for (const auto& binary : source_.binaries()) {
+      Check(binary.format() == pblczero::Binary::FORMAT_CUBIN,
+            "unsupported binary format");
+    }
+    std::uint64_t persistent_size = 0;
+    if (source_.has_persistent_allocation()) {
+      ValidateAllocation(source_.persistent_allocation());
+      persistent_size = source_.persistent_allocation().size_bytes();
+    }
+    for (const auto& parameter : source_.parameters()) {
+      Check(
+          parameter.type() == pblczero::ParameterType_PARAMETER_TYPE_U32 ||
+              parameter.type() ==
+                  pblczero::ParameterType_PARAMETER_TYPE_POINTER,
+          "invalid type of parameter '" + std::string(parameter.name()) + "'");
+      Check(parameter_types_
+                .emplace(std::string(parameter.name()), parameter.type())
+                .second,
+            "duplicate parameter '" + std::string(parameter.name()) + "'");
+    }
+    for (const auto& buffer : source_.buffers()) {
+      ValidateBuffer(buffer, persistent_size);
+    }
+    for (const auto& kernel : source_.kernels()) {
+      Check(kernel.binary_idx() < source_.binaries_size(),
+            "kernel '" + std::string(kernel.function()) +
+                "' refers to a missing binary");
+      for (const auto type : kernel.parameters()) {
+        Check(type != pblczero::ParameterType_PARAMETER_TYPE_UNKNOWN,
+              "kernel '" + std::string(kernel.function()) +
+                  "' has an unknown parameter type");
+      }
+    }
+    for (const auto& program : source_.programs()) ValidateProgram(program);
+  }
+
+ private:
+  void Check(bool condition, const std::string& message) const {
+    if (!condition)
+      throw Exception("Invalid lc0ex executable: " + message + ".");
+  }
+
+  void ValidateAllocation(const pblczero::Allocation& allocation) const {
+    const auto alignment = allocation.alignment_bytes();
+    Check(alignment != 0 && (alignment & (alignment - 1)) == 0,
+          "allocation alignment must be a nonzero power of two");
+  }
+
+  void ValidateBuffer(const pblczero::Buffer& buffer,
+                      std::uint64_t allocation_size) const {
+    const std::string name(buffer.name());
+    const std::vector<std::uint64_t> shape(buffer.shape().begin(),
+                                           buffer.shape().end());
+    std::vector<std::int64_t> strides = DefaultStrides(shape);
+    if (buffer.has_layout() && buffer.layout().strides_size() > 0) {
+      strides.assign(buffer.layout().strides().begin(),
+                     buffer.layout().strides().end());
+    }
+    const auto extent =
+        StridedExtentBytes(shape, strides, ElementSize(buffer.data_type()));
+    Check(extent.has_value(), "buffer '" + name + "' has an invalid layout");
+    Check(buffer.offset() <= allocation_size &&
+              *extent <= allocation_size - buffer.offset(),
+          "buffer '" + name + "' exceeds its allocation");
+  }
+
+  void ValidateProgram(const pblczero::Program& program) const {
+    const std::string program_name(program.name());
+    std::uint64_t execution_size = 0;
+    if (program.has_execution_allocation()) {
+      ValidateAllocation(program.execution_allocation());
+      execution_size = program.execution_allocation().size_bytes();
+    }
+    for (const auto& buffer : program.buffers()) {
+      ValidateBuffer(buffer, execution_size);
+    }
+    for (std::size_t i = 0; i < program.nodes_size(); ++i) {
+      ValidateNode(
+          program.nodes(i), i,
+          "node " + std::to_string(i) + " of program '" + program_name + "'");
+    }
+  }
+
+  void ValidateNode(const pblczero::Node& node, std::size_t node_index,
+                    const std::string& where) const {
+    Check(node.kernel_idx() < source_.kernels_size(),
+          where + " refers to a missing kernel");
+    for (const auto dependency : node.dependencies()) {
+      Check(dependency < node_index,
+            where + " must only depend on earlier nodes");
+    }
+    std::size_t argument_index = 0;
+    for (const auto type : source_.kernels(node.kernel_idx()).parameters()) {
+      if (type == pblczero::ParameterType_PARAMETER_TYPE_NULL_POINTER) continue;
+      Check(argument_index < node.arguments_size(),
+            where + " has too few arguments");
+      ValidateArgument(node.arguments(argument_index++), type, where);
+    }
+    Check(argument_index == node.arguments_size(),
+          where + " has too many arguments");
+  }
+
+  void ValidateArgument(const pblczero::Node::Argument& argument,
+                        pblczero::ParameterType type,
+                        const std::string& where) const {
+    Check(argument.has_parameter_name() + argument.has_allocation() +
+                  argument.has_symbol() ==
+              1,
+          where + " has an argument without exactly one source");
+    if (argument.has_parameter_name()) {
+      const auto iter =
+          parameter_types_.find(std::string(argument.parameter_name()));
+      Check(iter != parameter_types_.end(),
+            where + " refers to a missing parameter");
+      Check(iter->second == type, where + " has a mistyped parameter");
+      return;
+    }
+    Check(type == pblczero::ParameterType_PARAMETER_TYPE_POINTER,
+          where + " passes a pointer to a non-pointer parameter");
+    if (argument.has_symbol()) {
+      Check(argument.symbol().binary_idx() < source_.binaries_size(),
+            where + " refers to a symbol in a missing binary");
+      return;
+    }
+    using AllocationLocation = pblczero::Node::Argument::AllocationLocation;
+    const auto kind = argument.allocation().kind();
+    Check(kind == AllocationLocation::ALLOCATION_PERSISTENT ||
+              kind == AllocationLocation::ALLOCATION_EXECUTION,
+          where + " has an unknown allocation kind");
+  }
+
+  const pblczero::NeuralExecutable& source_;
+  std::unordered_map<std::string, pblczero::ParameterType> parameter_types_;
+};
 
 void BuildModules(Lc0exCudaExecutable& executable,
                   const pblczero::NeuralExecutable& source) {
@@ -860,8 +958,9 @@ void BuildKernels(Lc0exCudaExecutable& executable,
 Lc0exCudaArgument BuildParameterArgument(
     Lc0exCudaExecutable& executable, Lc0exCudaProgram& program,
     const pblczero::Node::Argument& source) {
-  const auto& global_parameter = executable.parameters_[
-      executable.parameter_indices_.at(std::string(source.parameter_name()))];
+  const auto& global_parameter =
+      executable.parameters_[executable.parameter_indices_.at(
+          std::string(source.parameter_name()))];
   const auto [local_iter, inserted] = program.parameter_indices_.try_emplace(
       global_parameter.name, program.parameters_.size());
   if (inserted) program.parameters_.push_back(global_parameter);
@@ -882,22 +981,22 @@ Lc0exCudaArgument BuildAllocationArgument(
   return argument;
 }
 
-Lc0exCudaArgument BuildSymbolArgument(
-    Lc0exCudaExecutable& executable, const pblczero::Node::Argument& source) {
+Lc0exCudaArgument BuildSymbolArgument(Lc0exCudaExecutable& executable,
+                                      const pblczero::Node::Argument& source) {
   const auto& symbol = source.symbol();
   Lc0exCudaArgument argument;
   argument.kind_ = Lc0exCudaArgument::Kind::kSymbol;
   std::size_t symbol_size = 0;
   const std::string symbol_name(symbol.symbol_name());
-  LC0EX_CUDA_CHECK(cuModuleGetGlobal(
-      &argument.symbol_, &symbol_size,
-      executable.modules_[symbol.binary_idx()], symbol_name.c_str()));
+  LC0EX_CUDA_CHECK(cuModuleGetGlobal(&argument.symbol_, &symbol_size,
+                                     executable.modules_[symbol.binary_idx()],
+                                     symbol_name.c_str()));
   return argument;
 }
 
-Lc0exCudaArgument BuildArgument(
-    Lc0exCudaExecutable& executable, Lc0exCudaProgram& program,
-    const pblczero::Node::Argument& source) {
+Lc0exCudaArgument BuildArgument(Lc0exCudaExecutable& executable,
+                                Lc0exCudaProgram& program,
+                                const pblczero::Node::Argument& source) {
   if (source.has_allocation()) {
     return BuildAllocationArgument(source);
   }
@@ -907,10 +1006,8 @@ Lc0exCudaArgument BuildArgument(
   return BuildParameterArgument(executable, program, source);
 }
 
-void BuildArguments(Lc0exCudaExecutable& executable,
-                    Lc0exCudaProgram& program,
-                    const pblczero::Node& source,
-                    const Lc0exCudaKernel& kernel,
+void BuildArguments(Lc0exCudaExecutable& executable, Lc0exCudaProgram& program,
+                    const pblczero::Node& source, const Lc0exCudaKernel& kernel,
                     Lc0exCudaNode* destination) {
   auto source_argument = source.arguments().begin();
   destination->arguments_.reserve(kernel.parameters_.size());
@@ -955,12 +1052,11 @@ void BuildProgram(Lc0exCudaExecutable& executable,
     plan.grid_ = LaunchDimensions(node.grid());
     plan.block_ = LaunchDimensions(node.block());
     plan.dynamic_shared_memory_bytes_ = node.dynamic_shared_memory_bytes();
-    if (plan.dynamic_shared_memory_bytes_ != 0) {
-      LC0EX_CUDA_CHECK(cuFuncSetAttribute(
-          plan.function_, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-          plan.dynamic_shared_memory_bytes_));
-    }
     BuildArguments(executable, *destination, node, kernel, &plan);
+    plan.has_parameters_ =
+        absl::c_any_of(plan.arguments_, [](const auto& argument) {
+          return argument.kind_ == Lc0exCudaArgument::Kind::kParameter;
+        });
     plan.dependencies_.assign(node.dependencies().begin(),
                               node.dependencies().end());
 
@@ -990,6 +1086,23 @@ void BuildPrograms(Lc0exCudaExecutable& executable,
   }
 }
 
+// The dynamic shared memory limit is an attribute of the CUfunction, so it is
+// set to the maximum requested by any node using that function.
+void SetSharedMemoryLimits(Lc0exCudaExecutable& executable) {
+  std::unordered_map<CUfunction, unsigned int> limits;
+  for (const auto& program : executable.programs_) {
+    for (const auto& node : program.nodes_) {
+      auto& limit = limits[node.function_];
+      limit = std::max(limit, node.dynamic_shared_memory_bytes_);
+    }
+  }
+  for (const auto& [function, limit] : limits) {
+    if (limit == 0) continue;
+    LC0EX_CUDA_CHECK(cuFuncSetAttribute(
+        function, CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, limit));
+  }
+}
+
 class Lc0exCudaRuntime final : public Runtime {
  public:
   explicit Lc0exCudaRuntime(int device_ordinal) {
@@ -1003,6 +1116,7 @@ class Lc0exCudaRuntime final : public Runtime {
     if (source.format() != kFormat) {
       throw Exception("Unsupported lc0ex format generation.");
     }
+    ExecutableValidator(source).Validate();
 
     auto executable = std::make_unique<Lc0exCudaExecutable>(device_);
     executable->Initialize();
@@ -1017,6 +1131,7 @@ class Lc0exCudaRuntime final : public Runtime {
     BuildPersistentBuffers(*executable, source);
     BuildKernels(*executable, source);
     BuildPrograms(*executable, source);
+    SetSharedMemoryLimits(*executable);
     return executable;
   }
 

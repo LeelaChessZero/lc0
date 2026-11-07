@@ -30,6 +30,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <initializer_list>
 #include <iterator>
@@ -52,6 +53,7 @@
 #include "neural/register.h"
 #include "neural/shared_params.h"
 #include "proto/lc0ex_metadata.pb.h"
+#include "runtime/layout.h"
 #include "runtime/lc0ex_cuda.h"
 #include "utils/atomic_vector.h"
 #include "utils/exception.h"
@@ -77,23 +79,6 @@ FillEmptyHistory ParseHistoryFill(const std::string& value) {
   throw Exception("Unknown history fill mode '" + value + "'.");
 }
 
-std::uint64_t DataTypeSize(pblczero::Buffer::DataType data_type) {
-  switch (data_type) {
-    case pblczero::Buffer::DATA_TYPE_F32:
-      return sizeof(float);
-    case pblczero::Buffer::DATA_TYPE_U8:
-      return sizeof(std::uint8_t);
-    case pblczero::Buffer::DATA_TYPE_F16:
-      return sizeof(std::uint16_t);
-    case pblczero::Buffer::DATA_TYPE_U64:
-      return sizeof(std::uint64_t);
-    case pblczero::Buffer::DATA_TYPE_BF16:
-      return sizeof(std::uint16_t);
-    default:
-      throw Exception("Unsupported or unknown lc0ex buffer data type.");
-  }
-}
-
 const lc0ex::BufferInfo* RequireProgramBuffer(
     const lc0ex::Program& program, std::string_view name,
     pblczero::Buffer::DataType data_type,
@@ -112,7 +97,7 @@ const lc0ex::BufferInfo* RequireProgramBuffer(
                     std::string(name) + "'.");
   }
 
-  std::uint64_t expected_size = DataTypeSize(data_type);
+  std::uint64_t expected_size = lc0ex::ElementSize(data_type);
   std::size_t dimension_index = 0;
   for (const std::uint64_t dimension : shape) {
     if (buffer->shape[dimension_index++] != dimension) {
@@ -120,8 +105,7 @@ const lc0ex::BufferInfo* RequireProgramBuffer(
                       std::string(name) + "'.");
     }
     if (dimension != 0 &&
-        expected_size > std::numeric_limits<std::uint64_t>::max() /
-                            dimension) {
+        expected_size > std::numeric_limits<std::uint64_t>::max() / dimension) {
       throw Exception("Size overflow for lc0ex program buffer '" +
                       std::string(name) + "'.");
     }
@@ -153,8 +137,7 @@ pblczero::NeuralExecutable LoadExecutableFile(const std::string& path) {
   std::string serialized((std::istreambuf_iterator<char>(file)),
                          std::istreambuf_iterator<char>());
   if (file.bad()) {
-    throw Exception("Error while reading lc0ex executable from " + path +
-                    ".");
+    throw Exception("Error while reading lc0ex executable from " + path + ".");
   }
 
   pblczero::NeuralExecutable executable;
@@ -185,13 +168,11 @@ void ValidateInitializer(const lc0ex::BufferInfo& buffer,
                     "'.");
   }
   if (!HasMatchingShape(buffer, initializer)) {
-    throw Exception("Shape mismatch for lc0ex buffer '" + buffer.name +
-                    "'.");
+    throw Exception("Shape mismatch for lc0ex buffer '" + buffer.name + "'.");
   }
   if (static_cast<std::uint64_t>(initializer.raw_data().size()) !=
       buffer.size_bytes) {
-    throw Exception("Size mismatch for lc0ex buffer '" + buffer.name +
-                    "'.");
+    throw Exception("Size mismatch for lc0ex buffer '" + buffer.name + "'.");
   }
 }
 
@@ -224,81 +205,25 @@ WeightsToOnnxConverterOptions MakeConverterOptions(
   return converter_options;
 }
 
-void CopyStridedHostTensor(
-    const std::vector<std::uint64_t>& shape,
-    const std::vector<std::int64_t>& dst_strides,
-    const std::vector<std::int64_t>& src_strides,
-    std::size_t elem_size,
-    const std::byte* src,
-    std::byte* dst) {
-  if (shape.empty()) {
-    std::memcpy(dst, src, elem_size);
-    return;
-  }
-  std::size_t contiguous_dim = shape.size();
-  std::size_t contiguous_bytes = elem_size;
-  while (contiguous_dim > 0) {
-    std::size_t dim = contiguous_dim - 1;
-    if (dim == shape.size() - 1) {
-      if (dst_strides[dim] == 1 && src_strides[dim] == 1) {
-        contiguous_bytes *= shape[dim];
-        contiguous_dim = dim;
-      } else {
-        break;
-      }
-    } else {
-      if (dst_strides[dim] ==
-              dst_strides[dim + 1] *
-                  static_cast<std::int64_t>(shape[dim + 1]) &&
-          src_strides[dim] ==
-              src_strides[dim + 1] *
-                  static_cast<std::int64_t>(shape[dim + 1])) {
-        contiguous_bytes *= shape[dim];
-        contiguous_dim = dim;
-      } else {
-        break;
-      }
-    }
-  }
-
-  auto copy_dim = [&](auto& self, std::size_t dim, const std::byte* s,
-                      std::byte* d) -> void {
-    if (dim >= contiguous_dim) {
-      std::memcpy(d, s, contiguous_bytes);
-      return;
-    }
-    for (std::uint64_t i = 0; i < shape[dim]; ++i) {
-      self(self, dim + 1, s + i * src_strides[dim] * elem_size,
-           d + i * dst_strides[dim] * elem_size);
-    }
-  };
-  copy_dim(copy_dim, 0, src, dst);
-}
-
-std::vector<std::int64_t> DefaultStrides(
-    const std::vector<std::uint64_t>& shape) {
-  std::vector<std::int64_t> strides(shape.size(), 1);
-  if (shape.empty()) return strides;
-  for (std::size_t i = shape.size() - 1; i > 0; --i) {
-    strides[i - 1] = strides[i] * static_cast<std::int64_t>(shape[i]);
-  }
-  return strides;
-}
-
 void CopyTensorToHostStaging(const lc0ex::BufferInfo& buffer,
                              std::span<const std::byte> source,
                              std::span<std::byte> destination_staging) {
-  const auto elem_size = DataTypeSize(buffer.data_type);
-  const auto src_strides = DefaultStrides(buffer.shape);
-
-  if (buffer.offset_bytes >= destination_staging.size()) {
+  const auto elem_size = lc0ex::ElementSize(buffer.data_type);
+  const auto extent =
+      lc0ex::StridedExtentBytes(buffer.shape, buffer.strides, elem_size);
+  if (!extent || buffer.offset_bytes > destination_staging.size() ||
+      *extent > destination_staging.size() - buffer.offset_bytes) {
     throw Exception("Buffer '" + buffer.name +
-                    "' offset exceeds persistent allocation bounds.");
+                    "' exceeds persistent allocation bounds.");
   }
 
-  CopyStridedHostTensor(
-      buffer.shape, buffer.strides, src_strides, elem_size,
-      source.data(), destination_staging.data() + buffer.offset_bytes);
+  std::byte* destination = destination_staging.data() + buffer.offset_bytes;
+  lc0ex::ForEachContiguousChunk(
+      buffer.shape, buffer.strides, lc0ex::DefaultStrides(buffer.shape),
+      elem_size,
+      [&](std::int64_t dst_offset, std::int64_t src_offset, std::size_t size) {
+        std::memcpy(destination + dst_offset, source.data() + src_offset, size);
+      });
 }
 
 void UploadWeights(const WeightsFile& weights, lc0ex::Executable& executable,
@@ -319,8 +244,8 @@ void UploadWeights(const WeightsFile& weights, lc0ex::Executable& executable,
       initializers_by_name;
   initializers_by_name.reserve(onnx.graph().initializer_size());
   std::string duplicate_initializer;
-  const bool unique_initializers = absl::c_all_of(
-      onnx.graph().initializer(), [&](const auto& initializer) {
+  const bool unique_initializers =
+      absl::c_all_of(onnx.graph().initializer(), [&](const auto& initializer) {
         const auto name = std::string(initializer.name());
         if (!initializers_by_name.emplace(name, &initializer).second) {
           duplicate_initializer = name;
@@ -445,7 +370,8 @@ class Lc0exCudaBackend final : public Backend {
             backend_options.GetOrDefault<int>("concurrency", 1)),
         backend_options_(
             options.Get<std::string>(SharedBackendParams::kBackendOptionsId)),
-        weights_path_(options.Get<std::string>(SharedBackendParams::kWeightsId)),
+        weights_path_(
+            options.Get<std::string>(SharedBackendParams::kWeightsId)),
         input_format_(weights.format().network_format().input()) {
     UpdateConfiguration(options);
 
@@ -489,11 +415,11 @@ class Lc0exCudaBackend final : public Backend {
   }
 
   const ProgramSpec& FindProgram(std::size_t batch_size) const {
-    const auto iter = std::lower_bound(
-        programs_.begin(), programs_.end(), batch_size,
-        [](const ProgramSpec& program, std::size_t size) {
-          return program.batch_size < size;
-        });
+    const auto iter =
+        std::lower_bound(programs_.begin(), programs_.end(), batch_size,
+                         [](const ProgramSpec& program, std::size_t size) {
+                           return program.batch_size < size;
+                         });
     if (iter == programs_.end()) {
       throw Exception("NN input exceeds maximum lc0ex batch size of " +
                       std::to_string(attributes_.maximum_batch_size) + ".");
@@ -539,9 +465,9 @@ class Lc0exCudaBackend final : public Backend {
                         "' has no moves-left output buffer.");
       }
       if (output_mlh) {
-        output_mlh = RequireProgramBuffer(
-            *program, kOutputMlhName, pblczero::Buffer::DATA_TYPE_F32,
-            {batch_size, 1});
+        output_mlh = RequireProgramBuffer(*program, kOutputMlhName,
+                                          pblczero::Buffer::DATA_TYPE_F32,
+                                          {batch_size, 1});
       }
 
       programs_.push_back({batch_size, program, input_masks, input_values,
@@ -575,9 +501,9 @@ class Lc0exCudaBackend final : public Backend {
 BackendComputation::AddInputResult Lc0exCudaBackendComputation::AddInput(
     const EvalPosition& pos, EvalResultPtr result) {
   int transform = 0;
-  const InputPlanes input = EncodePositionForNN(
-      backend_->input_format_, pos.pos, kMoveHistory,
-      backend_->fill_empty_history_, &transform);
+  const InputPlanes input =
+      EncodePositionForNN(backend_->input_format_, pos.pos, kMoveHistory,
+                          backend_->fill_empty_history_, &transform);
 
   Entry entry{
       .masks = {},
@@ -611,8 +537,7 @@ void Lc0exCudaBackendComputation::DecodePolicy(
 
   float total = 0.0f;
   for (float& value : entry.result.p) {
-    value = FastExp(
-        (value - maximum) * backend_->inverse_policy_temperature_);
+    value = FastExp((value - maximum) * backend_->inverse_policy_temperature_);
     total += value;
   }
   const float scale = total > 0.0f ? 1.0f / total : 1.0f;
@@ -624,7 +549,6 @@ void Lc0exCudaBackendComputation::ComputeBlocking() {
   if (actual_batch == 0) return;
 
   const ProgramSpec& program = backend_->FindProgram(actual_batch);
-  auto execution = backend_->CreateExecution(program);
 
   std::vector<std::uint64_t> masks(actual_batch * kInputPlanes);
   std::vector<float> values(actual_batch * kInputPlanes);
@@ -638,44 +562,48 @@ void Lc0exCudaBackendComputation::ComputeBlocking() {
 
   const auto mask_bytes = std::as_bytes(std::span<const std::uint64_t>(masks));
   const auto value_bytes = std::as_bytes(std::span<const float>(values));
-  execution->GetBuffer(*program.input_masks)
-      .CopyFromHost(mask_bytes, mask_bytes.size());
-  execution->GetBuffer(*program.input_values)
-      .CopyFromHost(value_bytes, value_bytes.size());
-
   std::vector<float> policy(actual_batch * kNumOutputPolicy);
   std::vector<float> wdl(actual_batch * kNumWdlOutputs);
   std::vector<float> mlh;
   if (program.output_mlh) mlh.resize(actual_batch);
 
   {
+    // The permit is held for the whole lifetime of the execution, so that at
+    // most `concurrency` execution slots (each with its own maximum-sized
+    // device allocation) are ever created. Host copies use the legacy default
+    // stream, which serializes with the execution streams anyway.
     ExecutionPermit permit(backend_->execution_semaphore_);
+    auto execution = backend_->CreateExecution(program);
+
+    execution->GetBuffer(*program.input_masks)
+        .CopyFromHost(mask_bytes, mask_bytes.size());
+    execution->GetBuffer(*program.input_values)
+        .CopyFromHost(value_bytes, value_bytes.size());
     execution->Run();
     execution->Synchronize();
-  }
 
-  const auto policy_bytes = std::as_writable_bytes(std::span<float>(policy));
-  execution->GetBuffer(*program.output_policy)
-      .CopyToHost(policy_bytes, policy_bytes.size());
-  const auto wdl_bytes = std::as_writable_bytes(std::span<float>(wdl));
-  execution->GetBuffer(*program.output_wdl)
-      .CopyToHost(wdl_bytes, wdl_bytes.size());
-  if (program.output_mlh) {
-    const auto mlh_bytes = std::as_writable_bytes(std::span<float>(mlh));
-    execution->GetBuffer(*program.output_mlh)
-        .CopyToHost(mlh_bytes, mlh_bytes.size());
+    const auto policy_bytes = std::as_writable_bytes(std::span<float>(policy));
+    execution->GetBuffer(*program.output_policy)
+        .CopyToHost(policy_bytes, policy_bytes.size());
+    const auto wdl_bytes = std::as_writable_bytes(std::span<float>(wdl));
+    execution->GetBuffer(*program.output_wdl)
+        .CopyToHost(wdl_bytes, wdl_bytes.size());
+    if (program.output_mlh) {
+      const auto mlh_bytes = std::as_writable_bytes(std::span<float>(mlh));
+      execution->GetBuffer(*program.output_mlh)
+          .CopyToHost(mlh_bytes, mlh_bytes.size());
+    }
   }
 
   for (std::size_t sample = 0; sample < actual_batch; ++sample) {
     const Entry& entry = entries_[sample];
-    DecodeWdl(std::span<const float>(
-                  wdl.data() + sample * kNumWdlOutputs, kNumWdlOutputs),
+    DecodeWdl(std::span<const float>(wdl.data() + sample * kNumWdlOutputs,
+                                     kNumWdlOutputs),
               entry.result);
     if (!entry.result.p.empty()) {
-      DecodePolicy(
-          entry,
-          std::span<const float>(policy.data() + sample * kNumOutputPolicy,
-                                 kNumOutputPolicy));
+      DecodePolicy(entry, std::span<const float>(
+                              policy.data() + sample * kNumOutputPolicy,
+                              kNumOutputPolicy));
     }
     if (entry.result.m) {
       *entry.result.m = mlh.empty() ? 0.0f : mlh[sample];
@@ -700,8 +628,8 @@ class Lc0exCudaBackendFactory final : public BackendFactory {
       throw Exception("The lc0ex-cuda backend requires a network file.");
     }
 
-    auto backend = std::make_unique<Lc0exCudaBackend>(*weights, options,
-                                                       backend_options);
+    auto backend =
+        std::make_unique<Lc0exCudaBackend>(*weights, options, backend_options);
     backend_options.CheckAllOptionsRead(std::string(kBackendName));
     return backend;
   }
