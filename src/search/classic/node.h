@@ -180,14 +180,8 @@ class Node {
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   uint8_t GetNumEdges() const { return num_edges_; }
 
-  // Output must point to at least max_needed floats.
-  void CopyPolicy(int max_needed, float* output) const {
-    if (!edges_) return;
-    int loops = std::min(static_cast<int>(num_edges_), max_needed);
-    for (int i = 0; i < loops; i++) {
-      output[i] = edges_[i].GetP();
-    }
-  }
+  // Policy of edge i (i < GetNumEdges()).
+  float GetEdgeP(int i) const { return edges_[i].GetP(); }
 
   // Makes the node terminal and sets it's score.
   void MakeTerminal(GameResult result, float plies_left = 0.0f,
