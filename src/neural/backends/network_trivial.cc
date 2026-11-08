@@ -53,6 +53,7 @@
 #include "neural/shared_params.h"
 #include "utils/bititer.h"
 #include "utils/fastmath.h"
+#include "utils/random.h"
 
 namespace lczero {
 namespace {
@@ -712,8 +713,7 @@ class TrivialBackend;
 
 class TrivialComputation : public BackendComputation {
  public:
-  explicit TrivialComputation(const TrivialBackend* backend)
-      : backend_(backend) {}
+  explicit TrivialComputation(const TrivialBackend* backend);
   size_t UsedBatchSize() const override { return batch_size_; }
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override;
@@ -722,6 +722,10 @@ class TrivialComputation : public BackendComputation {
  private:
   const TrivialBackend* backend_;
   size_t batch_size_ = 0;
+  // Threshold on 32-bit random values below which a request is reported as
+  // FETCHED_IMMEDIATELY. Zero disables it.
+  uint64_t immediate_threshold_;
+  uint64_t rng_state_ = 0;
 };
 
 class TrivialBackend : public Backend {
@@ -752,6 +756,7 @@ class TrivialBackend : public Backend {
     get_int("doubled", &params_.doubled);
     get_int("bishop_pair", &params_.bishop_pair);
     get_float("policy_temp", &params_.policy_temp);
+    get_float("immediate_fraction", &immediate_fraction_);
     get_float("pst_weight", &params_.pst_weight);
     get_int("check_bonus", &params_.check_bonus);
     get_int("castle_bonus", &params_.castle_bonus);
@@ -792,6 +797,8 @@ class TrivialBackend : public Backend {
     return UPDATE_OK;
   }
 
+  float immediate_fraction() const { return immediate_fraction_; }
+
   void Evaluate(const EvalPosition& pos, EvalResultPtr result) const {
     Pos p;
     Fill(pos.pos.back().GetBoard(), &p);
@@ -813,13 +820,33 @@ class TrivialBackend : public Backend {
   const std::string backend_opts_;
   Params params_;
   float inv_softmax_temp_ = 1.0f;
+  // Fraction of requests that return FETCHED_IMMEDIATELY (as if cached).
+  float immediate_fraction_ = 0.0f;
 };
+
+TrivialComputation::TrivialComputation(const TrivialBackend* backend)
+    : backend_(backend),
+      immediate_threshold_(static_cast<uint64_t>(
+          std::clamp(backend->immediate_fraction(), 0.0f, 1.0f) *
+          4294967296.0)) {
+  if (immediate_threshold_ > 0) {
+    rng_state_ = static_cast<uint64_t>(Random::Get().GetInt(1, 1 << 30));
+  }
+}
 
 BackendComputation::AddInputResult TrivialComputation::AddInput(
     const EvalPosition& pos, EvalResultPtr result) {
   // The evaluation is so cheap that it is done right away; the legal moves
   // span is not guaranteed to outlive this call anyway.
   backend_->Evaluate(pos, result);
+  if (immediate_threshold_ > 0) {
+    // SplitMix64.
+    uint64_t z = (rng_state_ += 0x9E3779B97F4A7C15ull);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
+    z ^= z >> 31;
+    if ((z >> 32) < immediate_threshold_) return FETCHED_IMMEDIATELY;
+  }
   ++batch_size_;
   return ENQUEUED_FOR_EVAL;
 }
