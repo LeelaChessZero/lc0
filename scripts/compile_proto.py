@@ -412,7 +412,20 @@ class ProtoFieldParser:
         else:
             prefix = "if (has_%s_)" % name
             funcname = "AppendJsonField"
-        if self.type.IsEnumType():
+        if self.type.IsEnumType() and self.category == "repeated":
+            w.Write("%s {" % prefix)
+            w.Indent()
+            w.Write("std::vector<std::string> values;")
+            w.Write("values.reserve(%s_.size());" % name)
+            w.Write(
+                "for (const auto x : %s_) values.emplace_back(%s_Name(x));"
+                % (name, self.type.GetCppType())
+            )
+            w.Write('%s("%s", values, &first, &out);' % (funcname, name))
+            w.Unindent()
+            w.Write("}")
+            return
+        elif self.type.IsEnumType():
             value = "%s_Name(%s_)" % (self.type.GetCppType(), name)
         else:
             value = name + "_"
