@@ -25,6 +25,11 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+// fopen is standard C; don't warn about it.
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <zlib.h>
 
 #include <cstdio>
