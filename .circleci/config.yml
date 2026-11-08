@@ -81,7 +81,7 @@ jobs:
             - lc0
   "mac latest":
     macos:
-      xcode: 26.1.0
+      xcode: 27.2.0
     steps:
       - checkout
       - run:
