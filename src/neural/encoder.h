@@ -56,6 +56,19 @@ InputPlanes EncodePositionForNN(
     std::span<const Position> positions, int history_planes,
     FillEmptyHistory fill_empty_history, int* transform_out);
 
+// The most positions CompactHistoryForNN lists: kMoveHistory encoded ones and
+// one between each two of them.
+constexpr int kCompactHistory = 2 * kMoveHistory - 1;
+
+// Lists the positions of `history` that EncodePositionForNN needs, as indices
+// into it, oldest first, and returns how many there are. Encoding just those
+// positions gives the same planes as encoding all of `history`, for every
+// history fill. The canonical v2 formats skip positions that are not repeats,
+// so they can read far more than the last kMoveHistory positions.
+int CompactHistoryForNN(pblczero::NetworkFormat::InputFormat input_format,
+                        std::span<const Position> history,
+                        std::span<int, kCompactHistory> indices);
+
 bool IsCanonicalFormat(pblczero::NetworkFormat::InputFormat input_format);
 bool IsCanonicalArmageddonFormat(
     pblczero::NetworkFormat::InputFormat input_format);
