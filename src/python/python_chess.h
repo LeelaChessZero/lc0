@@ -31,8 +31,13 @@
 #include <string>
 #include <vector>
 
+namespace py = pybind11;
+
 namespace lczero {
 namespace python {
+
+class GameState;
+
 namespace python_chess {
 
 struct BoardData {
@@ -41,7 +46,10 @@ struct BoardData {
     std::vector<std::string> moves;
 };
 
-BoardData GetBoardData(const pybind11::handle& board);
+BoardData GetBoardData(const py::handle& board);
+py::list UciMovesToChessMoves(const std::vector<std::string>& uci_moves);
+py::object ToBoard(const GameState& gs);
+void PushMove(GameState& gs, const py::handle& move);
 
 } // namespace python_chess
 } // namespace python
