@@ -218,6 +218,49 @@ const OptionId BaseSearchParams::kRootHasOwnCpuctParamsId{
          "parameters. Otherwise, they are the same as for the rest of nodes. "
          "Temporary flag for transition to a new version.",
      .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyValueExponentId{
+    {.long_flag = "policy-value-exponent",
+     .uci_option = "PolicyValueExponent",
+     .help_text = "Control sharpness of value based policy decay target. "
+                  "Higher exponents increase the share for the best move.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyValueBaseId{
+    {.long_flag = "policy-value-base",
+     .uci_option = "PolicyValueBase",
+     .help_text =
+         "Control the share of policy reserved for the worst moves. Higher "
+         "values increase share of policy for lowest ranked moves.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyDecayVisitsId{
+    {.long_flag = "policy-decay-visits",
+     .uci_option = "PolicyDecayVisits",
+     .help_text =
+         "Number of visits prior policy is valid. Prior policy decays to value "
+         "policy linearly until reaching the set visit number.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyDecayReductionDelayId{
+    {.long_flag = "policy-decay-reduction-delay",
+     .uci_option = "PolicyDecayReductionDelay",
+     .help_text =
+         "Number of visits to delay the start of policy decay reduction. "
+         "During "
+         "the delay, the policy decay is not reduced by value policy at all, "
+         "after the delay, the policy decay is reduced linearly until reaching "
+         "the set visit number.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyDecayParentVisitsId{
+    {.long_flag = "policy-decay-parent-visits",
+     .uci_option = "PolicyDecayParentVisits",
+     .help_text = "Number of parent visits prior policy is valid. Prior policy "
+                  "decays to "
+                  "value policy linearly until reaching the set visit number.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kPolicyDecayValueShareId{
+    {.long_flag = "policy-decay-value-share",
+     .uci_option = "PolicyDecayValueShare",
+     .help_text =
+         "The maximum percentage that value-based policy decay can reach.",
+     .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kTwoFoldDrawsId{
     "two-fold-draws", "TwoFoldDraws",
     "Evaluates twofold repetitions in the search tree as draws. Visits to "
@@ -551,6 +594,12 @@ void BaseSearchParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kCpuctFactorId, 0.0f, 1000.0f) = 3.894f;
   options->Add<FloatOption>(kCpuctFactorAtRootId, 0.0f, 1000.0f) = 3.894f;
   options->Add<BoolOption>(kRootHasOwnCpuctParamsId) = false;
+  options->Add<FloatOption>(kPolicyValueExponentId, 0, 100.0f) = 10.5f;
+  options->Add<FloatOption>(kPolicyValueBaseId, 0, 100.0f) = 1.4e-4f;
+  options->Add<IntOption>(kPolicyDecayVisitsId, 1, 100000) = 800;
+  options->Add<IntOption>(kPolicyDecayReductionDelayId, 0, 100000) = 800;
+  options->Add<IntOption>(kPolicyDecayParentVisitsId, 1, 100000) = 5000;
+  options->Add<FloatOption>(kPolicyDecayValueShareId, 0.0f, 100.0f) = 85.0f;
   options->Add<BoolOption>(kTwoFoldDrawsId) = true;
   options->Add<FloatOption>(kTemperatureId, 0.0f, 100.0f) = 0.0f;
   options->Add<IntOption>(kTempDecayMovesId, 0, 640) = 0;
@@ -653,6 +702,14 @@ BaseSearchParams::BaseSearchParams(const OptionsDict& options)
       kCpuctFactorAtRoot(options.Get<float>(
           options.Get<bool>(kRootHasOwnCpuctParamsId) ? kCpuctFactorAtRootId
                                                       : kCpuctFactorId)),
+      kPolicyValueExponent(options.Get<float>(kPolicyValueExponentId)),
+      kPolicyValueBase(options.Get<float>(kPolicyValueBaseId)),
+      kPolicyDecayVisits(options.Get<int>(kPolicyDecayVisitsId)),
+      kPolicyDecayReductionDelay(
+          options.Get<int>(kPolicyDecayReductionDelayId)),
+      kPolicyDecayParentVisits(options.Get<int>(kPolicyDecayParentVisitsId)),
+      kPolicyDecayValueShare(options.Get<float>(kPolicyDecayValueShareId) /
+                             100.0f),
       kTwoFoldDraws(options.Get<bool>(kTwoFoldDrawsId)),
       kNoiseEpsilon(options.Get<float>(kNoiseEpsilonId)),
       kNoiseAlpha(options.Get<float>(kNoiseAlphaId)),
