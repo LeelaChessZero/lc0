@@ -58,8 +58,12 @@ void ChainedSearchStopper::OnSearchDone(const IterationStats& stats) {
 
 bool VisitsStopper::ShouldStop(const IterationStats& stats,
                                StoppersHints* hints) {
+  const int64_t remaining = nodes_limit_ - stats.total_nodes;
   if (populate_remaining_playouts_) {
-    hints->UpdateEstimatedRemainingPlayouts(nodes_limit_ - stats.total_nodes);
+    hints->UpdateEstimatedRemainingPlayouts(remaining);
+  }
+  if (nodes_limit_ < 4000000000) {
+    hints->UpdateEstimatedRemainingNodes(remaining);
   }
   if (stats.total_nodes >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached visits limit: " << stats.total_nodes
@@ -75,9 +79,12 @@ bool VisitsStopper::ShouldStop(const IterationStats& stats,
 
 bool PlayoutsStopper::ShouldStop(const IterationStats& stats,
                                  StoppersHints* hints) {
+  const int64_t remaining = nodes_limit_ - stats.nodes_since_movestart;
   if (populate_remaining_playouts_) {
-    hints->UpdateEstimatedRemainingPlayouts(nodes_limit_ -
-                                            stats.nodes_since_movestart);
+    hints->UpdateEstimatedRemainingPlayouts(remaining);
+  }
+  if (nodes_limit_ < 4000000000) {
+    hints->UpdateEstimatedRemainingNodes(remaining);
   }
   if (stats.nodes_since_movestart >= nodes_limit_) {
     LOGFILE << "Stopped search: Reached playouts limit: "
