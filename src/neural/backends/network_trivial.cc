@@ -42,10 +42,12 @@
 
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <thread>
 
 #include "chess/board.h"
 #include "neural/backend.h"
@@ -717,7 +719,7 @@ class TrivialComputation : public BackendComputation {
   size_t UsedBatchSize() const override { return batch_size_; }
   AddInputResult AddInput(const EvalPosition& pos,
                           EvalResultPtr result) override;
-  void ComputeBlocking() override {}
+  void ComputeBlocking() override;
 
  private:
   const TrivialBackend* backend_;
@@ -768,6 +770,12 @@ class TrivialBackend : public Backend {
       params_.mob_mg[i] = params_.mob_mg[i] * mob / 100;
       params_.mob_eg[i] = params_.mob_eg[i] * mob / 100;
     }
+    batch_size_ = opts.GetOrDefault<int>("batch_size", 256);
+    max_batch_size_ =
+        opts.GetOrDefault<int>("max_batch", std::max(1024, batch_size_));
+    delay_ = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double, std::milli>(
+            opts.GetOrDefault<float>("delay_ms", 0.0f)));
     opts.CheckAllOptionsRead("");
     UpdateConfiguration(options);
   }
@@ -777,8 +785,8 @@ class TrivialBackend : public Backend {
                              .has_wdl = false,
                              .runs_on_cpu = false,
                              .suggested_num_search_threads = 1,
-                             .recommended_batch_size = 256,
-                             .maximum_batch_size = 1024};
+                             .recommended_batch_size = batch_size_,
+                             .maximum_batch_size = max_batch_size_};
   }
 
   std::unique_ptr<BackendComputation> CreateComputation() override {
@@ -798,6 +806,7 @@ class TrivialBackend : public Backend {
   }
 
   float immediate_fraction() const { return immediate_fraction_; }
+  std::chrono::nanoseconds delay() const { return delay_; }
 
   void Evaluate(const EvalPosition& pos, EvalResultPtr result) const {
     Pos p;
@@ -822,6 +831,9 @@ class TrivialBackend : public Backend {
   float inv_softmax_temp_ = 1.0f;
   // Fraction of requests that return FETCHED_IMMEDIATELY (as if cached).
   float immediate_fraction_ = 0.0f;
+  int batch_size_ = 256;
+  int max_batch_size_ = 1024;
+  std::chrono::nanoseconds delay_{0};
 };
 
 TrivialComputation::TrivialComputation(const TrivialBackend* backend)
@@ -849,6 +861,14 @@ BackendComputation::AddInputResult TrivialComputation::AddInput(
   }
   ++batch_size_;
   return ENQUEUED_FOR_EVAL;
+}
+
+void TrivialComputation::ComputeBlocking() {
+  if (batch_size_ == 0 ||
+      backend_->delay() == std::chrono::nanoseconds::zero()) {
+    return;
+  }
+  std::this_thread::sleep_for(backend_->delay());
 }
 
 class TrivialBackendFactory : public BackendFactory {
