@@ -29,11 +29,9 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cctype>
-#include <cstdlib>
-#include <cstring>
 
 #include "chess/types.h"
+#include "utils/exception.h"
 
 namespace lczero {
 
@@ -57,6 +55,20 @@ Position Position::FromFen(std::string_view fen) {
                            &fullmove_number);
   pos.ply_count_ = 2 * (fullmove_number - 1) + pos.IsBlackToMove();
   return pos;
+}
+
+Move Position::GetNextMove(const Position& next) const {
+  // A simple implementation to convert a position history to moves. It uses a
+  // naive implementation. If it becomes a bottleneck, we need to check if we
+  // can do the same using bitboard differences.
+  auto legal_moves = us_board_.GenerateLegalMoves();
+  for (Move m : legal_moves) {
+    ChessBoard test_board = us_board_;
+    test_board.ApplyMove(m);
+    test_board.Mirror();
+    if (test_board == next.us_board_) return m;
+  }
+  throw Exception("GetNextMove: No matching move found");
 }
 
 uint64_t Position::Hash() const {

@@ -41,7 +41,7 @@ class BatchSplittingBackend : public Backend {
       const EvalPosition& pos) override {
     return wrapped_backend_->GetCachedEvaluation(pos);
   }
-  std::unique_ptr<BackendComputation> CreateComputation() override;
+  std::unique_ptr<BackendComputation> CreateComputation(size_t time_remaining) override;
 
   UpdateConfigurationResult UpdateConfiguration(
       const OptionsDict& options) override {
@@ -58,9 +58,10 @@ class BatchSplittingBackend : public Backend {
 
 class BatchSplittingComputation : public BackendComputation {
  public:
-  BatchSplittingComputation(Backend* wrapped_backend)
+  BatchSplittingComputation(Backend* wrapped_backend, size_t time_remaining)
       : wrapped_backend_(wrapped_backend),
-        max_batch_size_(wrapped_backend->GetAttributes().maximum_batch_size) {
+        max_batch_size_(wrapped_backend->GetAttributes().maximum_batch_size),
+        time_remaining_(time_remaining) {
     MakeComputation();
   }
 
@@ -80,16 +81,17 @@ class BatchSplittingComputation : public BackendComputation {
 
  private:
   void MakeComputation() {
-    wrapped_computation_ = wrapped_backend_->CreateComputation();
+    wrapped_computation_ = wrapped_backend_->CreateComputation(time_remaining_);
   }
 
   Backend* wrapped_backend_;
   size_t max_batch_size_;
+  size_t time_remaining_;
   std::unique_ptr<BackendComputation> wrapped_computation_;
 };
 
-std::unique_ptr<BackendComputation> BatchSplittingBackend::CreateComputation() {
-  return std::make_unique<BatchSplittingComputation>(wrapped_backend_);
+std::unique_ptr<BackendComputation> BatchSplittingBackend::CreateComputation(size_t time_remaining) {
+  return std::make_unique<BatchSplittingComputation>(wrapped_backend_, time_remaining);
 }
 
 }  // namespace
