@@ -130,6 +130,7 @@ class BaseSearchParams {
     return kMaxOutOfOrderEvalsFactor;
   }
   float GetNpsLimit() const { return kNpsLimit; }
+  float GetMinimaxFraction() const { return kMinimaxFraction; }
 
   int GetTaskWorkersPerSearchWorker() const {
     return kTaskWorkersPerSearchWorker;
@@ -231,6 +232,7 @@ class BaseSearchParams {
   static const OptionId kUCIRatingAdvId;
   static const OptionId kSearchSpinBackoffId;
   static const OptionId kGarbageCollectionDelayId;
+  static const OptionId kMinimaxFractionId;
 
  protected:
   const OptionsDict& options_;
@@ -290,6 +292,7 @@ class BaseSearchParams {
   const float kMaxCollisionVisitsScalingPower;
   const bool kSearchSpinBackoff;
   const float kGarbageCollectionDelay;
+  const float kMinimaxFraction;
 };
 
 class SearchParams : public BaseSearchParams {
