@@ -1058,7 +1058,8 @@ if not get_option('f16c')
   add_project_arguments('-DNO_F16C', language : 'cpp')
 endif
 
-if cc.has_type('_Float16')
+# icx on Windows can emit unresolved __truncdfhf2 calls for _Float16.
+if cc.get_id() != 'intel-llvm-cl' and cc.has_type('_Float16')
   add_project_arguments('-DHAS_FLOAT16', language : 'cpp')
 endif
 
