@@ -1058,7 +1058,24 @@ if not get_option('f16c')
   add_project_arguments('-DNO_F16C', language : 'cpp')
 endif
 
-if cc.has_type('_Float16')
+# Check both syntax and linker support for _Float16 conversions; compilers such
+# as icx on Windows with link.exe can emit compiler-rt builtins like
+# __truncdfhf2 unless compiler-rt is linked.
+float16_code = '''
+#include <cstdint>
+#include <cstring>
+int main(int argc, char**) {
+  volatile double d = argc;
+  volatile float f = static_cast<float>(argc);
+  _Float16 h1 = static_cast<_Float16>(static_cast<float>(d));
+  _Float16 h2 = static_cast<_Float16>(f);
+  float back = static_cast<float>(h2);
+  uint16_t raw = 0;
+  std::memcpy(&raw, &h1, sizeof(raw));
+  return (raw != 0 || back != 0.0f) ? 0 : 1;
+}
+'''
+if cc.links(float16_code, name: '_Float16 conversions')
   add_project_arguments('-DHAS_FLOAT16', language : 'cpp')
 endif
 
