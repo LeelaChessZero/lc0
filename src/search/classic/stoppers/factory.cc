@@ -31,6 +31,7 @@
 
 #include "factory.h"
 #include "search/classic/stoppers/alphazero.h"
+#include "search/classic/stoppers/alphazero_autoscaled.h"
 #include "search/classic/stoppers/legacy.h"
 #include "search/classic/stoppers/simple.h"
 #include "search/classic/stoppers/smooth.h"
@@ -54,8 +55,8 @@ const OptionId kTimeManagerId{
      .uci_option = "TimeManager",
      .help_text =
          "Name and config of a time manager. Possible names are 'legacy' "
-         "(default), 'smooth', 'alphazero', and simple. See "
-         "https://lc0.org/timemgr for configuration details."}};
+         "(default), 'smooth', 'alphazero', 'alphazero_autoscaled', and simple."
+         "See https://lc0.org/timemgr for configuration details."}};
 const OptionId kSlowMoverId{
     {.long_flag = "slowmover",
      .uci_option = "Slowmover",
@@ -99,6 +100,9 @@ std::unique_ptr<TimeManager> MakeTimeManager(const OptionsDict& options) {
   } else if (managers[0] == "alphazero") {
     time_manager = MakeAlphazeroTimeManager(move_overhead,
                                             tm_options.GetSubdict("alphazero"));
+  } else if (managers[0] == "alphazero_autoscaled") {
+    time_manager = MakeAlphazeroTimeManager(move_overhead,
+                                 tm_options.GetSubdict("alphazero_autoscaled"));    
   } else if (managers[0] == "smooth") {
     time_manager =
         MakeSmoothTimeManager(move_overhead, tm_options.GetSubdict("smooth"));
