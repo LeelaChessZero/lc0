@@ -408,11 +408,15 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
   game.Play(player1_threads, player2_threads, kTraining, syzygy_tb,
             enable_resign);
 
-  // If game was aborted, it's still undecided.
-  if (game.GetGameResult() != GameResult::UNDECIDED) {
+  // Games stopped at the ply limit are scored as draws. Otherwise, if the game
+  // was aborted, it's still undecided.
+  const GameResult game_result = game.MaxGameLengthExceeded()
+                                     ? GameResult::DRAW
+                                     : game.GetGameResult();
+  if (game_result != GameResult::UNDECIDED) {
     // Game callback.
     GameInfo game_info;
-    game_info.game_result = game.GetGameResult();
+    game_info.game_result = game_result;
     game_info.is_black = player1_black;
     game_info.game_id = game_number;
     game_info.initial_fen = opening.start_fen;
@@ -434,9 +438,9 @@ void SelfPlayTournament::PlayOneGame(int game_number) {
     // Update tournament stats.
     {
       Mutex::Lock lock(mutex_);
-      int result = game.GetGameResult() == GameResult::DRAW        ? 1
-                   : game.GetGameResult() == GameResult::WHITE_WON ? 0
-                                                                   : 2;
+      int result = game_result == GameResult::DRAW        ? 1
+                   : game_result == GameResult::WHITE_WON ? 0
+                                                          : 2;
       if (player1_black) result = 2 - result;
       ++tournament_info_.results[result][player1_black ? 1 : 0];
       tournament_info_.move_count_ += game.move_count_;
