@@ -670,7 +670,7 @@ if get_option('build_backends')
     hipcc = find_program('hipcc', '/opt/rocm/bin/hipcc', required: true)
 
     hip_libdirs = get_option('hip_libdirs')
-    hip_args = []
+    hip_args = ['-D__HIP_PLATFORM_AMD__']
     hip_includes = []
     hip_deps = []
     foreach hip_include : get_option('hip_include')
@@ -892,7 +892,7 @@ if get_option('build_backends')
         deps += cc.find_library('OpenCL', required: true)
       elif get_option('sycl') == 'amd'
         hip_libdirs = get_option('hip_libdirs')
-        hip_args = []
+        hip_args = ['-D__HIP_PLATFORM_AMD__']
         foreach hip_include : get_option('hip_include')
           if run_command('scripts/checkdir.py', hip_include, check : false).returncode() == 0
             includes += include_directories(hip_include, is_system: true)
