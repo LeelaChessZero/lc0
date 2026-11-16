@@ -35,7 +35,6 @@
 #include "neural/network.h"
 #include "neural/wrapper.h"
 #include "utils/optionsdict.h"
-#include "utils/optionsparser.h"
 
 namespace lczero {
 
@@ -63,26 +62,6 @@ class NetworkFactory {
   std::unique_ptr<Network> Create(const std::string& network,
                                   const std::optional<WeightsFile>&,
                                   const OptionsDict& options);
-
-  // Helper function to load the network from the options. Returns nullptr
-  // if no network options changed since the previous call.
-  static std::unique_ptr<Network> LoadNetwork(const OptionsDict& options);
-
-  struct BackendConfiguration {
-    BackendConfiguration() = default;
-    BackendConfiguration(const OptionsDict& options);
-    std::string weights_path;
-    std::string backend;
-    std::string backend_options;
-    bool operator==(const BackendConfiguration& other) const;
-    bool operator!=(const BackendConfiguration& other) const {
-      return !operator==(other);
-    }
-    bool operator<(const BackendConfiguration& other) const {
-      return std::tie(weights_path, backend, backend_options) <
-             std::tie(other.weights_path, other.backend, other.backend_options);
-    }
-  };
 
  private:
   void RegisterNetwork(const std::string& name, FactoryFunc factory,
