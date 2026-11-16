@@ -31,6 +31,7 @@
 #include <ctime>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 namespace lczero {
 
@@ -50,20 +51,20 @@ time_t GetFileTime(const std::string& filename);
 
 // Returns the base directory relative to which user specific non-essential data
 // files are stored or an empty string if unspecified.
-std::string GetUserCacheDirectory();
+std::filesystem::path GetUserCacheDirectory();
 
 // Returns the base directory relative to which user specific configuration
 // files are stored or an empty string if unspecified.
-std::string GetUserConfigDirectory();
+std::filesystem::path GetUserConfigDirectory();
 
 // Returns the base directory relative to which user specific data files are
 // stored or an empty string if unspecified.
-std::string GetUserDataDirectory();
+std::filesystem::path GetUserDataDirectory();
 
 // Returns a vector of base directories to search for configuration files.
-std::vector<std::string> GetSystemConfigDirectoryList();
+std::vector<std::filesystem::path> GetSystemConfigDirectoryList();
 
 // Returns a vector of base directories to search for data files.
-std::vector<std::string> GetSystemDataDirectoryList();
+std::vector<std::filesystem::path> GetSystemDataDirectoryList();
 
 }  // namespace lczero
