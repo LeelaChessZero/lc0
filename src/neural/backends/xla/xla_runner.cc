@@ -187,12 +187,23 @@ std::vector<std::unique_ptr<XlaMutableTensor>> XlaRunner::ExecuteBlocking(
                     std::to_string(inputs[0]->shape()[0]));
   }
   const size_t batch_size = iter->first;
+  const size_t actual_batch_size = inputs[0]->shape()[0];
   // Update the shape to match the rounded up batch size. After growing, the
-  // batch size must fit within tensor buffer capacity (it's fine to have
-  // garbage in the tail of that buffer).
+  // batch size must fit within tensor buffer capacity.
   std::vector<int64_t> new_shape = inputs[0]->shape();
   new_shape[0] = batch_size;
   inputs[0]->Reshape(new_shape);
+  // Zero out the padded tail to avoid NaNs, subnormals, or floating-point traps on TPU.
+  if (batch_size > actual_batch_size) {
+    const size_t total_elements = std::accumulate(
+        new_shape.begin(), new_shape.end(), 1LL, std::multiplies<int64_t>());
+    const size_t valid_elements =
+        total_elements * actual_batch_size / batch_size;
+    const size_t elem_size = GetXlaTypeSize(inputs[0]->type());
+    char* data_ptr = static_cast<char*>(inputs[0]->mutable_data());
+    memset(data_ptr + valid_elements * elem_size, 0,
+           (total_elements - valid_elements) * elem_size);
+  }
   // Transfer the input to the device.
   auto input_buffer =
       pjrt_client_
