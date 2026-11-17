@@ -230,6 +230,9 @@ void Engine::NewGame() {
 }
 
 void Engine::Go(const GoParams& params) {
+  // A go without a new position command must not start while the previous
+  // search's threads still use the tree.
+  EnsureSearchStopped();
   if ((strict_uci_timing_ && isready_seen_) ||
       !(params.wtime || params.btime)) {
     search_->StartClock();

@@ -132,6 +132,25 @@ TEST_F(EngineTest, BackendReloadByUpdateBackendConfig) {
   EXPECT_NE(backend_, prev_backend);  // Backend recreated.
 }
 
+TEST_F(EngineTest, GoWaitsForPreviousSearch) {
+  Engine engine(search_factory_, *options_);
+  engine.NewGame();
+
+  testing::InSequence seq;
+  EXPECT_CALL(*search_, AbortSearch());
+  EXPECT_CALL(*search_, WaitSearch());
+  EXPECT_CALL(*search_, StartSearch(_));
+  EXPECT_CALL(*search_, AbortSearch());
+  EXPECT_CALL(*search_, WaitSearch());
+  EXPECT_CALL(*search_, StartSearch(_));
+  // ~Engine() also calls EnsureSearchStopped() on destruction.
+  EXPECT_CALL(*search_, AbortSearch());
+  EXPECT_CALL(*search_, WaitSearch());
+
+  engine.Go(GoParams{.nodes = 10});
+  engine.Go(GoParams{.nodes = 10});
+}
+
 }  // namespace
 }  // namespace lczero
 
