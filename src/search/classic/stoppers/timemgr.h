@@ -70,15 +70,22 @@ class StoppersHints {
   StoppersHints();
   void Reset();
   void UpdateEstimatedRemainingTimeMs(int64_t v);
+  bool HasEstimatedRemainingTimeMs() const;
   int64_t GetEstimatedRemainingTimeMs() const;
   void UpdateEstimatedRemainingPlayouts(int64_t v);
   int64_t GetEstimatedRemainingPlayouts() const;
+  void UpdateEstimatedRemainingNodes(int64_t v);
+  bool HasEstimatedRemainingNodes() const;
+  int64_t GetEstimatedRemainingNodes() const;
   void UpdateEstimatedNps(float v);
   std::optional<float> GetEstimatedNps() const;
 
  private:
   int64_t remaining_time_ms_;
+  bool has_remaining_time_ms_ = false;
   int64_t remaining_playouts_;
+  int64_t remaining_nodes_;
+  bool has_remaining_nodes_ = false;
   std::optional<float> estimated_nps_;
 };
 

@@ -35,7 +35,11 @@ namespace classic {
 StoppersHints::StoppersHints() { Reset(); }
 
 void StoppersHints::UpdateEstimatedRemainingTimeMs(int64_t v) {
+  has_remaining_time_ms_ = true;
   if (v < remaining_time_ms_) remaining_time_ms_ = v;
+}
+bool StoppersHints::HasEstimatedRemainingTimeMs() const {
+  return has_remaining_time_ms_;
 }
 int64_t StoppersHints::GetEstimatedRemainingTimeMs() const {
   return remaining_time_ms_;
@@ -49,6 +53,17 @@ int64_t StoppersHints::GetEstimatedRemainingPlayouts() const {
   return std::max(decltype(remaining_playouts_){1}, remaining_playouts_);
 }
 
+void StoppersHints::UpdateEstimatedRemainingNodes(int64_t v) {
+  has_remaining_nodes_ = true;
+  if (v < remaining_nodes_) remaining_nodes_ = v;
+}
+bool StoppersHints::HasEstimatedRemainingNodes() const {
+  return has_remaining_nodes_;
+}
+int64_t StoppersHints::GetEstimatedRemainingNodes() const {
+  return remaining_nodes_;
+}
+
 void StoppersHints::UpdateEstimatedNps(float v) { estimated_nps_ = v; }
 
 std::optional<float> StoppersHints::GetEstimatedNps() const {
@@ -58,9 +73,12 @@ std::optional<float> StoppersHints::GetEstimatedNps() const {
 void StoppersHints::Reset() {
   // Slightly more than 3 years.
   remaining_time_ms_ = 100000000000;
+  has_remaining_time_ms_ = false;
   // Type for N in nodes is currently uint32_t, so set limit in order not to
   // overflow it.
   remaining_playouts_ = 4000000000;
+  remaining_nodes_ = 4000000000;
+  has_remaining_nodes_ = false;
   // NPS is not known.
   estimated_nps_.reset();
 }
