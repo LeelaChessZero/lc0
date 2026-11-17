@@ -108,8 +108,8 @@ std::atomic<int> delta(0);
 std::atomic<int> rescored2(0);
 std::atomic<int> rescored3(0);
 std::atomic<int> blunders(0);
-std::atomic<int> orig_counts[3];
-std::atomic<int> fixed_counts[3];
+std::atomic<int> orig_counts[4];
+std::atomic<int> fixed_counts[4];
 std::atomic<int> policy_bump(0);
 std::atomic<int> policy_nobump_total_hist[11];
 std::atomic<int> policy_bump_total_hist[11];
@@ -182,7 +182,7 @@ void Validate(std::span<const FrameType> fileContents) {
       DataAssert(data.side_to_move_or_enpassant <= 1);
     }
     DataAssert(data.result_q >= -1 && data.result_q <= 1);
-    DataAssert(data.result_d >= 0 && data.result_q <= 1);
+    DataAssert(data.result_d >= 0 && data.result_d <= 1);
     DataAssert(data.rule50_count <= 100);
     float sum = 0.0f;
     for (size_t j = 0; j < sizeof(data.probabilities) / sizeof(float); j++) {
@@ -430,7 +430,16 @@ void ChangeInputFormat(int newInputFormat, V6TrainingData* data,
   data->invariance_info |= invariance_mask;
 }
 
+// Whether the game was stopped at the ply limit and this position still has no
+// result. Such games are written with both result fields zeroed.
+bool IsUndecided(const V6TrainingData& data) {
+  return (data.invariance_info & (1u << 4)) && data.result_q == 0.0f &&
+         data.result_d == 0.0f;
+}
+
+// Returns -1, 0 or 1 for a loss, draw or win, and 2 for an undecided position.
 int ResultForData(const V6TrainingData& data) {
+  if (IsUndecided(data)) return 2;
   // Ensure we aren't reprocessing some data that has had custom adjustments to
   // result training target applied.
   DataAssert(data.result_q == -1.0f || data.result_q == 1.0f ||
@@ -591,7 +600,10 @@ void ApplySyzygyRescoring(FileData<FrameType>& data, SyzygyTablebase* tablebase)
               fixed_counts[(flip ? -score_to_apply : score_to_apply) + 1]++;
             }
             rescored += 1;
-            delta += abs(ResultForData(data.fileContents[j]) - score_to_apply);
+            if (ResultForData(data.fileContents[j]) != 2) {
+              delta +=
+                  abs(ResultForData(data.fileContents[j]) - score_to_apply);
+            }
           }
 
           if (score_to_apply == 0) {
@@ -640,11 +652,16 @@ void ApplySyzygyRescoring(FileData<FrameType>& data, SyzygyTablebase* tablebase)
             ResultForData(data.fileContents[i + 1]) != score_to_apply
                 ? 0
                 : ResultForData(data.fileContents[i + 1]);
+        // An undecided position has no outcome to disagree with.
+        if (ResultForData(data.fileContents[i + 1]) == 2) {
+          new_score = score_to_apply;
+        }
         bool dtz_rescored = false;
         // if score is not already right, and the score to apply isn't 0,
         // dtz can let us know its definitely correct.
         if (ResultForData(data.fileContents[i + 1]) != score_to_apply &&
-            score_to_apply != 0) {
+            (score_to_apply != 0 ||
+             ResultForData(data.fileContents[i + 1]) == 2)) {
           // Any repetitions in the history since last 50 ply makes it risky
           // to assume dtz is still correct.
           int steps = history.Last().GetRule50Ply();
@@ -1019,6 +1036,16 @@ void ApplyDeblunder(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
                       data.fileContents.back().result_d,
                       data.fileContents.back().plies_left};
   bool deblunderingStarted = false;
+  {
+    const auto& last = data.fileContents[history.GetLength() - 1];
+    if (IsUndecided(last)) {
+      // Game stopped at the ply limit, use the final best eval as the result.
+      activeZ[0] = last.best_q;
+      activeZ[1] = last.best_d;
+      activeZ[2] = last.plies_left;
+      deblunderingStarted = true;
+    }
+  }
 
   while (true) {
     auto& cur = data.fileContents[history.GetLength() - 1];
@@ -1293,9 +1320,11 @@ void RunRescorer() {
   orig_counts[0] = 0;
   orig_counts[1] = 0;
   orig_counts[2] = 0;
+  orig_counts[3] = 0;
   fixed_counts[0] = 0;
   fixed_counts[1] = 0;
   fixed_counts[2] = 0;
+  fixed_counts[3] = 0;
   for (int i = 0; i < 11; i++) policy_bump_total_hist[i] = 0;
   for (int i = 0; i < 11; i++) policy_nobump_total_hist[i] = 0;
   options.Add<StringOption>(kSyzygyTablebaseId);
@@ -1426,9 +1455,11 @@ void RunRescorer() {
   }
   std::cout << std::endl;
   std::cout << "Original L: " << orig_counts[0] << " D: " << orig_counts[1]
-            << " W: " << orig_counts[2] << std::endl;
+            << " W: " << orig_counts[2] << " Adj: " << orig_counts[3]
+            << std::endl;
   std::cout << "After L: " << fixed_counts[0] << " D: " << fixed_counts[1]
-            << " W: " << fixed_counts[2] << std::endl;
+            << " W: " << fixed_counts[2] << " Adj: " << fixed_counts[3]
+            << std::endl;
   std::cout << "Gaviota DTM move_count rescores: " << gaviota_dtm_rescores
             << std::endl;
 }

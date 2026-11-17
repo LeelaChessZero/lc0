@@ -90,7 +90,7 @@ class SelfPlayGame {
 
   GameResult GetGameResult() const { return game_result_; }
   // Whether the game was stopped at the ply limit. Its result stays UNDECIDED,
-  // and the training data marks it as a draw that exceeded the max length.
+  // unlike an aborted game it is still reported and its training data written.
   bool MaxGameLengthExceeded() const {
     return adjudicated_ && game_result_ == GameResult::UNDECIDED;
   }
