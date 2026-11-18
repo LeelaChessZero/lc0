@@ -103,6 +103,35 @@ message Weights {
     optional Layer rpe_v = 12;
 
     // reserved 13 - 22 for int8 quantization
+
+    // ---- BT6 (NETWORK_ATTENTIONBODY_BT6). With h = head, d = head depth,
+    // E [C, 64, 64] the attack-graph channels, Z the pair stream, e the edge
+    // state and x the block's attention input (ln1 output under pre-norm):
+    //   L  = q k^T / sqrt(d)
+    //      + einsum(attack_w, E)                      [h, C]
+    //      + sum_c (k_j . attack_gate_k[h, c]) E[c]   [h, C, d]
+    //      + sum_c (q_i . attack_gate_q[h, c]) E[c]   [h, C, d]
+    //      + einsum(pair_att_w, Z)                    [h, pair_d_e]
+    //   L  = edge_t_node * L                          [h]
+    //      + edge_t_edge * einsum(edge_e_w, e)        [h] [h, d_e]
+    //   L  = L * (1 + einsum(edge_m_w, e))            [h, d_e]
+    //   W  = softmax(L)
+    //      * 2 sigmoid(einsum(edge_g_w, e) + edge_g_b)  [h, d_e] [h]
+    //   y  = ((W v) * output_gate_scale
+    //         * sigmoid(x @ output_gate_w + output_gate_b)) @ dense_w + dense_b
+    // L (after the M door) is what the edge stream's readback reads.
+    optional Layer output_gate_w = 100;  // [d_model, d_model]
+    optional Layer output_gate_b = 101;  // [d_model]
+    optional Layer attack_w = 102;       // [heads, C]
+    optional Layer attack_gate_q = 103;  // [heads, C, head_depth]
+    optional Layer attack_gate_k = 104;  // [heads, C, head_depth]
+    optional Layer pair_att_w = 105;     // [heads, pair_d_e]
+    optional Layer edge_e_w = 106;       // [heads, d_e] additive door (E)
+    optional Layer edge_m_w = 107;       // [heads, d_e] multiplicative door (M)
+    optional Layer edge_g_w = 108;       // [heads, d_e] post-softmax door (G)
+    optional Layer edge_g_b = 109;       // [heads]
+    optional Layer edge_t_edge = 110;    // [heads]
+    optional Layer edge_t_node = 111;    // [heads]
   }
 
   message FFN {
@@ -111,6 +140,44 @@ message Weights {
     optional Layer dense2_w = 3;
     optional Layer dense2_b = 4;
     // reserved 5 - 10 for int8 quantization
+
+    // ffn_activation ACTIVATION_SWIGLU: the sigmoid-gated FFN
+    //   y = ((x @ dense1_w + dense1_b) * sigmoid(x @ dense_gate_w)) @ dense2_w
+    //       + dense2_b
+    optional Layer dense_gate_w = 11;  // [d_model, dff]
+  }
+
+  // BT6: a norm's two vectors (LayerNorm over d_model unless stated).
+  message NormParams {
+    optional Layer gammas = 1;
+    optional Layer betas = 2;
+  }
+
+  // BT6: one attention over the depth taps, as the depth-attending heads use
+  // it. The taps: tap 0 = the embedding output; tap i = the output of block
+  // i - 1 through EncoderLayer[i - 1].tap_norm (i = 1 .. num_blocks - 1);
+  // tap num_blocks = encoder_final_norm(x), what every head reads.
+  message DepthAttention {
+    optional Layer query_w = 1;
+    optional Layer query_b = 2;
+    optional Layer key_w = 3;
+    optional Layer key_b = 4;
+    optional Layer value_w = 5;
+    optional Layer value_b = 6;
+    optional Layer out_w = 7;
+    optional Layer out_b = 8;
+    optional Layer depth_key = 9;
+  }
+
+  // BT6: one per-tap probe of a depth-attending policy head: an attention
+  // policy (q = ip2, k = ip3, promotion = ip4, as in PolicyHead) read from
+  // a single depth tap.
+  message PolicyProbe {
+    optional Layer ip2_pol_w = 1;
+    optional Layer ip2_pol_b = 2;
+    optional Layer ip3_pol_w = 3;
+    optional Layer ip3_pol_b = 4;
+    optional Layer ip4_pol_w = 5;
   }
 
   message EncoderLayer {
@@ -120,6 +187,11 @@ message Weights {
     optional FFN ffn = 4;
     optional Layer ln2_gammas = 5;
     optional Layer ln2_betas = 6;
+
+    // BT6: this block's output as a depth tap goes through this norm (blocks
+    // 0 .. num_blocks - 2; the last block's tap is encoder_final_norm). Read
+    // only by the depth-attending heads (trained with, not played).
+    optional NormParams tap_norm = 100;
   }
 
   message PolicyHead {
@@ -138,6 +210,28 @@ message Weights {
     // Convolutions for legacy policy head.
     optional ConvBlock policy1 = 10;
     optional ConvBlock policy = 11;
+
+    // BT6: logits[from, to] += pair_u . Z[:, from, to] (before the gather).
+    optional Layer pair_u = 100;  // [pair_d_e]
+
+    // BT6 child-Q distribution head: per move a K-bin histogram of the 
+    // child's Q on the atoms linspace(-1, 1, K). With
+    // t = mish(x @ ip_pol_w + ip_pol_b), q = t @ ip2_pol_w + ip2_pol_b and
+    // k = t @ ip3_pol_w + ip3_pol_b: logits[from, to, b] = sum_d q[from, d]
+    // cq_w_bins[d, b] k[to, d] / sqrt(d_cq), plus the promotion term
+    // (cq_w_promo) and the position bias (cq_pos_w, cq_pos_b), gathered to
+    // the 1858 moves.
+    optional Layer cq_w_bins = 101;   // [d_cq, K]
+    optional Layer cq_w_promo = 102;  // [d_cq, 4, K]
+    optional Layer cq_pos_w = 103;    // [d_tok, K]
+    optional Layer cq_pos_b = 104;    // [K]
+
+    // BT6 depth-attending policy head (PDA; trained with, not played): the
+    // attention policy of this message (ip_pol, ip2, ip3, ip4) read from a
+    // per-square mix of the depth taps, plus one probe per tap (reference:
+    // pda_head.py).
+    optional DepthAttention depth_square_attention = 105;
+    repeated PolicyProbe depth_probe = 106;  // one per depth tap, tap order
   }
 
   message ValueHead {
@@ -154,6 +248,15 @@ message Weights {
 
     // Legacy value head support.
     optional ConvBlock value = 11;
+
+    // BT6 depth-attending value head (VDA; trained with, not played): the
+    // value head of this message (ip_val per square, ip1_val, ip2_val -> WDL)
+    // read from a per-square and a global attention over the depth taps,
+    // plus one WDL probe per tap (deep supervision; reference: vda_head.py).
+    optional DepthAttention depth_square_attention = 100;
+    optional DepthAttention depth_global_attention = 101;
+    repeated Layer depth_probe_w = 102;  // one per depth tap, tap order
+    repeated Layer depth_probe_b = 103;
   }
 
   message PolicyHeadMap {
@@ -183,6 +286,110 @@ message Weights {
     optional ValueHead st = 3;
     // map<string, ValueHead> value_head_map = 4;
     repeated ValueHeadMap value_head_map = 4;
+  }
+  // BT6: the static pair stream (it replaces smolgen). Z = rms(E @ p_in +
+  // t_off[rel(i, j)]) [pair_d_e, 64, 64], computed once per position, with
+  // E the C attack-graph channels (NetworkFormat.bt6.edge_channel), rms the
+  // parameter-free RMS norm over the channel axis (eps 1e-6, float32) and
+  // rel(i, j) = 15 * (rank_i - rank_j + 7) + (file_i - file_j + 7).
+  // Read per block by MHA.pair_att_w and per policy head by PolicyHead.pair_u.
+  message PairStream {
+    optional Layer p_in = 1;   // [C, pair_d_e]
+    optional Layer t_off = 2;  // [225, pair_d_e]
+  }
+
+  // BT6: one update site of the edge stream (applied after the block
+  // NetworkFormat.bt6.edge_update_after[k]; update[k] is that site's). With
+  // e [d_e, 64, 64], L [heads, 64, 64] = that block's final pre-softmax
+  // attention logits and rms(.) the RMS norm over d_e (eps 1e-6):
+  //   e += einsum(L, o_e)     (logit readback)
+  //   e += triplet(rms(e))    (tri_v, tri_eg, tri_eg_b, tri_o)
+  //   n  = rms(e)
+  //   e += relu(n @ ffn_in + ffn_in_b + n^T(ij->ji) @ ffn_rev) @ ffn_out
+  //   e  = rms(e)
+  // triplet (H_t = triplet_heads, path form): v = n @ tri_v split into
+  // v_in, v_out [H_t, d_e/H_t, 64, 64]; [a_in, g_in, a_out, g_out] = n @ tri_eg
+  // + tri_eg_b; A_in = softmax_k(a_in) * sigmoid(g_in), A_out = softmax over
+  // the source axis of a_out * sigmoid(g_out); va_in[h,d,i,j] = sum_k
+  // A_in[h,i,k] v_in[h,d,k,j]; va_out[h,d,i,j] = sum_k A_out[h,k,i]
+  // v_out[h,d,j,k]; out = concat(va_in, va_out) @ tri_o.
+  message EdgeStreamUpdate {
+    optional Layer o_e = 1;       // [heads, d_e]
+    optional Layer tri_v = 2;     // [d_e, 2 * d_e]
+    optional Layer tri_eg = 3;    // [d_e, 4 * triplet_heads]
+    optional Layer tri_eg_b = 4;  // [4 * triplet_heads]
+    optional Layer tri_o = 5;     // [2 * d_e, d_e]
+    optional Layer ffn_in = 6;    // [d_e, ffn_mult * d_e]
+    optional Layer ffn_in_b = 7;  // [ffn_mult * d_e]
+    optional Layer ffn_rev = 8;   // [d_e, ffn_mult * d_e] rev_edge: reads e_ji
+    optional Layer ffn_out = 9;   // [ffn_mult * d_e, d_e]
+  }
+  message EdgeAuxProbe {
+    optional Layer pi_w = 1;
+    optional Layer pi_b = 2;
+    optional Layer ray_w = 3;
+    optional Layer ray_b = 4;
+  }
+
+  // BT6: the EGT edge stream, a [d_e, 64, 64] pair state that lives OUTSIDE
+  // the blocks. Seed: e0 = rms(E @ p_in + t_off[rel(i, j)]). Every block
+  // reads the current state through MHA.edge_* (the doors); the state is
+  // updated only at the sites (EdgeStreamUpdate).
+  message EdgeStream {
+    optional Layer p_in = 1;               // [C, d_e]
+    optional Layer t_off = 2;              // [225, d_e]
+    repeated EdgeStreamUpdate update = 3;  // one per site, in site order
+    optional EdgeAuxProbe aux_probe = 4;
+    // The edge state added to the depth taps ([2 * d_e, d_model]): one table
+    // shared by every depth-attending value head, one by every depth-attending
+    // policy head.
+    optional Layer tap_vda = 5;
+    optional Layer tap_pda = 6;
+  }
+
+  // BT6: THIS net's int8 recipe (per checkpoint: the analyser fits it on the
+  // served trunk). With the float weights it rebuilds the int8 program
+  // exactly, so a FLOAT32 file + this message serves FP16 or int8.
+  // For site (block, kind) with weight matrix W [in, out], where
+  // ATTN_IN = [q | k | v | output_gate] kernels, ATTN_OUT = dense_w,
+  // FFN_IN = [dense_gate_w | dense1_w] and FFN_MID = dense2_w:
+  //   W' = s_j W[j, n];  step_n = max_j |W'[j, n]| / 127 (1 if 0);
+  //   codes = round_half_even(W' / step_n) clamped to [-127, 127];
+  //   the activation codes are floor(x_j r_j + 0.5) clamped to [-127, 127]
+  //   (unit step: r_j s_j = 1 / D, so this is x_j / s_j at step D);
+  //   the output scale is step_n D: acc_n step_n D ~ sum_j x_j W[j, n].
+  message Int8Site {
+    enum Kind {
+      KIND_UNKNOWN = 0;
+      ATTN_IN = 1;
+      ATTN_OUT = 2;
+      FFN_IN = 3;
+      FFN_MID = 4;
+    }
+    optional uint32 block = 1;
+    optional Kind kind = 2;
+    optional Layer s = 3;     // [in] smoothing prescale
+    optional Layer r = 4;     // [in] activation reciprocal
+    optional Layer amax = 5;  // [in] calibration absmax
+  }
+  // BT6: D1, a value head's WDL layer refit to the int8 trunk; it replaces
+  // ip2_val_w / ip2_val_b in the int8 program only. w_start / b_start = the
+  // float layer the refit started from (must equal the head's own).
+  message ValueHeadRefit {
+    required string key = 1;  // value head name
+    optional Layer w = 2;     // [hidden, 3]
+    optional Layer b = 3;     // [3]
+    optional Layer w_start = 4;
+    optional Layer b_start = 5;
+    optional uint64 samples = 6;
+    optional string variant = 7;
+  }
+  message Int8Calibration {
+    optional string recipe = 1;  // e.g. "q1 prescale alpha 0.65, D folded"
+    optional float alpha = 2;
+    repeated Int8Site site = 3;
+    repeated ValueHeadRefit d1 = 4;
+    optional string source = 5;  // provenance: the files' sha256[0:8]
   }
 
   // Input convnet.
@@ -261,6 +468,14 @@ message Weights {
   // Global smolgen weights (NETWORK_ATTENTIONBODY_WITH_HEADFORMAT).
   optional Layer smolgen_w = 35;
   optional Layer smolgen_b = 36;
+
+  // ---- BT6 (NETWORK_ATTENTIONBODY_BT6) ----
+  // The pre-norm tower's final norm: the heads read final_norm(x_last).
+  optional NormParams encoder_final_norm = 100;
+  optional PairStream pair_stream = 101;
+  optional EdgeStream edge_stream = 102;
+  // This net's int8 recipe.
+  optional Int8Calibration int8_calibration = 103;
 }
 
 message TrainingParams {
@@ -270,6 +485,52 @@ message TrainingParams {
   optional float policy_loss = 4;
   optional float accuracy = 5;
   optional string lc0_params = 6;
+}
+
+// BT6: the architecture constants a reader needs beyond the Weights
+// (NetworkFormat.bt6). Defined before NetworkFormat: lc0's proto generator
+// needs a message type defined before a field uses it.
+message Bt6Format {
+  // ---- tower ----
+  optional uint32 num_blocks = 1;
+  optional uint32 d_model = 2;
+  optional uint32 heads = 3;
+  optional uint32 kv_heads = 4;
+  optional uint32 dff = 5;
+  // Pre-norm: x += a * MHA(ln1(x)); x += a * FFN(ln2(x)); after the last
+  // block x = encoder_final_norm(x). Post-norm otherwise (lc0's usual block).
+  optional bool prenorm = 6;
+  optional float residual_alpha = 7;
+  optional float norm_epsilon = 8;
+  optional bool residual_stream_f32 = 9;
+  optional float output_gate_scale = 10;  // 2.0 (MHA.output_gate_*)
+  optional float edge_gate_scale = 11;    // 2.0 (MHA.edge_g_*)
+  // ---- attack-graph channels E [C, 64, 64], computed from the board ----
+  // Names in channel order (base channels, then their transposes "_T"); the
+  // reference is attack_graph.edge_channels. C = edge_channel_size.
+  repeated string edge_channel = 12;
+  // ---- static pair stream ----
+  optional uint32 pair_d_e = 13;
+  // ---- edge stream ----
+  optional uint32 edge_d_e = 14;
+  optional uint32 edge_ffn_mult = 15;
+  repeated uint32 edge_update_after = 16;  // site k follows this block
+  optional uint32 triplet_heads = 17;
+  optional bool triplet_path = 18;  // path contraction (else TGT-Ag)
+  optional bool rev_edge = 19;      // EdgeStreamUpdate.ffn_rev
+  // ---- heads ----
+  // Value heads with ip_val_cat_*: K categorical atoms at linspace(-1, 1, K)
+  // (HL-Gauss target in training; an auxiliary output).
+  optional uint32 value_categorical_atoms = 20;
+  // ---- embedding ----
+  // The embedding keeps the post-norm form: x = ip_emb_ffn_ln(x + c * FFN(x))
+  // with c = embedding_ffn_alpha (DeepNorm's (2 * num_blocks)^-0.25).
+  optional float embedding_ffn_alpha = 21;
+  // ---- provenance (not needed to run the net) ----
+  // The training tree's ModelConfig in protobuf text format, verbatim.
+  optional string model_config = 50;
+  optional string model_source = 51;  // e.g. "model_src 5f2d5a84"
+  optional string numerics = 52;      // e.g. "LC0_F32_EMBED=1"
 }
 
 message NetworkFormat {
@@ -307,6 +568,11 @@ message NetworkFormat {
     NETWORK_ATTENTIONBODY_WITH_HEADFORMAT = 6;
     NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT = 7;
     NETWORK_AB_LEGACY_WITH_MULTIHEADFORMAT = 134;
+    // BT6: pre-norm attention body with the input-dependent output gate, the
+    // attack-graph relation biases, the static pair stream, the EGT edge
+    // stream (doors in every block, triplet updates at the sites) and the
+    // sigmoid-gated FFN; multihead format. Described by NetworkFormat.bt6.
+    NETWORK_ATTENTIONBODY_BT6 = 8;
   }
   optional NetworkStructure network = 3;
 
@@ -346,6 +612,8 @@ message NetworkFormat {
     ACTIVATION_SWISH = 7;
     ACTIVATION_RELU_2 = 8;
     ACTIVATION_SOFTMAX = 9;
+    // The sigmoid-gated FFN (FFN.dense_gate_w); john-sp/lc0's number.
+    ACTIVATION_SWIGLU = 10;
   }
 
   // Activation used everywhere except head outputs or otherwise specified.
@@ -364,6 +632,9 @@ message NetworkFormat {
     INPUT_EMBEDDING_PE_DENSE = 2;
   }
   optional InputEmbeddingFormat input_embedding = 10;
+
+  // BT6: set iff network == NETWORK_ATTENTIONBODY_BT6.
+  optional Bt6Format bt6 = 100;
 }
 
 message Format {
