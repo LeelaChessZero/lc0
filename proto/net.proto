@@ -355,8 +355,9 @@ message Weights {
   // FFN_IN = [dense_gate_w | dense1_w] and FFN_MID = dense2_w:
   //   W' = s_j W[j, n];  step_n = max_j |W'[j, n]| / 127 (1 if 0);
   //   codes = round_half_even(W' / step_n) clamped to [-127, 127];
-  //   the activation enters as x_j r_j quantised with step D, r_j s_j = 1 / D;
-  //   the output scale is step_n D.
+  //   the activation codes are floor(x_j r_j + 0.5) clamped to [-127, 127]
+  //   (unit step: r_j s_j = 1 / D, so this is x_j / s_j at step D);
+  //   the output scale is step_n D: acc_n step_n D ~ sum_j x_j W[j, n].
   message Int8Site {
     enum Kind {
       KIND_UNKNOWN = 0;
