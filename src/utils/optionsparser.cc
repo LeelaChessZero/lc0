@@ -457,15 +457,16 @@ bool FloatOption::ProcessShortFlagWithValue(char flag, const std::string& value,
 }
 
 std::string FloatOption::GetHelp(const OptionsDict& dict) const {
+  constexpr int kPrecision = 4;
   std::string long_flag = GetLongFlag();
   if (!long_flag.empty()) {
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2) << min_ << ".." << max_;
+    oss << std::fixed << std::setprecision(kPrecision) << min_ << ".." << max_;
     long_flag += "=" + oss.str();
   }
   std::ostringstream oss;
-  oss << std::fixed << std::setprecision(2) << GetVal(dict) << "  MIN: " << min_
-      << "  MAX: " << max_;
+  oss << std::fixed << std::setprecision(kPrecision) << GetVal(dict)
+      << "  MIN: " << min_ << "  MAX: " << max_;
   return FormatFlag(GetShortFlag(), long_flag, GetHelpText(), GetUciOption(),
                     oss.str());
 }
