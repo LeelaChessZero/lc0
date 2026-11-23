@@ -57,6 +57,19 @@ TEST(OptionsParser, FloatOptionCheckValueConstraints) {
   EXPECT_THROW(options.SetUciOption("float-test-a", "100.0"), Exception);
 }
 
+TEST(OptionsParser, FloatOptionHelpShowsSmallDefaultsAndBounds) {
+  OptionsParser options;
+  const OptionId id{"slope", "Slope", "help"};
+  options.Add<FloatOption>(id, 0.0001f, 0.0099f) = 0.0027f;
+
+  testing::internal::CaptureStdout();
+  options.ShowHelp();
+  const std::string help = testing::internal::GetCapturedStdout();
+  EXPECT_NE(help.find("--slope=0.0001..0.0099"), std::string::npos);
+  EXPECT_NE(help.find("DEFAULT: 0.0027  MIN: 0.0001  MAX: 0.0099]"),
+            std::string::npos);
+}
+
 TEST(OptionsParser, BoolOptionsCheckValueConstraints) {
   OptionsParser options;
   const OptionId id{"bool-test-a", "bool-test-a", "help", 'a'};
