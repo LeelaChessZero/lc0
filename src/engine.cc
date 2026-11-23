@@ -169,7 +169,7 @@ void Engine::UpdateBackendConfig() {
       backend_->UpdateConfiguration(options_) == Backend::NEED_RESTART) {
     backend_name_ = backend_name;
     backend_ = CreateMemCache(BackendManager::Get()->CreateFromParams(options_),
-                              options_);
+                              options_, search_->GetMaxOutOfOrderFactor());
     search_->SetBackend(backend_.get());
   } else {
     backend_->SetCacheSize(

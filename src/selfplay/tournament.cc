@@ -241,9 +241,11 @@ SelfPlayTournament::SelfPlayTournament(const OptionsDict& options,
         }
       }
       if (!backends_[name_idx][color_idx]) {
-        backends_[name_idx][color_idx] =
-            CreateMemCache(BackendManager::Get()->CreateFromParams(opts),
-                           options.GetSubdict(name));
+        backends_[name_idx][color_idx] = CreateMemCache(
+            BackendManager::Get()->CreateFromParams(opts),
+            options.GetSubdict(name),
+            options.Get<float>(
+                classic::BaseSearchParams::kMaxOutOfOrderEvalsFactorId));
         backend_list.emplace_back(backends_[name_idx][color_idx]);
       }
     }
