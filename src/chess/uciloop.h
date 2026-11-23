@@ -48,6 +48,7 @@ struct GoParams {
   std::optional<int> depth = std::nullopt;
   std::optional<int> mate = std::nullopt;
   std::optional<int> nodes = std::nullopt;
+  std::optional<int> perft = std::nullopt;
   std::optional<std::int64_t> movetime = std::nullopt;
   bool infinite = false;
   std::vector<std::string> searchmoves = {};

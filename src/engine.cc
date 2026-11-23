@@ -28,6 +28,7 @@
 #include "engine.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "chess/position.h"
 #include "neural/backend.h"
@@ -85,6 +86,31 @@ GameState MakeGameState(const std::string& fen,
     cur_board.Mirror();
   }
   return state;
+}
+
+std::uint64_t Perft(const ChessBoard& board, int max_depth, bool dump = false,
+                    int depth = 0) {
+  if (depth == max_depth) return 1;
+  std::uint64_t total_count = 0;
+
+  auto moves = board.GenerateLegalMoves();
+  if (depth == max_depth - 1) return moves.size();
+
+  for (const auto& move : moves) {
+    auto new_board = board;
+    new_board.ApplyMove(move);
+
+    new_board.Mirror();
+    auto count = Perft(new_board, max_depth, dump, depth + 1);
+    if (dump && depth == 0) {
+      Move m = move;
+      if (board.flipped()) m.Flip();
+      CERR << m.ToString(true) << ": " << count;
+    }
+    total_count += count;
+  }
+
+  return total_count;
 }
 }  // namespace
 
@@ -230,6 +256,21 @@ void Engine::NewGame() {
 }
 
 void Engine::Go(const GoParams& params) {
+  if (params.perft) {
+    const auto start = std::chrono::steady_clock::now();
+    const auto perft =
+        Perft(last_position_ ? last_position_->CurrentPosition().GetBoard()
+                             : ChessBoard(ChessBoard::kStartposFen),
+              *params.perft, true);
+    const auto time = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start);
+    CERR;
+    CERR << "Positions searched: " << perft;
+    CERR << "Positions/second    : "
+         << std::lround(1000.0 * perft / (time.count() + 1));
+    return;
+  }
+
   if ((strict_uci_timing_ && isready_seen_) ||
       !(params.wtime || params.btime)) {
     search_->StartClock();
