@@ -47,11 +47,20 @@ class Random {
   template <class RandomAccessIterator>
   void Shuffle(RandomAccessIterator s, RandomAccessIterator e);
 
+  using RandomEngine = std::mt19937;
+  using result_type = RandomEngine::result_type;
+  static constexpr result_type min() { return RandomEngine::min(); }
+  static constexpr result_type max() { return RandomEngine::max(); }
+  result_type operator()() {
+    Mutex::Lock lock(mutex_);
+    return gen_();
+  }
+
  private:
   Random();
 
   Mutex mutex_;
-  std::mt19937 gen_ GUARDED_BY(mutex_);
+  RandomEngine gen_ GUARDED_BY(mutex_);
 };
 
 template <class RandomAccessIterator>
