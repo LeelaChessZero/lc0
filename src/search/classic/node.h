@@ -209,6 +209,10 @@ class Node {
   // * N (+=1)
   // * N-in-flight (-=1)
   void FinalizeScoreUpdate(float v, float d, float m, int multivisit);
+  // Sets wl/d/m from cached NN values without changing N or NInFlight.
+  void SetCachedValue(float v, float d, float m) { wl_ = v; d_ = d; m_ = m; }
+  // Converts a cached value (set by SetCachedValue) into a real visit (N=1).
+  void MakeCachedVisitReal() { n_ = 1; }
   // Like FinalizeScoreUpdate, but it updates n existing visits by delta amount.
   void AdjustForTerminal(float v, float d, float m, int multivisit);
   // Revert visits to a node which ended in a now reverted terminal.
