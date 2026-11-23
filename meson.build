@@ -43,8 +43,19 @@ if host_machine.system() == 'windows'
 endif
 if ['arm', 'aarch64'].contains(host_machine.cpu_family())
   if get_option('neon')
-    add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
-    add_project_link_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
+    if host_machine.cpu_family() == 'aarch64'
+      # On AArch64, NEON is always available; -mfpu=neon is an ARMv7-only flag.
+      # Use -march=armv8.2-a+fp16+simd to ensure FP16 SIMD is enabled on Cortex-X925/A725.
+      # If native_arch=true, -march=native (added below) already covers this.
+      if not get_option('native_arch')
+        add_project_arguments(cc.get_supported_arguments(['-march=armv8.2-a+fp16+simd']), language : 'cpp')
+        add_project_link_arguments(cc.get_supported_arguments(['-march=armv8.2-a+fp16+simd']), language : 'cpp')
+      endif
+    else
+      # ARMv7: -mfpu=neon is correct here
+      add_project_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
+      add_project_link_arguments(cc.get_supported_arguments(['-mfpu=neon']), language : 'cpp')
+    endif
   endif
 endif
 
