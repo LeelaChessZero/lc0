@@ -93,58 +93,65 @@ bool CheckDir(const std::string& dirname) {
 
 }  // namespace
 
-std::string GetUserCacheDirectory() {
+std::filesystem::path GetUserCacheDirectory() {
+  constexpr auto kLc0DirName = "lc0";
+  std::filesystem::path rv;
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/Caches/";
 #else
   constexpr auto kLocalDir = ".cache/";
   const char *xdg_cache_home = std::getenv("XDG_CACHE_HOME");
   if (xdg_cache_home != NULL && CheckDir(xdg_cache_home)) {
-    return std::string(xdg_cache_home) + "/";
-  }
+    rv = xdg_cache_home;
+  } else
 #endif
-  const char *home = std::getenv("HOME");
-  if (home == NULL) return std::string();
-  const std::string path = std::string(home) + "/" + kLocalDir;
-  if (!CheckDir(path)) return std::string();
-  return path;
+  {
+    const char *home = std::getenv("HOME");
+    if (home == NULL) return {};
+    const auto path = std::filesystem::path(home) / kLocalDir;
+    if (!CheckDir(path)) return {};
+    rv = path;
+  }
+  rv /= kLc0DirName;
+  std::filesystem::create_directory(rv);
+  return rv;
 }
 
-std::string GetUserConfigDirectory() {
+std::filesystem::path GetUserConfigDirectory() {
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/Preferences/";
 #else
   constexpr auto kLocalDir = ".config/";
   const char *xdg_config_home = std::getenv("XDG_CONFIG_HOME");
   if (xdg_config_home != NULL && CheckDir(xdg_config_home)) {
-    return std::string(xdg_config_home) + "/";
+    return xdg_config_home;
   }
 #endif
   const char *home = std::getenv("HOME");
-  if (home == NULL) return std::string();
-  const std::string path = std::string(home) + "/" + kLocalDir;
-  if (!CheckDir(path)) return std::string();
+  if (home == NULL) return {};
+  const auto path = std::filesystem::path(home) / kLocalDir;
+  if (!CheckDir(path)) return {};
   return path;
 }
 
-std::string GetUserDataDirectory() {
+std::filesystem::path GetUserDataDirectory() {
 #ifdef __APPLE__
   constexpr auto kLocalDir = "Library/";
 #else
   constexpr auto kLocalDir = ".local/share/";
   const char *xdg_data_home = std::getenv("XDG_DATA_HOME");
   if (xdg_data_home != NULL && CheckDir(xdg_data_home)) {
-    return std::string(xdg_data_home) + "/";
+    return xdg_data_home;
   }
 #endif
   const char *home = std::getenv("HOME");
-  if (home == NULL) return std::string();
+  if (home == NULL) return {};
   const std::string path = std::string(home) + "/" + kLocalDir;
-  if (!CheckDir(path)) return std::string();
+  if (!CheckDir(path)) return {};
   return path;
 }
 
-std::vector<std::string> GetSystemConfigDirectoryList() {
+std::vector<std::filesystem::path> GetSystemConfigDirectoryList() {
 #ifdef __APPLE__
   return {};
 #else
@@ -154,11 +161,11 @@ std::vector<std::string> GetSystemConfigDirectoryList() {
     return {"/etc/xdg/"};
   }
   result = StrSplit(xdg_config_dirs, ":");
-  return result;
+  return {result.begin(), result.end()};
 #endif
 }
 
-std::vector<std::string> GetSystemDataDirectoryList() {
+std::vector<std::filesystem::path> GetSystemDataDirectoryList() {
 #ifdef __APPLE__
   return {};
 #else
@@ -168,7 +175,7 @@ std::vector<std::string> GetSystemDataDirectoryList() {
     return {"/usr/local/share/", "/usr/share/"};
   }
   result = StrSplit(xdg_data_dirs, ":");
-  return result;
+  return {result.begin(), result.end()};
 #endif
 }
 
