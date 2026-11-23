@@ -35,9 +35,41 @@ jobs:
           command: |
             cd build-gcc
             ninja -j 4
+      - restore_cache:
+          keys:
+            - syzygy-v1-{{ checksum ".circleci/syzygy.sha256" }}
+      - run:
+          name: Prepare Syzygy test tables
+          command: |
+            manifest="$PWD/.circleci/syzygy.sha256"
+            mkdir -p build-gcc/syzygy
+            cd build-gcc/syzygy
+            while read -r digest file; do
+              if [ -f "$file" ]; then continue; fi
+              case "$file" in
+                *.rtbw) type=wdl ;;
+                *.rtbz) type=dtz ;;
+                *) exit 1 ;;
+              esac
+              wget -nv --tries=3 --timeout=30 "https://tablebase.lichess.ovh/tables/standard/3-4-5-$type/$file"
+            done < "$manifest"
+            sha256sum -c "$manifest"
+      - save_cache:
+          key: syzygy-v1-{{ checksum ".circleci/syzygy.sha256" }}
+          paths:
+            - build-gcc/syzygy
       - run:
           name: Run Linux tests
-          command: meson test -C build-gcc --print-errorlogs
+          command: |
+            meson test -C build-gcc --print-errorlogs
+            python3 - <<'PY'
+            import xml.etree.ElementTree as ET
+            cases = ET.parse("build-gcc/syzygy.xml").findall("testsuite[@name='Syzygy']/testcase")
+            for case in cases:
+                print(case.get("name"), case.get("result"))
+            if not cases or any(case.get("result") != "completed" for case in cases):
+                raise SystemExit("Expected every Syzygy probe test to run")
+            PY
       - run:
           name: Run ONNX CPU benchmark
           command: |
