@@ -254,14 +254,14 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
                                           .Last()
                                           .GetBoard()
                                           .GenerateLegalMoves();
+      auto root_visits = search_->GetVisitDistribution(legal_moves);
       std::optional<EvalResult> nneval =
           options_[idx].backend->GetCachedEvaluation(EvalPosition{
               tree_[idx]->GetPositionHistory().GetPositions(), legal_moves});
       training_data_.Add(tree_[idx]->GetCurrentHead(),
                          tree_[idx]->GetPositionHistory(), best_eval,
                          played_eval, best_is_proof, best_move, move,
-                         legal_moves, nneval,
-                         search_->GetParams().GetPolicySoftmaxTemp());
+                         root_visits, legal_moves, nneval);
     }
 
     if (enable_resign && move_number >= options_[idx].uci_options->Get<int>(

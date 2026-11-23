@@ -29,8 +29,8 @@
 
 #include "neural/backend.h"
 #include "search/classic/node.h"
-#include "trainingdata/writer.h"
 #include "trainingdata/trainingdata_v6.h"
+#include "trainingdata/writer.h"
 
 namespace lczero {
 
@@ -46,8 +46,9 @@ class V6TrainingDataArray {
   void Add(const classic::Node* node, const PositionHistory& history,
            classic::Eval best_eval, classic::Eval played_eval,
            bool best_is_proven, Move best_move, Move played_move,
+           const std::vector<std::tuple<float, float>>& visits,
            std::span<Move> legal_moves,
-           const std::optional<EvalResult>& nneval, float policy_softmax_temp);
+           const std::optional<EvalResult>& nneval);
 
   // Writes training data to a file.
   void Write(TrainingDataWriter* writer, GameResult result,

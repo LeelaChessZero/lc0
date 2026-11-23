@@ -95,6 +95,7 @@ class Edge {
   // (but can be changed by adding Dirichlet noise). Must be in [0,1].
   float GetP() const;
   void SetP(float val);
+  bool IsZeroPolicy() const;
 
   // Debug information about the edge.
   std::string DebugString() const;
@@ -187,6 +188,11 @@ class Node {
     for (int i = 0; i < loops; i++) {
       output[i] = edges_[i].GetP();
     }
+  }
+
+  void CopyPolicy(Edge* dst) const {
+    if (!edges_) return;
+    std::copy(edges_.get(), edges_.get() + num_edges_, dst);
   }
 
   // Makes the node terminal and sets it's score.
@@ -399,6 +405,7 @@ class EdgeAndNode {
 
   // Edge related getters.
   float GetP() const { return edge_->GetP(); }
+  bool IsZeroPolicy() const { return edge_->IsZeroPolicy(); }
   Move GetMove(bool flip = false) const {
     return edge_ ? edge_->GetMove(flip) : Move();
   }
