@@ -883,6 +883,9 @@ if get_option('build_backends')
 
       if get_option('sycl') == 'l0'
         message('Building SYCL for the L0 backend')
+        # One device image per kernel: the GPU driver compiles an image the
+        # first time one of its kernels runs, so it compiles only those used.
+        add_project_link_arguments('-fsycl-device-code-split=per_kernel', language : 'cpp')
         add_project_arguments('-DMKL_ILP64', language : 'cpp')
         # oneapi/mkl.hpp is not always found in the default icx headers.
         mkl_include = get_option('mkl_include')
