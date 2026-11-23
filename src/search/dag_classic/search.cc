@@ -52,6 +52,37 @@ namespace {
 // Maximum delay between outputting "uci info" when nothing interesting happens.
 const int kUciInfoMinimumFrequencyMs = 5000;
 
+bool ShouldStartGarbageCollection(const classic::IterationStats& stats,
+                                  const classic::StoppersHints& hints,
+                                  float delay) {
+  // A 100% delay disables mid-search garbage collection.
+  if (delay >= 1.0f) return false;
+  bool has_budget = false;
+  if (hints.HasEstimatedRemainingTimeMs()) {
+    has_budget = true;
+    if (stats.time_since_movestart >
+        delay * (stats.time_since_movestart +
+                 hints.GetEstimatedRemainingTimeMs())) {
+      return true;
+    }
+  }
+  if (hints.HasEstimatedRemainingNodes()) {
+    has_budget = true;
+    if (stats.nodes_since_movestart >
+        delay * (stats.nodes_since_movestart +
+                 hints.GetEstimatedRemainingNodes())) {
+      return true;
+    }
+  }
+  if (!has_budget) {
+    // Without a finite time or node limit (e.g. go infinite/ponder/depth), wait
+    // a fraction of a 1 s reference window so old subtrees are still freed.
+    constexpr int64_t kUnboundedGcReferenceTimeMs = 1000;
+    return stats.time_since_movestart > delay * kUnboundedGcReferenceTimeMs;
+  }
+  return false;
+}
+
 MoveList MakeRootMoveFilter(const MoveList& searchmoves,
                             SyzygyTablebase* syzygy_tb,
                             const PositionHistory& history, bool fast_play,
@@ -682,8 +713,7 @@ void Search::MaybeTriggerStop(const classic::IterationStats& stats,
     if (stopper_->ShouldStop(stats, hints)) {
       FireStopInternal();
     } else if (!gc_started_ &&
-        stats.time_since_movestart > delay *
-        (stats.time_since_movestart + hints->GetEstimatedRemainingTimeMs())) {
+               ShouldStartGarbageCollection(stats, *hints, delay)) {
       NodeGarbageCollector::Instance().Start();
       gc_started_ = true;
     }
