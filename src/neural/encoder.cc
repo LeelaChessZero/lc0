@@ -335,6 +335,57 @@ InputPlanes EncodePositionForNN(
                              history_planes, fill_empty_history, transform_out);
 }
 
+int CompactHistoryForNN(pblczero::NetworkFormat::InputFormat input_format,
+                        std::span<const Position> history,
+                        std::span<int, kCompactHistory> indices) {
+  const int size = history.size();
+  const bool skip_non_repeats =
+      input_format ==
+          pblczero::NetworkFormat::INPUT_112_WITH_CANONICALIZATION_V2 ||
+      input_format == pblczero::NetworkFormat::
+                          INPUT_112_WITH_CANONICALIZATION_V2_ARMAGEDDON;
+  if (!skip_non_repeats || size == 0) {
+    // Every position read takes a plane, so only the last ones are read.
+    const int count = std::min(size, kMoveHistory);
+    for (int i = 0; i < count; ++i) indices[i] = size - count + i;
+    return count;
+  }
+
+  // Follows the loop of EncodePositionForNN, newest position first, and keeps
+  // the positions it encodes and the one it stops at.
+  const ChessBoard::Castlings castlings = history.back().GetBoard().castlings();
+  int count = 0;
+  int planes = 0;
+  bool flip = false;
+  for (int index = size - 1; planes < kMoveHistory; --index, flip = !flip) {
+    const Position& position = history[index];
+    const bool is_newest = index == size - 1;
+    ChessBoard::Castlings position_castlings = position.GetBoard().castlings();
+    if (flip) position_castlings.Mirror();
+    const bool stops_before =
+        position_castlings.as_int() != castlings.as_int() ||
+        (!is_newest && !position.GetBoard().en_passant().empty());
+    const bool is_encoded =
+        !stops_before && (is_newest || position.GetRepetitions() != 0);
+    // Below index 0 the encoder only reads the oldest position again.
+    const bool is_last =
+        stops_before || position.GetRule50Ply() == 0 || index == 0;
+    if (is_encoded || is_last) {
+      // The encoder mirrors every other position, so an even number of
+      // positions is dropped: one stays when that would be odd.
+      if (count > 0 && (indices[count - 1] - index) % 2 == 0) {
+        indices[count] = indices[count - 1] - 1;
+        ++count;
+      }
+      indices[count++] = index;
+    }
+    if (is_encoded) ++planes;
+    if (is_last) break;
+  }
+  std::reverse(indices.begin(), indices.begin() + count);
+  return count;
+}
+
 namespace {
 const char* kMoveStrs[] = {
     "a1b1",  "a1c1",  "a1d1",  "a1e1",  "a1f1",  "a1g1",  "a1h1",  "a1a2",

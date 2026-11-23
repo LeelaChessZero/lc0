@@ -73,6 +73,12 @@ BackendFactory* BackendManager::GetFactoryByName(std::string_view name) const {
 
 std::unique_ptr<Backend> BackendManager::CreateFromParams(
     const OptionsDict& options) const {
+  if (launcher_) return launcher_(options);
+  return CreateInProcess(options);
+}
+
+std::unique_ptr<Backend> BackendManager::CreateInProcess(
+    const OptionsDict& options) const {
   const std::string backend =
       options.Get<std::string>(SharedBackendParams::kBackendId);
   return CreateFromName(backend, options);
