@@ -1,6 +1,6 @@
 /*
   This file is part of Leela Chess Zero.
-  Copyright (C) 2020 The LCZero Authors
+  Copyright (C) 2020-2022 The LCZero Authors
 
   Leela Chess is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <map>
+
 namespace lczero {
 
 class Numa {
@@ -40,7 +42,17 @@ class Numa {
   static void BindThread(int id);
 
  private:
-  static int threads_per_core_;
+  struct Group {
+    int efficiency_class;
+    int cores;
+    int threads;
+    int group_id;
+    uint64_t mask;
+  };
+  static std::map<uint32_t, Group> groups;
+  static int thread_count;
+  static int core_count;
+  static int thread_groups;
 };
 
 }  // namespace lczero
