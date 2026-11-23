@@ -50,14 +50,15 @@ struct V6TrainingData {
   //  bit 7: side to move (input type 3)
   //  bit 6: position marked for deletion by the rescorer (never set by lc0)
   //  bit 5: game adjudicated (v6)
-  //  bit 4: max game length exceeded (v6)
+  //  bit 4: max game length exceeded (v6), result_q and result_d are both 0
+  //         until the rescorer assigns a result
   //  bit 3: best_q is for proven best move (v6)
   //  bit 2: transpose transform (input type 3)
   //  bit 1: mirror transform (input type 3)
   //  bit 0: flip transform (input type 3)
   // In versions prior to v5 this spot contained an unused move count field.
   uint8_t invariance_info;
-  // In versions prior to v6 this spot contained thr result as an int8_t.
+  // In versions prior to v6 this spot contained the result as an int8_t.
   uint8_t dummy;
   float root_q;
   float best_q;

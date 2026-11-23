@@ -95,9 +95,14 @@ void V6TrainingDataArray::Write(TrainingDataWriter* writer, GameResult result,
     } else if (result == GameResult::BLACK_WON) {
       chunk.result_q = black_to_move ? 1 : -1;
       chunk.result_d = 0;
-    } else {
+    } else if (result == GameResult::DRAW) {
       chunk.result_q = 0;
       chunk.result_d = 1;
+    } else {
+      // The game is undecided, there is no result to store. The rescorer
+      // assigns one.
+      chunk.result_q = 0;
+      chunk.result_d = 0;
     }
     if (adjudicated) {
       chunk.invariance_info |= 1u << 5;  // Game adjudicated.

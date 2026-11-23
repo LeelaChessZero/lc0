@@ -89,6 +89,11 @@ class SelfPlayGame {
   void WriteTrainingData(TrainingDataWriter* writer) const;
 
   GameResult GetGameResult() const { return game_result_; }
+  // Whether the game was stopped at the ply limit. Its result stays UNDECIDED,
+  // unlike an aborted game it is still reported and its training data written.
+  bool MaxGameLengthExceeded() const {
+    return adjudicated_ && game_result_ == GameResult::UNDECIDED;
+  }
   std::vector<Move> GetMoves() const;
   // Gets the eval which required the biggest swing up to get the final outcome.
   // Eval is the expected outcome in the range 0<->1.
