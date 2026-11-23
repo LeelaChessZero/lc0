@@ -25,6 +25,12 @@
   Program grant you additional permission to convey the resulting work.
 */
 
+// fopen, dup and fileno are standard C and POSIX; don't warn about them.
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#define _CRT_NONSTDC_NO_WARNINGS
+#endif
+
 #include "neural/loader.h"
 
 #include <absl/strings/numbers.h>
