@@ -9,7 +9,7 @@ jobs:
           name: Install build tools
           command: |
             apt-get update
-            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev wget unzip
+            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev wget unzip libgmock-dev
             pip3 install meson==0.63
             pip3 install ninja
       - run:
@@ -23,7 +23,7 @@ jobs:
           environment:
             CC: gcc-10
             CXX: g++-10
-          command: meson build-gcc -Dgtest=false -Donnx_include=/tmp/onnxruntime/build/native/include -Donnx_libdir=/tmp/onnxruntime/runtimes/linux-x64/native
+          command: meson build-gcc -Dgtest=true -Donnx_include=/tmp/onnxruntime/build/native/include -Donnx_libdir=/tmp/onnxruntime/runtimes/linux-x64/native
       - run:
           name: Meson Clang
           environment:
@@ -35,6 +35,16 @@ jobs:
           command: |
             cd build-gcc
             ninja -j 4
+      - run:
+          name: Run Linux tests
+          command: meson test -C build-gcc --print-errorlogs
+      - run:
+          name: Run ONNX CPU benchmark
+          command: |
+            network_sha=f404e156ceb2882470fd8c032b8754af0fa0b71168328912eaef14671a256e34
+            wget -nv -O /tmp/bench.pb.gz "https://data.lczero.org/files/networks/$network_sha"
+            build-gcc/lc0 bench --backend=onnx-cpu --weights=/tmp/bench.pb.gz --num-positions=1 | tee /tmp/bench.log
+            grep -Eq '^Nodes searched +: [1-9][0-9]*$' /tmp/bench.log
       - run:
           name: Build Clang
           command: |
