@@ -207,6 +207,12 @@ static const NSInteger kMinSubBatchSize = 20;
 
     // Create execution descriptor with block to update results for each iteration.
     MPSGraphExecutionDescriptor * executionDescriptor = [[MPSGraphExecutionDescriptor alloc] init];
+    MPSGraphCompilationDescriptor * compilationDescriptor = [[MPSGraphCompilationDescriptor alloc] init];
+    // Keep graph placement on the GPU to avoid misleading ANE import failures
+    // for unsupported transformer graphs. Use MPSGraphOptimizationLevel1 to
+    // try ANE placement.
+    compilationDescriptor.optimizationLevel = MPSGraphOptimizationLevel0;
+    executionDescriptor.compilationDescriptor = compilationDescriptor;
     executionDescriptor.completionHandler = ^(MPSGraphTensorDataDictionary * resultDictionary, NSError * _Nullable error) {
         if (error) {
             NSLog(@"Error occurred during execution: %@", error);
