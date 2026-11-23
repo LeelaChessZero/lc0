@@ -1,0 +1,89 @@
+name: SYCL Backend Build
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Update submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build curl binutils python3-pip
+          pip3 install meson==1.3.2
+          meson --version
+      - name: Install SYCL Dependencies (Intel oneAPI)
+        run: |
+          # Use the modern key storage for Ubuntu 24.04 (Noble)
+          sudo wget -qO /etc/apt/trusted.gpg.d/intel-oneapi.asc https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB
+          echo "deb https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y \
+            intel-oneapi-base-toolkit-2025.2 \
+            intel-opencl-icd \
+            libtbbmalloc2 \
+            ocl-icd-opencl-dev
+      - name: Setup Intel oneAPI environment
+        run: |
+          # Source variables and pipe them into the GitHub Environment file
+          source /opt/intel/oneapi/setvars.sh
+          printenv >> $GITHUB_ENV
+
+      - name: Configure Meson and Build SYCL
+        run: |
+          # Now icpx and icx are in the PATH automatically
+          unset AR
+          export CC=icx
+          export CXX=icpx
+          
+          # Use the environment-initialized paths
+          export RANLIB=xilib
+          # Note: The AR path in oneAPI is specific; often it is 'llvm-ar' 
+          # but sourcing setvars.sh usually handles the underlying toolchain.
+          # Tell icpx to use the lld linker
+          export LDFLAGS="-fuse-ld=lld"
+          
+          meson setup --buildtype release build \
+            -Dsycl=l0 \
+            -Dgtest=false \
+            -Dnative_arch=false \
+            -Db_lto=true \
+            -Dcpp_link_args="-fuse-ld=lld" \
+            --clearcache
+            
+          ninja -C build -v
+      - name: Upload Meson Log on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: build-logs-${{ inputs.artifact_name }}
+          path: build
+      - name: Download Network
+        if: success()
+        run: |
+          cd build
+          curl -L https://training.lczero.org/get_network?sha=195b450999e874d07aea2c09fd0db5eff9d4441ec1ad5a60a140fe8ea94c4f3a -o T79.pb.gz
+          touch -t 201801010000.00 T79.pb.gz
+      - name: Upload a Build Artifact
+        if: success()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: lc0-${{ inputs.artifact_name }}
+          path: |
+            build/lc0
+            build/T79.pb.gz
