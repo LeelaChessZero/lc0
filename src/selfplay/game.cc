@@ -65,6 +65,11 @@ const OptionId kOpeningStopProbId{
     "opening-stop-prob", "OpeningStopProb",
     "From each opening move, start a self-play game with probability max(p, "
     "1/n), where p is the value given and n the opening moves remaining."};
+const OptionId kMaxGamePliesId{
+    "max-game-plies", "MaxGamePlies",
+    "Adjudicate the game as a draw once it reaches this many plies. The "
+    "default keeps self-play training games from running too long. Set to 0 "
+    "to disable the limit."};
 }  // namespace
 
 void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
@@ -77,6 +82,7 @@ void SelfPlayGame::PopulateUciParams(OptionsParser* options) {
   PopulateTimeManagementOptions(classic::RunType::kSelfplay, options);
   options->Add<StringOption>(kSyzygyTablebaseId);
   options->Add<FloatOption>(kOpeningStopProbId, 0.0f, 1.0f) = 0.0f;
+  options->Add<IntOption>(kMaxGamePliesId, 0, 1000000) = 450;
 }
 
 SelfPlayGame::SelfPlayGame(PlayerOptions white, PlayerOptions black,
@@ -143,13 +149,17 @@ void SelfPlayGame::Play(int white_threads, int black_threads, bool training,
       syzygy_tb_ = nullptr;
     }
   }
+  // Take the ply limit from the white player options, as with the tablebases.
+  const int max_game_plies =
+      options_[0].uci_options->Get<int>(kMaxGamePliesId);
   // Do moves while not end of the game. (And while not abort_)
   while (!abort_) {
     game_result_ = tree_[0]->GetPositionHistory().ComputeGameResult();
 
     // If endgame, stop.
     if (game_result_ != GameResult::UNDECIDED) break;
-    if (tree_[0]->GetPositionHistory().Last().GetGamePly() >= 450) {
+    if (max_game_plies > 0 &&
+        tree_[0]->GetPositionHistory().Last().GetGamePly() >= max_game_plies) {
       adjudicated_ = true;
       break;
     }
