@@ -31,6 +31,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <iostream>
 #include <sstream>
 #include <thread>
@@ -314,6 +315,7 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
     // comparable to another non-loss choice. Force this by clearing the policy.
     if (GetParent() != nullptr) GetOwnEdge()->SetP(0.0f);
   }
+  x_ = wl_;
 }
 
 void Node::MakeNotTerminal() {
@@ -337,6 +339,11 @@ void Node::MakeNotTerminal() {
     // Recompute with current eval (instead of network's) and children's eval.
     wl_ /= n_;
     d_ /= n_;
+    x_ = std::numeric_limits<float>::max();
+    for (auto* child : VisitedNodes()) {
+      x_ = std::min(x_, -child->x_);
+    }
+    if (x_ == std::numeric_limits<float>::max()) x_ = 0.0f;
   }
 }
 
@@ -389,6 +396,28 @@ void Node::RevertTerminalVisits(float v, float d, float m, int multivisit) {
     // Decrement N.
     n_ -= multivisit;
   }
+}
+
+bool Node::UpdateX(float child_old_x, float child_new_x) {
+  float neg_old = -child_old_x;
+  float neg_new = -child_new_x;
+  if (x_ != neg_old) {
+    if (neg_new >= x_) return false;
+    x_ = neg_new;
+    return true;
+  }
+  if (neg_new <= x_) {
+    if (neg_new == x_) return false;
+    x_ = neg_new;
+    return true;
+  }
+  // Best child worsened — rescan all visited children.
+  float old_x = x_;
+  x_ = std::numeric_limits<float>::max();
+  for (auto* child : VisitedNodes()) {
+    x_ = std::min(x_, -child->x_);
+  }
+  return x_ != old_x;
 }
 
 void Node::UpdateChildrenParents() {
