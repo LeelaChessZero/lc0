@@ -31,6 +31,7 @@
 #include "search/register.h"
 #include "selfplay/loop.h"
 #include "tools/backendbench.h"
+#include "tools/backendserver.h"
 #include "tools/benchmark.h"
 #include "tools/describenet.h"
 #include "tools/leela2onnx.h"
@@ -101,6 +102,8 @@ int main(int argc, const char** argv) {
                                 "Convert ONNX network to Leela net.");
       CommandLine::RegisterMode("describenet",
                                 "Shows details about the Leela network.");
+      CommandLine::RegisterMode("backendserver",
+                                "Run a backend server for multiple local instances.");
     }
     for (const std::string_view search_name :
          SearchManager::Get()->GetSearchNames()) {
@@ -132,6 +135,8 @@ int main(int argc, const char** argv) {
       lczero::ConvertOnnxToLeela();
     } else if (CommandLine::ConsumeCommand("describenet")) {
       lczero::DescribeNetworkCmd();
+    } else if (CommandLine::ConsumeCommand("backendserver")) {
+      lczero::RunBackendServer();
     } else {
       lczero::ChooseAndRunEngine();
     }
