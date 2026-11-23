@@ -287,6 +287,18 @@ const OptionId BaseSearchParams::kNoiseAlphaId{
                   "probabilities. Larger values result in flatter / more "
                   "evenly distributed values.",
      .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kScLimitId{
+    {.long_flag = "search-contempt-node-limit",
+     .uci_option = "ScLimit",
+     .help_text = "UCT until this number of nodes "
+                  "thompson sampling beyond this limit.",
+     .visibility = OptionId::kProOnly}};
+const OptionId BaseSearchParams::kScTemperatureId{
+    {.long_flag = "search-contempt-temperature",
+     .uci_option = "ScTemperature",
+     .help_text = "Softmax temperature that is applied to visit distribution "
+                  "for thompson sampling after node is frozen. Default value is 1.",
+     .visibility = OptionId::kProOnly}};
 const OptionId BaseSearchParams::kVerboseStatsId{
     "verbose-move-stats", "VerboseMoveStats",
     "Display Q, V, N, U and P values of every move candidate after each move.",
@@ -562,6 +574,8 @@ void BaseSearchParams::Populate(OptionsParser* options) {
       0.0f;
   options->Add<FloatOption>(kNoiseEpsilonId, 0.0f, 1.0f) = 0.0f;
   options->Add<FloatOption>(kNoiseAlphaId, 0.0f, 10000000.0f) = 0.3f;
+  options->Add<IntOption>(kScLimitId, -1000000000, 1000000000) = 1000000000;
+  options->Add<FloatOption>(kScTemperatureId, 0.0f, 1.0f) = 1.0f;
   options->Add<BoolOption>(kVerboseStatsId) = false;
   options->Add<BoolOption>(kLogLiveStatsId) = false;
   std::vector<std::string> fpu_strategy = {"reduction", "absolute"};
