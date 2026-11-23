@@ -399,6 +399,15 @@ message OnnxModel {
   optional string output_mlh = 7;
 }
 
+// Backend can use these values in any way, except id that should be unique.
+message BackendCache {
+  optional string id = 1;
+  optional int32 x = 2;
+  optional int32 y = 3;
+  optional int32 z = 4;
+  optional bytes val = 5;
+}
+
 message Net {
   optional fixed32 magic = 1;
   optional string license = 2;
@@ -408,4 +417,6 @@ message Net {
   // Either weights or onnx_model is set, but not both.
   optional Weights weights = 10;
   optional OnnxModel onnx_model = 11;
+  // Backend specific cached stuff, e.g. pre-compiled trt engines.
+  repeated BackendCache backend_cache = 12;
 }
