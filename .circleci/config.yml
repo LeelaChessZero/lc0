@@ -62,14 +62,14 @@ jobs:
           name: Run Linux tests
           command: |
             meson test -C build-gcc --print-errorlogs
-            python3 - <<'PY'
+            python3 -c '
             import xml.etree.ElementTree as ET
-            cases = ET.parse("build-gcc/syzygy.xml").findall("testsuite[@name='Syzygy']/testcase")
+            cases = ET.parse("build-gcc/syzygy.xml").findall("testsuite/testcase")
             for case in cases:
                 print(case.get("name"), case.get("result"))
             if not cases or any(case.get("result") != "completed" for case in cases):
                 raise SystemExit("Expected every Syzygy probe test to run")
-            PY
+            '
       - run:
           name: Run ONNX CPU benchmark
           command: |
