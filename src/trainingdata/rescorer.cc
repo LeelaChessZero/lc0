@@ -1015,9 +1015,20 @@ void ApplyDeblunder(FileData<FrameType>& data, SyzygyTablebase* tablebase) {
     }
   }
 
-  float activeZ[3] = {data.fileContents.back().result_q,
-                      data.fileContents.back().result_d,
-                      data.fileContents.back().plies_left};
+  float activeZ[3];
+  // If the scan stopped before the end of the game, a tablebase position was
+  // reached and the pass is seeded from that position.
+  if (history.GetLength() - 1 < data.moves.size()) {
+    // Seed from the tablebase position one ply ahead, flipped to the
+    // perspective of the current position.
+    activeZ[0] = -data.fileContents[history.GetLength()].result_q;
+    activeZ[1] = data.fileContents[history.GetLength()].result_d;
+    activeZ[2] = data.fileContents[history.GetLength()].plies_left + 1.0f;
+  } else {
+    activeZ[0] = data.fileContents.back().result_q;
+    activeZ[1] = data.fileContents.back().result_d;
+    activeZ[2] = data.fileContents.back().plies_left;
+  }
   bool deblunderingStarted = false;
 
   while (true) {
