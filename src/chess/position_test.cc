@@ -31,10 +31,9 @@ TEST(Position, SetFenGetFen) {
   ChessBoard board;
   std::vector<std::string> source_fens = {
       "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 1 1",
-      // has en_passant space e3 - black to move
-      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq e3 1 1",
-      // has en_passant space c6 - white to move
-      "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
+      "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R b KQkq - 1 1",
+      // has en_passant space d6 - white to move
+      "rnbqkbnr/ppp2ppp/4p3/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2",
       "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 1 1",
       "r2q1rk1/pP1p2pp/Q4n2/bbp1p3/Np6/1B3NBn/pPPP1PPP/R3K2R b KQ - 0 1",
       "3b4/rp1r1k2/8/1RP2p1p/p1KP4/P3P2P/5P2/1R2B3 b - - 2 30",
@@ -159,6 +158,30 @@ TEST(PositionHistory, DidRepeatSinceLastZeroingMoveNeverRepeated) {
   history.Append(history.Last().GetBoard().ParseMove("f7f8"));
   history.Append(history.Last().GetBoard().ParseMove("f2f4"));
   EXPECT_FALSE(history.DidRepeatSinceLastZeroingMove());
+}
+
+TEST(PositionHistory, IllegalEnPassantMoveisNotMarked) {
+  ChessBoard board;
+  PositionHistory history;
+  board.SetFromFen("4r1k1/3p4/8/4P3/8/8/8/4K1N1 b - - 0 1");
+  history.Reset(board, 0, 1);
+
+  for (const char* uci : {"d7d5", "g1f3", "g8h8", "f3g1", "h8g8"}) {
+    history.Append(history.Last().GetBoard().ParseMove(uci));
+  }
+
+  EXPECT_EQ(history.Last().GetRepetitions(), 1);
+  EXPECT_EQ(history.ComputeGameResult(), GameResult::UNDECIDED);
+
+  for (const char* uci : {"g1f3", "g8h8", "f3g1"}) {
+    history.Append(history.Last().GetBoard().ParseMove(uci));
+  }
+
+  EXPECT_EQ(history.ComputeGameResult(), GameResult::UNDECIDED);
+
+  history.Append(history.Last().GetBoard().ParseMove("h8g8"));
+  EXPECT_EQ(history.Last().GetRepetitions(), 2);
+  EXPECT_EQ(history.ComputeGameResult(), GameResult::DRAW);
 }
 
 }  // namespace lczero
