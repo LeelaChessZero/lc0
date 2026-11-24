@@ -1644,7 +1644,8 @@ bool SearchWorker::ShouldStopPickingHere(Node* node, bool is_root_node,
   // Bounds differ (swap).
   auto [low_node_lower, low_node_upper] = low_node->GetBounds();
   auto [node_lower, node_upper] = node->GetBounds();
-  if (low_node_lower != -node_upper || low_node_upper != -node_lower)
+  if (low_node_lower != -node_upper || low_node_upper != -node_lower ||
+      low_node->IsTbBound() != node->IsTbBound())
     return true;
 
   // WL differs significantly (flip).
@@ -2040,6 +2041,7 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     return;
   }
 
+  std::optional<GameResult> tb_soft_result;
   // We can shortcircuit these draws-by-rule only if they aren't root;
   // if they are root, then thinking about them is the point.
   if (node != search_->root_node_) {
@@ -2061,31 +2063,41 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
     // position.
     else if (search_->syzygy_tb_ && !search_->root_is_in_dtz_ &&
              board.castlings().no_legal_castle() &&
-             history.Last().GetRule50Ply() == 0 &&
              (board.ours() | board.theirs()).count() <=
                  search_->syzygy_tb_->max_cardinality()) {
-      ProbeState state;
-      const WDLScore wdl =
-          search_->syzygy_tb_->probe_wdl(history.Last(), &state);
-      // Only fail state means the WDL is wrong, probe_wdl may produce correct
-      // result with a stat other than OK.
-      if (state != FAIL) {
-        // TB nodes don't have NN evaluation, assign M from parent node.
-        float m = 0.0f;
-        if (path.size() > 1) {
-          auto parent = std::get<0>(path[path.size() - 2]);
-          m = std::max(0.0f, parent->GetM() - 1.0f);
+      const int cnt50 = history.Last().GetRule50Ply();
+      if (cnt50 == 0) {
+        ProbeState state;
+        const WDLScore wdl =
+            search_->syzygy_tb_->probe_wdl(history.Last(), &state);
+        // Only fail state means the WDL is wrong, probe_wdl may produce correct
+        // result with a stat other than OK.
+        if (state != FAIL) {
+          search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
+          // If the colors seem backwards, check the checkmate check above.
+          if (wdl == WDL_WIN) {
+            tb_soft_result = GameResult::BLACK_WON;
+          } else if (wdl == WDL_LOSS) {
+            tb_soft_result = GameResult::WHITE_WON;
+          } else {  // Cursed wins and blessed losses count as draws.
+            // TB nodes don't have NN evaluation, assign M from parent node.
+            float m = 0.0f;
+            if (path.size() > 1) {
+              auto parent = std::get<0>(path[path.size() - 2]);
+              m = std::max(0.0f, parent->GetM() - 1.0f);
+            }
+            node->MakeTerminal(GameResult::DRAW, m, Terminal::Tablebase);
+            return;
+          }
         }
-        // If the colors seem backwards, check the checkmate check above.
-        if (wdl == WDL_WIN) {
-          node->MakeTerminal(GameResult::BLACK_WON, m, Terminal::Tablebase);
-        } else if (wdl == WDL_LOSS) {
-          node->MakeTerminal(GameResult::WHITE_WON, m, Terminal::Tablebase);
-        } else {  // Cursed wins and blessed losses count as draws.
-          node->MakeTerminal(GameResult::DRAW, m, Terminal::Tablebase);
+      } else {
+        ProbeState state;
+        const int dtz = search_->syzygy_tb_->probe_dtz(history.Last(), &state);
+        if (state != FAIL && dtz != 0 && std::abs(dtz) + cnt50 <= 99) {
+          search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
+          tb_soft_result =
+              (dtz > 0) ? GameResult::BLACK_WON : GameResult::WHITE_WON;
         }
-        search_->tb_hits_.fetch_add(1, std::memory_order_acq_rel);
-        return;
       }
     }
   }
@@ -2112,6 +2124,13 @@ void SearchWorker::ExtendNode(NodeToProcess& picked_node) {
                                    },
                                    picked_node.eval->AsPtr()) ==
                                BackendComputation::FETCHED_IMMEDIATELY;
+    if (tb_soft_result) {
+      picked_node.tt_low_node->SetBounds(-*tb_soft_result, -*tb_soft_result,
+                                         /*tb_bound=*/true);
+    }
+  }
+  if (tb_soft_result) {
+    node->SetBounds(*tb_soft_result, *tb_soft_result, /*tb_bound=*/true);
   }
 }
 
@@ -2255,7 +2274,15 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
         update_parent_bounds = true;
       } else {
         auto [lower, upper] = nl->GetBounds();
-        n->SetBounds(-upper, -lower);
+        const GameResult new_lower = -upper;
+        const GameResult new_upper = -lower;
+        const bool new_tb_bound = nl->IsTbBound();
+        const auto [old_lower, old_upper] = n->GetBounds();
+        if (old_lower != new_lower || old_upper != new_upper ||
+            n->IsTbBound() != new_tb_bound) {
+          n->SetBounds(new_lower, new_upper, new_tb_bound);
+          update_parent_bounds = true;
+        }
       }
     }
 
@@ -2299,9 +2326,11 @@ void SearchWorker::DoBackupUpdateSingleNode(
   }
 
   auto [n, nr, nm] = path.back();
-  // For the first visit to a terminal, maybe update parent bounds too.
+  // For the first visit to a terminal or soft-bounded node, maybe update
+  // parent bounds too.
   auto update_parent_bounds =
-      params_.GetStickyEndgames() && n->IsTerminal() && !n->GetN();
+      params_.GetStickyEndgames() && !n->GetN() &&
+      (n->IsTerminal() || n->HasTightenedBounds());
   const auto& nl = n->GetLowNode();
   float v = 0.0f;
   float d = 0.0f;
@@ -2433,8 +2462,12 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
   auto losing_m = 0.0f;
   auto best_eog_win_m = std::numeric_limits<float>::infinity();
   auto best_tb_win_m = std::numeric_limits<float>::infinity();
-  auto has_eog_win = false;
-  auto prefer_tb = false;
+  auto has_hard_eog_win = false;
+  auto has_hard_tb_win = false;
+  auto has_non_tb_win = false;
+  auto has_non_tb_draw_or_win = false;
+  auto all_hard = true;
+  auto any_tb = false;
 
   // Determine the maximum (lower, upper) bounds across all edges.
   // (-1,-1) Loss (initial and lowest bounds)
@@ -2450,19 +2483,29 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
     lower = std::max(edge_lower, lower);
     upper = std::max(edge_upper, upper);
 
-    const auto is_tb = edge.IsTbTerminal();
+    const bool is_hard = edge.IsTerminal();
+    const bool is_tb = edge.HasTbProvenance();
+    all_hard = all_hard && is_hard;
+    any_tb = any_tb || is_tb;
+
+    if (edge_lower >= GameResult::DRAW && !is_tb) {
+      has_non_tb_draw_or_win = true;
+    }
     if (edge_lower == GameResult::WHITE_WON) {
-      if (!is_tb) {
-        has_eog_win = true;
-        best_eog_win_m = std::min(best_eog_win_m, edge.GetM(m));
-      } else {
-        best_tb_win_m = std::min(best_tb_win_m, edge.GetM(m));
+      if (!is_tb) has_non_tb_win = true;
+      if (is_hard) {
+        if (!is_tb) {
+          has_hard_eog_win = true;
+          best_eog_win_m = std::min(best_eog_win_m, edge.GetM(m));
+        } else {
+          has_hard_tb_win = true;
+          best_tb_win_m = std::min(best_tb_win_m, edge.GetM(m));
+        }
       }
     } else if (edge_upper == GameResult::BLACK_WON) {
       // Track the longest loss.
       losing_m = std::max(losing_m, edge.GetM(0.0f));
     }
-    prefer_tb = prefer_tb || is_tb;
   }
 
   // The parent's bounds are flipped from the children (-max(U), -max(L))
@@ -2478,15 +2521,24 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
   const auto& pl = p->GetLowNode();
   if (lower == GameResult::BLACK_WON && upper == GameResult::WHITE_WON) {
     return false;
-  } else if (lower == upper) {
-    // Search can stop at the parent if the bounds can't change anymore, so make
-    // it terminal preferring shorter wins and longer losses.
+  }
+
+  const bool hard_collapse =
+      (lower == upper) &&
+      ((upper == GameResult::WHITE_WON &&
+        (has_hard_eog_win || has_hard_tb_win)) ||
+       (upper != GameResult::WHITE_WON && all_hard));
+
+  if (hard_collapse) {
+    // Search can stop at the parent if the bounds are hard-proven, so make it
+    // terminal preferring shorter wins and longer losses.
     *n_to_fix = p->GetN();
     assert(*n_to_fix > 0);
     float terminal_m = m;
+    bool prefer_tb = any_tb;
     if (upper == GameResult::WHITE_WON) {
-      prefer_tb = !has_eog_win;
-      terminal_m = has_eog_win ? best_eog_win_m : best_tb_win_m;
+      prefer_tb = !has_hard_eog_win;
+      terminal_m = has_hard_eog_win ? best_eog_win_m : best_tb_win_m;
     } else if (upper == GameResult::BLACK_WON) {
       terminal_m = std::max(losing_m, m);
     }
@@ -2498,12 +2550,48 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
     *m_delta = pl->GetM() + 1 - p->GetM();
     p->MakeTerminal(-upper, terminal_m + 1.0f,
                     prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
-  } else {
-    pl->SetBounds(lower, upper);
-    p->SetBounds(-upper, -lower);
+    return true;
   }
 
-  // Bounds were set, so indicate we should check the parent too.
+  // Soft-bound propagation (either partial bounds or exact bounds backed only
+  // by soft-bounded non-terminal children).
+  const GameResult new_lower = -upper;
+  const GameResult new_upper = -lower;
+  bool bound_is_tb = any_tb;
+  if (lower == GameResult::WHITE_WON) {
+    bound_is_tb = !has_non_tb_win;
+  } else if (lower == GameResult::DRAW && upper == GameResult::WHITE_WON) {
+    bound_is_tb = !has_non_tb_draw_or_win;
+  }
+
+  const auto [old_pl_lower, old_pl_upper] = pl->GetBounds();
+  const bool old_pl_tb = pl->IsTbBound();
+  // Never widen an existing soft bound (e.g. a TB soft bound seeded on pl)
+  // when children only prove a looser partial bound. Disjoint bounds (e.g. a
+  // path-local 3-fold draw overriding a history-blind TB loss) are accepted.
+  bool pl_changed = true;
+  if (lower <= old_pl_lower && upper >= old_pl_upper) {
+    if (lower < old_pl_lower || upper > old_pl_upper) {
+      pl_changed = false;
+    } else if (!old_pl_tb || bound_is_tb) {
+      pl_changed = false;
+    }
+  }
+  if (pl_changed) {
+    pl->SetBounds(lower, upper, bound_is_tb);
+  }
+
+  const auto [pl_lower, pl_upper] = pl->GetBounds();
+  const bool pl_tb = pl->IsTbBound();
+  const GameResult synced_lower = -pl_upper;
+  const GameResult synced_upper = -pl_lower;
+  const auto [old_p_lower, old_p_upper] = p->GetBounds();
+  if (old_p_lower == synced_lower && old_p_upper == synced_upper &&
+      p->IsTbBound() == pl_tb) {
+    return false;
+  }
+  p->SetBounds(synced_lower, synced_upper, pl_tb);
+  // Bounds were updated, so indicate we should check the parent too.
   return true;
 }
 

@@ -257,7 +257,8 @@ class Node {
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        repetition_(false) {}
+        repetition_(false),
+        tb_bound_(false) {}
   // Takes own @edge and @index in the parent.
   Node(const Edge& edge, uint16_t index)
       : edge_(edge),
@@ -265,7 +266,8 @@ class Node {
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        repetition_(false) {}
+        repetition_(false),
+        tb_bound_(false) {}
   ~Node();
 
   // Trim node, resetting everything except parent, sibling, edge and index.
@@ -311,6 +313,14 @@ class Node {
   // Returns whether the node is known to be draw/lose/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
+  bool IsTbBound() const { return tb_bound_; }
+  bool HasTbProvenance() const {
+    return IsTerminal() ? IsTbTerminal() : tb_bound_;
+  }
+  bool HasTightenedBounds() const {
+    return lower_bound_ != GameResult::BLACK_WON ||
+           upper_bound_ != GameResult::WHITE_WON;
+  }
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
 
   uint8_t GetNumEdges() const;
@@ -321,7 +331,7 @@ class Node {
   // Makes the node not terminal and recomputes bounds, visits and values.
   // Changes low node as well unless @also_low_node is false.
   void MakeNotTerminal(bool also_low_node = true);
-  void SetBounds(GameResult lower, GameResult upper);
+  void SetBounds(GameResult lower, GameResult upper, bool tb_bound = false);
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -476,6 +486,8 @@ class Node {
   GameResult upper_bound_ : 2;
   // Edge was handled as a repetition at some point.
   bool repetition_ : 1;
+  // Whether non-terminal bounds were derived from a tablebase probe.
+  bool tb_bound_ : 1;
 };
 
 // Check that Node still fits into an expected cache line size.
@@ -486,7 +498,8 @@ class LowNode {
   LowNode()
       : terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {}
+        upper_bound_(GameResult::WHITE_WON),
+        tb_bound_(false) {}
   // Init from from another low node, but use it for NNEval only.
   LowNode(const LowNode& p)
       : wl_(p.wl_),
@@ -495,7 +508,8 @@ class LowNode {
         num_edges_(p.num_edges_),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        tb_bound_(false) {
     assert(p.edges_);
     edges_ = std::make_unique<Edge[]>(num_edges_);
     std::memcpy(edges_.get(), p.edges_.get(), num_edges_ * sizeof(Edge));
@@ -505,7 +519,8 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        tb_bound_(false) {
     edges_ = Edge::FromMovelist(moves);
   }
   // Init @edges_ with moves from @moves and 0 policy.
@@ -514,7 +529,8 @@ class LowNode {
       : num_edges_(moves.size()),
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
-        upper_bound_(GameResult::WHITE_WON) {
+        upper_bound_(GameResult::WHITE_WON),
+        tb_bound_(false) {
     edges_ = Edge::FromMovelist(moves);
     child_ = std::make_unique<Node>(edges_[index], index);
   }
@@ -552,6 +568,14 @@ class LowNode {
 
   // Returns whether the node is known to be draw/loss/win.
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
+  bool IsTbBound() const { return tb_bound_; }
+  bool HasTbProvenance() const {
+    return IsTerminal() ? (terminal_type_ == Terminal::Tablebase) : tb_bound_;
+  }
+  bool HasTightenedBounds() const {
+    return lower_bound_ != GameResult::BLACK_WON ||
+           upper_bound_ != GameResult::WHITE_WON;
+  }
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   Terminal GetTerminalType() const { return terminal_type_; }
 
@@ -565,7 +589,7 @@ class LowNode {
   // Makes the low node not terminal and recomputes bounds, visits and values
   // using incoming @node.
   void MakeNotTerminal(const Node* node);
-  void SetBounds(GameResult lower, GameResult upper);
+  void SetBounds(GameResult lower, GameResult upper, bool tb_bound = false);
 
   // Decrements n-in-flight back.
   void CancelScoreUpdate(uint32_t multivisit);
@@ -662,6 +686,8 @@ class LowNode {
   // Best and worst result for this node.
   GameResult lower_bound_ : 2;
   GameResult upper_bound_ : 2;
+  // Whether non-terminal bounds were derived from a tablebase probe.
+  bool tb_bound_ : 1;
   // Debug only id as the last to avoid taking place of actively used variables
   // in the cache.
 #ifndef NDEBUG
@@ -711,6 +737,10 @@ class EdgeAndNode {
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
   bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
+  bool IsTbBound() const { return node_ ? node_->IsTbBound() : false; }
+  bool HasTbProvenance() const {
+    return node_ ? node_->HasTbProvenance() : false;
+  }
   Bounds GetBounds() const {
     return node_ ? node_->GetBounds()
                  : Bounds{GameResult::BLACK_WON, GameResult::WHITE_WON};
