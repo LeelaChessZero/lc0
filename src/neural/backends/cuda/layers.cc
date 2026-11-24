@@ -1653,7 +1653,7 @@ EncoderBlock<DataType>::EncoderBlock(
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
     ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
-    bool fused_mha, float output_gate_scale)
+    bool fused_mha, float output_gate_scale, bool prenorm)
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
@@ -1665,6 +1665,7 @@ EncoderBlock<DataType>::EncoderBlock(
       use_fused_mha_(fused_mha),
       use_gemm_ex_(use_gemm_ex) {
   output_gate_scale_ = output_gate_scale;
+  prenorm_ = prenorm;
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1907,9 +1908,17 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                                   cudaStream_t stream,
                                   DataType*** offset_pointers,
                                   const uint64_t* attack_bits,
-                                  const DataType* pair_stream) const {
+                                  const DataType* pair_stream,
+                                  float* residual) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
+
+  // Pre-norm: the attention reads ln1(residual), residual -> in_out_tensor.
+  if (prenorm_) {
+    layerNormRows<float, float, DataType, DataType>(
+        in_out_tensor, nullptr, residual, nullptr, nullptr, ln1_gammas,
+        ln1_betas, N * 64, embedding_op_size_, default_eps_, 1.0f, stream);
+  }
 
   // Calculate smolgen weights. Do this first so we can make use of
   // scratch, buffer1 and buffer2.
@@ -2137,11 +2146,18 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                 buffer2, num_inputs, 0.0f, buffer1, num_outputs);
   }
 
-  // LN1: skip connection and layer normalization (also bias add of prev gemm)
-  // buffer1/in_out_tensor -> scratch
-  LayerNorm<DataType>(N * 64, embedding_op_size_, scratch, buffer1, mha_dense_b,
-                      in_out_tensor, ln1_gammas, ln1_betas, default_eps_,
-                      alpha_, ACTIVATION_NONE, stream);
+  if (prenorm_) {
+    // residual += alpha * (buffer1 + mha_dense_b); scratch = ln2(residual).
+    layerNormRows<DataType, float, DataType, DataType>(
+        scratch, residual, buffer1, mha_dense_b, residual, ln2_gammas,
+        ln2_betas, N * 64, embedding_op_size_, default_eps_, alpha_, stream);
+  } else {
+    // LN1: skip connection and layer normalization (also bias add of prev
+    // gemm) buffer1/in_out_tensor -> scratch
+    LayerNorm<DataType>(N * 64, embedding_op_size_, scratch, buffer1,
+                        mha_dense_b, in_out_tensor, ln1_gammas, ln1_betas,
+                        default_eps_, alpha_, ACTIVATION_NONE, stream);
+  }
 
   // #FFN dense 1, scratch -> in_out_tensor
   {
@@ -2173,6 +2189,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                 num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
                 in_out_tensor, num_inputs, 0.0f, buffer1, num_outputs);
+  }
+
+  if (prenorm_) {
+    // residual += alpha * (buffer1 + ffn_dense2_b).
+    addToResidual<DataType>(residual, buffer1, ffn_dense2_b, alpha_, N * 64,
+                            embedding_op_size_, stream);
+    return;
   }
 
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
@@ -2463,6 +2486,23 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
   const float eps = constants.epsilon > 0.0f
                         ? constants.epsilon
                         : (is_pe_dense_embedding_ ? 1e-3f : 1e-6f);
+  eps_ = eps;
+  prenorm_ = constants.prenorm;
+  if (prenorm_) {
+    if (!is_pe_dense_embedding_ || num_res_blocks > 0) {
+      throw Exception("Pre-norm encoder blocks need the PE-dense embedding.");
+    }
+    if (weights.encoder_final_norm_gammas.size() !=
+            static_cast<size_t>(embedding_op_size_) ||
+        weights.encoder_final_norm_betas.size() !=
+            static_cast<size_t>(embedding_op_size_)) {
+      throw Exception("Pre-norm encoder blocks need the final norm.");
+    }
+    allocAndUpload<DataType>(&final_norm_g_, weights.encoder_final_norm_gammas,
+                             scratch);
+    allocAndUpload<DataType>(&final_norm_b_, weights.encoder_final_norm_betas,
+                             scratch);
+  }
   const float output_gate_scale = constants.output_gate_scale > 0.0f
                                       ? constants.output_gate_scale
                                       : 1.0f;
@@ -2472,7 +2512,7 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        eps, use_gemm_ex, use_fused_mha_, output_gate_scale);
+        eps, use_gemm_ex, use_fused_mha_, output_gate_scale, prenorm_);
     encoder_weights_.emplace_back(pW);
     if (pW->pair_att_w && pW->pair_d_e_ != pair_d_e_) {
       throw Exception("pair_att_w does not match the pair stream.");
@@ -2511,6 +2551,8 @@ AttentionBody<DataType>::~AttentionBody() {
   }
   if (pair_p_in_) ReportCUDAErrors(cudaFree(pair_p_in_));
   if (pair_t_off_) ReportCUDAErrors(cudaFree(pair_t_off_));
+  if (final_norm_g_) ReportCUDAErrors(cudaFree(final_norm_g_));
+  if (final_norm_b_) ReportCUDAErrors(cudaFree(final_norm_b_));
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
@@ -2524,6 +2566,16 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   DataType* output_tensor = (DataType*)output;
   DataType* buffer1 = (DataType*)input2;
   DataType* buffer2 = buffer1 + scratch_size / (2 * sizeof(DataType));
+
+  // Pre-norm: the float residual stream, after the AttackGraphState.
+  float* residual = nullptr;
+  if (prenorm_) {
+    residual = PrenormResidual::At(
+        scratch, scratch_size,
+        has_attack_graph_
+            ? AttackGraphState<DataType>::Bytes(max_batch_size_, pair_d_e_)
+            : 0);
+  }
 
   // Attack graph and pair stream, from the input planes.
   const uint64_t* attack_bits = nullptr;
@@ -2653,11 +2705,18 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
                   num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d2_w_,
                   num_inputs, buffer1, num_inputs, 0.0f, buffer2, num_outputs);
       // Embedding LN: skip connection and layer normilization (also bias add of
-      // prev gemm) buffer2 -> embedding
-      LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
-                          ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_,
-                          ip_emb_ffn_ln_b_, 1e-3, embedding_ffn_alpha_,
-                          ACTIVATION_NONE, stream);
+      // prev gemm) buffer2 -> embedding (pre-norm: -> the float residual)
+      if (prenorm_) {
+        layerNormRows<DataType, DataType, float, DataType>(
+            residual, nullptr, buffer2, ip_emb_ffn_d2_b_, temp,
+            ip_emb_ffn_ln_g_, ip_emb_ffn_ln_b_, N * 64, embedding_ffn_size_,
+            1e-3f, embedding_ffn_alpha_, stream);
+      } else {
+        LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
+                            ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_,
+                            ip_emb_ffn_ln_b_, 1e-3, embedding_ffn_alpha_,
+                            ACTIVATION_NONE, stream);
+      }
     }
 
   } else {
@@ -2686,8 +2745,15 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   // 2. Encoder blocks
   for (const auto pEnc : encoder_weights_) {
     pEnc->Eval(N, output_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
-               stream, offset_pointers, attack_bits, pair_stream);
+               stream, offset_pointers, attack_bits, pair_stream, residual);
   }  // End of encoder blocks
+
+  // Pre-norm: the heads read final_norm(residual).
+  if (prenorm_) {
+    layerNormRows<float, float, DataType, DataType>(
+        output_tensor, nullptr, residual, nullptr, nullptr, final_norm_g_,
+        final_norm_b_, N * 64, embedding_op_size_, eps_, 1.0f, stream);
+  }
 }
 
 template <typename DataType>

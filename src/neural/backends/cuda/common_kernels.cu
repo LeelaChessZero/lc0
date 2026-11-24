@@ -1760,6 +1760,93 @@ void addPairPolicyLogits(T* logits, const T* z, const float* u, float factor,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+// ---------------------------------------------------------------------------
+// Pre-norm encoder blocks: the residual stream is kept in float.
+
+namespace {
+// Sum over the block (blockDim.x a power of two, at most 256), by a
+// shared-memory tree: no assumption on the warp size.
+__device__ float BlockSum256(float v, float* red) {
+  red[threadIdx.x] = v;
+  __syncthreads();
+  for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+    if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
+    __syncthreads();
+  }
+  const float r = red[0];
+  __syncthreads();
+  return r;
+}
+}  // namespace
+
+// One block per row: v = (in + bias) * alpha + skip (bias and skip optional),
+// residual_out = v (optional; may alias skip), out = (v - mean) /
+// sqrt(var + eps) * gammas + betas. The row and its statistics are in float.
+template <typename TIn, typename TSkip, typename TOut, typename T>
+__global__ void layerNormRows_kernel(TOut* out, float* residual_out,
+                                     const TIn* in, const T* bias,
+                                     const TSkip* skip, const T* gammas,
+                                     const T* betas, int C, float eps,
+                                     float alpha) {
+  extern __shared__ float row[];  // C floats
+  __shared__ float red[256];
+  const size_t base = static_cast<size_t>(blockIdx.x) * C;
+  float s = 0.0f;
+  for (int c = threadIdx.x; c < C; c += blockDim.x) {
+    float v = (float)in[base + c];
+    if (bias) v += (float)bias[c];
+    v *= alpha;
+    if (skip) v += (float)skip[base + c];
+    if (residual_out) residual_out[base + c] = v;
+    row[c] = v;
+    s += v;
+  }
+  const float mean = BlockSum256(s, red) / C;
+  float q = 0.0f;
+  for (int c = threadIdx.x; c < C; c += blockDim.x) {
+    const float d = row[c] - mean;
+    q += d * d;
+  }
+  const float rstd = rsqrtf(BlockSum256(q, red) / C + eps);
+  for (int c = threadIdx.x; c < C; c += blockDim.x) {
+    out[base + c] =
+        (TOut)((row[c] - mean) * rstd * (float)gammas[c] + (float)betas[c]);
+  }
+}
+
+template <typename TIn, typename TSkip, typename TOut, typename T>
+void layerNormRows(TOut* out, float* residual_out, const TIn* in,
+                   const T* bias, const TSkip* skip, const T* gammas,
+                   const T* betas, int N, int C, float eps, float alpha,
+                   cudaStream_t stream) {
+  if (C > 8192) throw Exception("unsupported layer norm width");
+  const int kBlockSize = 256;
+  layerNormRows_kernel<TIn, TSkip, TOut, T>
+      <<<N, kBlockSize, C * sizeof(float), stream>>>(
+          out, residual_out, in, bias, skip, gammas, betas, C, eps, alpha);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// residual += alpha * (y + bias), bias [C] broadcast over the rows.
+template <typename T>
+__global__ void addToResidual_kernel(float* residual, const T* y,
+                                     const T* bias, float alpha, int size,
+                                     int C) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= size) return;
+  residual[i] += alpha * ((float)y[i] + (float)bias[i % C]);
+}
+
+template <typename T>
+void addToResidual(float* residual, const T* y, const T* bias, float alpha,
+                   int N, int C, cudaStream_t stream) {
+  const int size = N * C;
+  const int kBlockSize = 256;
+  addToResidual_kernel<T><<<DivUp(size, kBlockSize), kBlockSize, 0, stream>>>(
+      residual, y, bias, alpha, size, C);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 template <typename T, int kWorkPerThread>
 __global__ void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
                                          int depth, int d_model, T* k, T* q,
@@ -2149,6 +2236,23 @@ template void addPairPolicyLogits<half>(half* logits, const half* z,
                                        const float* u, float factor, int N,
                                        int pair_d_e, int stride,
                                        cudaStream_t stream);
+// Pre-norm blocks: the embedding's last norm writes the float residual;
+// the block norms read it; the attention's dense adds into it.
+template void layerNormRows<half, half, float, half>(
+    float* out, float* residual_out, const half* in, const half* bias,
+    const half* skip, const half* gammas, const half* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void layerNormRows<float, float, half, half>(
+    half* out, float* residual_out, const float* in, const half* bias,
+    const float* skip, const half* gammas, const half* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void layerNormRows<half, float, half, half>(
+    half* out, float* residual_out, const half* in, const half* bias,
+    const float* skip, const half* gammas, const half* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void addToResidual<half>(float* residual, const half* y,
+                                  const half* bias, float alpha, int N, int C,
+                                  cudaStream_t stream);
 
 template void computeAttackGraph<float>(uint64_t* bits, const float* planes,
                                       int N, int input_planes,
@@ -2167,6 +2271,14 @@ template void addPairPolicyLogits<float>(float* logits, const float* z,
                                        const float* u, float factor, int N,
                                        int pair_d_e, int stride,
                                        cudaStream_t stream);
+// The three uses above coincide for float.
+template void layerNormRows<float, float, float, float>(
+    float* out, float* residual_out, const float* in, const float* bias,
+    const float* skip, const float* gammas, const float* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void addToResidual<float>(float* residual, const float* y,
+                                   const float* bias, float alpha, int N, int C,
+                                   cudaStream_t stream);
 
 template void genOffsetPointers<float>(float** offsets, int heads,
                                        int max_batch, int depth, int d_model,
@@ -2309,6 +2421,26 @@ template void applySigmoidGate<__nv_bfloat16>(__nv_bfloat16* x,
 template void addPairPolicyLogits<__nv_bfloat16>(
     __nv_bfloat16* logits, const __nv_bfloat16* z, const float* u, float factor,
     int N, int pair_d_e, int stride, cudaStream_t stream);
+template void layerNormRows<__nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16>(
+    float* out, float* residual_out, const __nv_bfloat16* in,
+    const __nv_bfloat16* bias, const __nv_bfloat16* skip,
+    const __nv_bfloat16* gammas, const __nv_bfloat16* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void layerNormRows<float, float, __nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* out, float* residual_out, const float* in,
+    const __nv_bfloat16* bias, const float* skip, const __nv_bfloat16* gammas,
+    const __nv_bfloat16* betas, int N, int C, float eps, float alpha,
+    cudaStream_t stream);
+template void layerNormRows<__nv_bfloat16, float, __nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* out, float* residual_out, const __nv_bfloat16* in,
+    const __nv_bfloat16* bias, const float* skip, const __nv_bfloat16* gammas,
+    const __nv_bfloat16* betas, int N, int C, float eps, float alpha,
+    cudaStream_t stream);
+template void addToResidual<__nv_bfloat16>(float* residual,
+                                           const __nv_bfloat16* y,
+                                           const __nv_bfloat16* bias,
+                                           float alpha, int N, int C,
+                                           cudaStream_t stream);
 #endif
 }  // namespace cudnn_backend
 }  // namespace lczero

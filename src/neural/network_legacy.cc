@@ -84,7 +84,11 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
       smolgen_w(LayerAdapter(weights.smolgen_w()).as_vector()),
       has_smolgen(weights.has_smolgen_w()),
       pair_p_in(RowMajorByDims(weights.pair_stream().p_in())),
-      pair_t_off(RowMajorByDims(weights.pair_stream().t_off())) {
+      pair_t_off(RowMajorByDims(weights.pair_stream().t_off())),
+      encoder_final_norm_gammas(
+          LayerAdapter(weights.encoder_final_norm().gammas()).as_vector()),
+      encoder_final_norm_betas(
+          LayerAdapter(weights.encoder_final_norm().betas()).as_vector()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }

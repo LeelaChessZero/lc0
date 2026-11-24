@@ -96,9 +96,9 @@ static size_t getMaxAttentionHeadSize(
 }
 
 // The parts of a NETWORK_ATTENTIONBODY_BT6 file this backend runs: the SwiGLU
-// FFN, the attack-graph attention terms, the static pair stream and the
-// attention output gate. Other BT6 parts are refused by name rather than
-// ignored.
+// FFN, the attack-graph attention terms, the static pair stream, the
+// attention output gate and pre-norm blocks. Other BT6 parts are refused by
+// name rather than ignored.
 void CheckBt6Format(const pblczero::Net& file) {
   const auto& nf = file.format().network_format();
   if (!nf.has_bt6()) {
@@ -110,8 +110,9 @@ void CheckBt6Format(const pblczero::Net& file) {
     throw Exception(what + " is not supported by the " BACKEND_NAME
                            " backend yet.");
   };
-  if (bt6.prenorm() || w.has_encoder_final_norm()) {
-    refuse("Pre-norm encoder blocks (bt6.prenorm, encoder_final_norm)");
+  if (bt6.prenorm() != w.has_encoder_final_norm()) {
+    throw Exception(
+        "bt6.prenorm and encoder_final_norm must be given together.");
   }
   if (bt6.kv_heads() != 0 && bt6.kv_heads() != bt6.heads()) {
     refuse("Grouped KV heads (bt6.kv_heads)");
@@ -533,8 +534,14 @@ class CudaNetwork : public Network {
         UsesAttackGraph(weights)
             ? AttackGraphState<DataType>::Bytes(max_batch_size_, pair_d_e)
             : 0;
-    ReportCUDAErrors(
-        cudaMalloc(&scratch_mem_, scratch_size_ + attack_graph_bytes_));
+    // Pre-norm blocks: the float residual stream after that (layers.h).
+    if (nf.network() == NF::NETWORK_ATTENTIONBODY_BT6 && nf.bt6().prenorm()) {
+      prenorm_residual_bytes_ =
+          PrenormResidual::Bytes(max_batch_size_, weights.ip_emb_b.size());
+    }
+    ReportCUDAErrors(cudaMalloc(
+        &scratch_mem_,
+        scratch_size_ + attack_graph_bytes_ + prenorm_residual_bytes_));
 
     const bool mish_net = file.format().network_format().default_activation() ==
                           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH;
@@ -640,6 +647,7 @@ class CudaNetwork : public Network {
         constants.input_gate_relu = true;
         constants.output_gate_scale =
             bt6.has_output_gate_scale() ? bt6.output_gate_scale() : 1.0f;
+        constants.prenorm = bt6.prenorm();
       }
 
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
@@ -1237,7 +1245,8 @@ class CudaNetwork : public Network {
       constexpr bool is_fp16 = std::is_same<half, DataType>::value;
       return std::make_unique<InputsOutputs<DataType>>(
           max_batch_size_, wdl_, moves_left_, tensor_mem_size_,
-          scratch_size_ + attack_graph_bytes_, !has_tensor_cores_ && is_fp16);
+          scratch_size_ + attack_graph_bytes_ + prenorm_residual_bytes_,
+          !has_tensor_cores_ && is_fp16);
     } else {
       std::unique_ptr<InputsOutputs<DataType>> resource =
           std::move(free_inputs_outputs_.front());
@@ -1293,6 +1302,7 @@ class CudaNetwork : public Network {
   size_t tensor_mem_size_;
   size_t scratch_size_;
   size_t attack_graph_bytes_ = 0;  // after the scratch area (layers.h)
+  size_t prenorm_residual_bytes_ = 0;  // after the attack graph (layers.h)
 
   // this copy is used only for initialization when multi-stream is enabled
   void* scratch_mem_;

@@ -161,6 +161,11 @@ struct BaseWeights {
   // PairStream); row-major, empty if absent.
   Vec pair_p_in;   // [C, pair_d_e]
   Vec pair_t_off;  // [225, pair_d_e]
+
+  // Final norm of a pre-norm encoder tower (net.proto encoder_final_norm);
+  // empty if absent.
+  Vec encoder_final_norm_gammas;
+  Vec encoder_final_norm_betas;
 };
 
 struct LegacyWeights : public BaseWeights {

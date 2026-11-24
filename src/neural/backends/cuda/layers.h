@@ -81,6 +81,25 @@ struct AttackGraphState {
   }
 };
 
+// The float residual stream of pre-norm encoder blocks, N x 64 x C floats.
+// It lives after the scratch area and the AttackGraphState (when the net has
+// one): the network allocates scratch_size + attack graph bytes + Bytes().
+struct PrenormResidual {
+  static size_t Bytes(int max_batch_size, int C) {
+    return kAlign +
+           static_cast<size_t>(max_batch_size) * 64 * C * sizeof(float);
+  }
+  static float* At(void* scratch, size_t scratch_size,
+                   size_t attack_graph_bytes) {
+    const size_t offset = (scratch_size + attack_graph_bytes + kAlign - 1) /
+                          kAlign * kAlign;
+    return reinterpret_cast<float*>(static_cast<char*>(scratch) + offset);
+  }
+
+ private:
+  static constexpr size_t kAlign = 256;
+};
+
 // Whether the attention body computes an AttackGraphState for these weights:
 // a pair stream, or attack-graph / pair stream terms in an encoder block.
 inline bool UsesAttackGraph(const MultiHeadWeights& weights) {
@@ -99,6 +118,9 @@ struct AttentionBodyConstants {
   float epsilon = 0.0f;              // 1e-3 (PE-dense nets) or 1e-6
   float output_gate_scale = 0.0f;    // 1 (blocks with an output gate)
   bool input_gate_relu = false;      // multiplicative input gate max(g, 0)
+  // Pre-norm blocks (x += a * MHA(ln1(x)); x += a * FFN(ln2(x))) on a float
+  // residual stream, then the final norm; post-norm blocks otherwise.
+  bool prenorm = false;
 };
 
 template <typename DataType>
@@ -396,16 +418,19 @@ class EncoderBlock {
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
                ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
-               bool fused_mha, float output_gate_scale = 1.0f);
+               bool fused_mha, float output_gate_scale = 1.0f,
+               bool prenorm = false);
   ~EncoderBlock();
 
   // attack_bits and pair_stream: the AttackGraphState, for blocks with
-  // attack-graph terms or pair_att_w.
+  // attack-graph terms or pair_att_w. residual: the PrenormResidual of a
+  // pre-norm block, which reads and updates it (inpop is then scratch too).
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas, cudaStream_t stream,
             DataType*** offset_pointers,
             const uint64_t* attack_bits = nullptr,
-            const DataType* pair_stream = nullptr) const;
+            const DataType* pair_stream = nullptr,
+            float* residual = nullptr) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
@@ -464,6 +489,7 @@ class EncoderBlock {
 
   bool has_output_gate_ = false;
   float output_gate_scale_;
+  bool prenorm_ = false;
 
   const int max_batch_size_;
   const bool use_fused_mha_;
@@ -578,6 +604,8 @@ class AttentionBody : public BaseLayer<DataType> {
   DataType *smolgen_global_;  // global smolgen weights for all encoder layers
   DataType *pos_encoding_;
   float *pair_p_in_ = nullptr, *pair_t_off_ = nullptr;  // static pair stream
+  // Final norm of a pre-norm tower.
+  DataType *final_norm_g_ = nullptr, *final_norm_b_ = nullptr;
   int embedding_dense_size_;
   int embedding_op_size_;
   int embedding_ffn_size_;
@@ -591,7 +619,9 @@ class AttentionBody : public BaseLayer<DataType> {
   int max_batch_size_;
   int pair_d_e_ = 0;
   bool has_attack_graph_ = false;  // computes the AttackGraphState
+  bool prenorm_ = false;
   float embedding_ffn_alpha_;
+  float eps_;
   const bool has_gating_;
   const bool has_smolgen_;
   bool is_pe_dense_embedding_;  // flag for dense position encoding

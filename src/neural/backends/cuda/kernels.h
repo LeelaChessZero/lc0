@@ -200,6 +200,21 @@ void addPairPolicyLogits(T* logits, const T* z, const float* u, float factor,
                          int N, int pair_d_e, int stride,
                          cudaStream_t stream);
 
+// Layer norm over the N rows of C: v = (in + bias) * alpha + skip (bias and
+// skip may be null); residual_out = v when non-null (it may alias skip);
+// out = (v - mean) / sqrt(var + eps) * gammas + betas. The statistics are
+// computed in float. C <= 8192.
+template <typename TIn, typename TSkip, typename TOut, typename T>
+void layerNormRows(TOut* out, float* residual_out, const TIn* in,
+                   const T* bias, const TSkip* skip, const T* gammas,
+                   const T* betas, int N, int C, float eps, float alpha,
+                   cudaStream_t stream);
+
+// residual += alpha * (y + bias), bias [C] broadcast over the N rows.
+template <typename T>
+void addToResidual(float* residual, const T* y, const T* bias, float alpha,
+                   int N, int C, cudaStream_t stream);
+
 template <typename T>
 void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
                        int d_model, T* k, T* q, T* b1, T* v, T* b2,
