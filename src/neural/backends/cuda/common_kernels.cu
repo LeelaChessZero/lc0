@@ -29,6 +29,7 @@
 #include <cassert>
 
 #include "cuda_common.h"
+#include "kernels.h"
 #include "neural/tables/activation_function.h"
 #include "neural/tables/attention_policy_map.h"
 #include "utils/exception.h"
@@ -80,6 +81,32 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
 
   addVectors_kernel<<<blocks, kBlockSize, 0, stream>>>(c, a, b, size, asize,
                                                        bsize, activation);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T>
+__global__ void blendPolicyLogits_kernel(T* main, PolicyBlendHeads<T> heads,
+                                         float w_main, int count) {
+  int i = threadIdx.x + blockDim.x * blockIdx.x;
+  if (i < count) {
+    float val = w_main * (float)main[i];
+    for (int k = 0; k < heads.count; k++) {
+      val += heads.weight[k] * (float)heads.head[k][i];
+    }
+    main[i] = (T)val;
+  }
+}
+
+// Pools the policy heads geometrically, which in log space is a weighted sum
+// of their logits.
+template <typename T>
+void blendPolicyLogits(T* main, const PolicyBlendHeads<T>& heads,
+                       float w_main, int count, cudaStream_t stream) {
+  const int kBlockSize = 256;
+  int blocks = DivUp(count, kBlockSize);
+
+  blendPolicyLogits_kernel<<<blocks, kBlockSize, 0, stream>>>(main, heads,
+                                                              w_main, count);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -1337,6 +1364,931 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+// output = (input + bias) * sigmoid(gate): the gated FFN (ACTIVATION_SWIGLU).
+// input, gate and output are [N, C]; bias is [C].
+template <typename T>
+__global__ void addBiasSwiGLU_kernel(T* output, const T* input, const T* bias,
+                                     const T* gate, int size, int C) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= size) return;
+  const float x = (float)input[i] + (float)bias[i % C];
+  const float g = (float)gate[i];
+  output[i] = (T)(x / (1.0f + __expf(-g)));
+}
+
+template <typename T>
+void addBiasSwiGLU(T* output, const T* input, const T* bias, const T* gate,
+                   int N, int C, cudaStream_t stream) {
+  const int size = N * C;
+  const int kBlockSize = 256;
+  addBiasSwiGLU_kernel<T><<<DivUp(size, kBlockSize), kBlockSize, 0, stream>>>(
+      output, input, bias, gate, size, C);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// ---------------------------------------------------------------------------
+// Attack graph and static pair stream (NETWORK_ATTENTIONBODY_BT6).
+//
+// The attack graph E [kAttackGraphChannels, 64, 64] holds binary channels over
+// square pairs (i, j), computed from the piece planes of the position and of
+// the position before it. It is stored as one uint64 per (position, i, j):
+// bit c < 17 is base channel c at (i, j), bit 17 + c is base channel c at
+// (j, i) (the "_T" channels). The base channels, in the order of
+// NetworkFormat.bt6.edge_channel: attacks_stm, attacks_opp, defends_stm,
+// defends_opp, xray_stm, xray_opp, pinray_stm, pinray_opp, kingring1_opp,
+// kingring1_own, kingring2_opp, kingring2_own, blockescape, gained_stm,
+// gained_opp, lost_stm, lost_opp.
+
+namespace {
+__device__ __forceinline__ uint64_t SquareBit(int r, int c) {
+  return (r >= 0 && r < 8 && c >= 0 && c < 8) ? (1ull << (8 * r + c)) : 0ull;
+}
+
+__device__ uint64_t KnightAttacks(int s) {
+  const int r = s >> 3, c = s & 7;
+  return SquareBit(r + 1, c + 2) | SquareBit(r + 2, c + 1) |
+         SquareBit(r - 1, c + 2) | SquareBit(r - 2, c + 1) |
+         SquareBit(r + 1, c - 2) | SquareBit(r + 2, c - 1) |
+         SquareBit(r - 1, c - 2) | SquareBit(r - 2, c - 1);
+}
+
+__device__ uint64_t KingAttacks(int s) {
+  const int r = s >> 3, c = s & 7;
+  return SquareBit(r + 1, c) | SquareBit(r - 1, c) | SquareBit(r, c + 1) |
+         SquareBit(r, c - 1) | SquareBit(r + 1, c + 1) |
+         SquareBit(r + 1, c - 1) | SquareBit(r - 1, c + 1) |
+         SquareBit(r - 1, c - 1);
+}
+
+// The squares at king distance exactly 2 from s.
+__device__ uint64_t KingRing2(int s) {
+  const int r = s >> 3, c = s & 7;
+  uint64_t m = 0;
+  for (int dr = -2; dr <= 2; ++dr) {
+    for (int dc = -2; dc <= 2; ++dc) {
+      if (max(abs(dr), abs(dc)) == 2) m |= SquareBit(r + dr, c + dc);
+    }
+  }
+  return m;
+}
+
+// Directions 0-3 diagonal, 4-7 orthogonal; kOppositeDir[d] points back.
+__constant__ int kDirRank[8] = {1, 1, -1, -1, 1, -1, 0, 0};
+__constant__ int kDirFile[8] = {1, -1, 1, -1, 0, 0, 1, -1};
+__constant__ int kOppositeDir[8] = {3, 2, 1, 0, 5, 4, 7, 6};
+
+struct SquareRays {
+  uint64_t reach[8];  // up to and including the first occupied square
+  uint64_t xray[8];   // beyond it, up to and including the second
+  uint64_t first[8];  // the first occupied square (or 0)
+};
+
+__device__ void ComputeSquareRays(int s, uint64_t occ, SquareRays& out) {
+  const int r0 = s >> 3, c0 = s & 7;
+  for (int d = 0; d < 8; ++d) {
+    uint64_t reach = 0, xray = 0, first = 0;
+    int blockers = 0;
+    int r = r0 + kDirRank[d], c = c0 + kDirFile[d];
+    while (r >= 0 && r < 8 && c >= 0 && c < 8 && blockers < 2) {
+      const uint64_t b = 1ull << (8 * r + c);
+      if (blockers == 0) {
+        reach |= b;
+      } else {
+        xray |= b;
+      }
+      if (occ & b) {
+        if (blockers == 0) first = b;
+        ++blockers;
+      }
+      r += kDirRank[d];
+      c += kDirFile[d];
+    }
+    out.reach[d] = reach;
+    out.xray[d] = xray;
+    out.first[d] = first;
+  }
+}
+
+// The squares attacked from s by the side whose pieces are the six planes
+// m[base .. base + 5] (pawn, knight, bishop, rook, queen, king).
+__device__ uint64_t SideAttacksFrom(int s, const uint64_t* m, int base,
+                                    bool us, uint64_t diag, uint64_t orth) {
+  const uint64_t b = 1ull << s;
+  const int r = s >> 3, c = s & 7;
+  uint64_t a = 0;
+  if (m[base + 0] & b) {
+    a |= us ? (SquareBit(r + 1, c - 1) | SquareBit(r + 1, c + 1))
+            : (SquareBit(r - 1, c - 1) | SquareBit(r - 1, c + 1));
+  }
+  if (m[base + 1] & b) a |= KnightAttacks(s);
+  if (m[base + 5] & b) a |= KingAttacks(s);
+  if ((m[base + 2] | m[base + 4]) & b) a |= diag;
+  if ((m[base + 3] | m[base + 4]) & b) a |= orth;
+  return a;
+}
+}  // namespace
+
+// One block of 64 threads per position; thread = square. planes is the NCHW
+// input [N, input_planes, 64]; planes 0-11 are the position's pieces and
+// 13-24 those of the position before it.
+template <typename T>
+__global__ void computeAttackGraph_kernel(uint64_t* bits, const T* planes,
+                                          int input_planes) {
+  constexpr int kPlanesRead = 25;
+  __shared__ unsigned long long plane_masks[kPlanesRead];
+  __shared__ uint64_t rows[17][64];
+  const int n = blockIdx.x;
+  const int i = threadIdx.x;
+  const T* p = planes + static_cast<size_t>(n) * input_planes * 64;
+  if (i < kPlanesRead) plane_masks[i] = 0;
+  __syncthreads();
+  // (Shared atomics rather than a warp ballot: independent of the warp size.)
+  for (int k = 0; k < kPlanesRead; ++k) {
+    if ((float)p[k * 64 + i] > 0.5f) atomicOr(&plane_masks[k], 1ull << i);
+  }
+  __syncthreads();
+  uint64_t m[kPlanesRead];
+  for (int k = 0; k < kPlanesRead; ++k) m[k] = plane_masks[k];
+  const uint64_t bi = 1ull << i;
+
+  // The position (planes 0-11).
+  uint64_t occ_us = 0, occ_them = 0;
+  for (int k = 0; k < 6; ++k) occ_us |= m[k];
+  for (int k = 6; k < 12; ++k) occ_them |= m[k];
+  const uint64_t occ = occ_us | occ_them;
+  SquareRays ry;
+  ComputeSquareRays(i, occ, ry);
+  const uint64_t diag = ry.reach[0] | ry.reach[1] | ry.reach[2] | ry.reach[3];
+  const uint64_t orth = ry.reach[4] | ry.reach[5] | ry.reach[6] | ry.reach[7];
+  const uint64_t xdiag = ry.xray[0] | ry.xray[1] | ry.xray[2] | ry.xray[3];
+  const uint64_t xorth = ry.xray[4] | ry.xray[5] | ry.xray[6] | ry.xray[7];
+  const uint64_t a_stm = SideAttacksFrom(i, m, 0, true, diag, orth);
+  const uint64_t a_opp = SideAttacksFrom(i, m, 6, false, diag, orth);
+  uint64_t x_stm = 0, x_opp = 0;
+  if ((m[2] | m[4]) & bi) x_stm |= xdiag;
+  if ((m[3] | m[4]) & bi) x_stm |= xorth;
+  if ((m[8] | m[10]) & bi) x_opp |= xdiag;
+  if ((m[9] | m[10]) & bi) x_opp |= xorth;
+
+  // pinray (i, t): a slider of the matching kind is the first piece behind i
+  // (seen from i in the opposite direction) and t is the first piece beyond.
+  uint64_t pin_stm = 0, pin_opp = 0;
+  if (occ & bi) {
+    for (int d = 0; d < 8; ++d) {
+      const uint64_t f = ry.first[d];
+      const uint64_t g = ry.first[kOppositeDir[d]];
+      if (!f || !g) continue;
+      const bool diagonal = d < 4;
+      const uint64_t s_us = diagonal ? (m[2] | m[4]) : (m[3] | m[4]);
+      const uint64_t s_them = diagonal ? (m[8] | m[10]) : (m[9] | m[10]);
+      if (s_us & g) pin_stm |= f;
+      if (s_them & g) pin_opp |= f;
+    }
+  }
+
+  // King rings: attacker -> king when the attacker covers a ring square.
+  uint64_t kr1_opp = 0, kr1_own = 0, kr2_opp = 0, kr2_own = 0;
+  for (uint64_t k = m[11]; k; k &= k - 1) {
+    const int ks = __ffsll(static_cast<long long>(k)) - 1;
+    if (a_stm & KingAttacks(ks)) kr1_opp |= 1ull << ks;
+    if (a_stm & KingRing2(ks)) kr2_opp |= 1ull << ks;
+  }
+  for (uint64_t k = m[5]; k; k &= k - 1) {
+    const int ks = __ffsll(static_cast<long long>(k)) - 1;
+    if (a_opp & KingAttacks(ks)) kr1_own |= 1ull << ks;
+    if (a_opp & KingRing2(ks)) kr2_own |= 1ull << ks;
+  }
+  const uint64_t blockescape =
+      (occ & bi) ? (KingAttacks(i) & (m[5] | m[11])) : 0;
+
+  // The position before (planes 13-24): attacks only.
+  const uint64_t* mp = m + 13;
+  uint64_t occ_p = 0;
+  for (int k = 0; k < 12; ++k) occ_p |= mp[k];
+  SquareRays rp;
+  ComputeSquareRays(i, occ_p, rp);
+  const uint64_t diag_p =
+      rp.reach[0] | rp.reach[1] | rp.reach[2] | rp.reach[3];
+  const uint64_t orth_p =
+      rp.reach[4] | rp.reach[5] | rp.reach[6] | rp.reach[7];
+  const uint64_t ap_stm = SideAttacksFrom(i, mp, 0, true, diag_p, orth_p);
+  const uint64_t ap_opp = SideAttacksFrom(i, mp, 6, false, diag_p, orth_p);
+
+  const uint64_t own[17] = {a_stm,          a_opp,         a_stm & occ_us,
+                            a_opp & occ_them, x_stm,       x_opp,
+                            pin_stm,        pin_opp,       kr1_opp,
+                            kr1_own,        kr2_opp,       kr2_own,
+                            blockescape,    a_stm & ~ap_stm, a_opp & ~ap_opp,
+                            ap_stm & ~a_stm, ap_opp & ~a_opp};
+#pragma unroll
+  for (int c = 0; c < 17; ++c) rows[c][i] = own[c];
+  __syncthreads();
+
+  // Thread j writes column j of every row r (coalesced).
+  const int j = i;
+  uint64_t* out = bits + static_cast<size_t>(n) * 64 * 64;
+  for (int r = 0; r < 64; ++r) {
+    uint64_t b = 0;
+#pragma unroll
+    for (int c = 0; c < 17; ++c) {
+      b |= ((rows[c][r] >> j) & 1ull) << c;
+      b |= ((own[c] >> r) & 1ull) << (17 + c);
+    }
+    out[r * 64 + j] = b;
+  }
+}
+
+template <typename T>
+void computeAttackGraph(uint64_t* bits, const T* planes, int N,
+                        int input_planes, cudaStream_t stream) {
+  computeAttackGraph_kernel<T><<<N, 64, 0, stream>>>(bits, planes,
+                                                     input_planes);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// z[n, i * 64 + j, :] = rms(sum over the set bits c of p_in[c, :]
+//                          + t_off[rel(i, j), :]), eps 1e-6, in float.
+template <typename T, int kDe>
+__global__ void computePairStream_kernel(T* z, const uint64_t* bits,
+                                         const float* p_in,
+                                         const float* t_off, int total) {
+  __shared__ float s_p[kAttackGraphChannels * kDe];
+  __shared__ float s_t[225 * kDe];
+  for (int k = threadIdx.x; k < kAttackGraphChannels * kDe; k += blockDim.x) {
+    s_p[k] = p_in[k];
+  }
+  for (int k = threadIdx.x; k < 225 * kDe; k += blockDim.x) s_t[k] = t_off[k];
+  __syncthreads();
+  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total) return;
+  const int i = (idx >> 6) & 63, j = idx & 63;
+  const int rel = 15 * ((i >> 3) - (j >> 3) + 7) + ((i & 7) - (j & 7) + 7);
+  float v[kDe];
+#pragma unroll
+  for (int d = 0; d < kDe; ++d) v[d] = s_t[rel * kDe + d];
+  for (uint64_t b = bits[idx]; b; b &= b - 1) {
+    const int c = __ffsll(static_cast<long long>(b)) - 1;
+#pragma unroll
+    for (int d = 0; d < kDe; ++d) v[d] += s_p[c * kDe + d];
+  }
+  float ss = 0.0f;
+#pragma unroll
+  for (int d = 0; d < kDe; ++d) ss += v[d] * v[d];
+  const float scale = rsqrtf(ss / kDe + 1e-6f);
+  T* out = z + static_cast<size_t>(idx) * kDe;
+#pragma unroll
+  for (int d = 0; d < kDe; ++d) out[d] = (T)(v[d] * scale);
+}
+
+template <typename T>
+void computePairStream(T* z, const uint64_t* bits, const float* p_in,
+                       const float* t_off, int N, int pair_d_e,
+                       cudaStream_t stream) {
+  const int total = N * 64 * 64;
+  const int kBlockSize = 256;
+  const int blocks = DivUp(total, kBlockSize);
+  switch (pair_d_e) {
+    case 8:
+      computePairStream_kernel<T, 8>
+          <<<blocks, kBlockSize, 0, stream>>>(z, bits, p_in, t_off, total);
+      break;
+    case 16:
+      computePairStream_kernel<T, 16>
+          <<<blocks, kBlockSize, 0, stream>>>(z, bits, p_in, t_off, total);
+      break;
+    case 32:
+      computePairStream_kernel<T, 32>
+          <<<blocks, kBlockSize, 0, stream>>>(z, bits, p_in, t_off, total);
+      break;
+    default:
+      throw Exception("Unsupported pair stream width (8, 16 or 32).");
+  }
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// One block of 64 threads per (position, head). logits [N, heads, 64, 64]
+// gets, at (i, j), the sum over the attack-graph channels c set at (i, j) of
+//   attack_w[h, c] + q[n, i, h, :] . gate_q[h, c, :]
+//                  + k[n, j, h, :] . gate_k[h, c, :].
+// q and k are [N, 64, d_model] with head h at columns h * depth.
+template <typename T>
+__global__ void addAttackGraphBias_kernel(T* logits, const uint64_t* bits,
+                                          const T* q, const T* k,
+                                          const float* attack_w,
+                                          const float* gate_q,
+                                          const float* gate_k, int heads,
+                                          int depth, int d_model,
+                                          bool accumulate) {
+  constexpr int C = kAttackGraphChannels;
+  constexpr int kLd = C + 1;
+  __shared__ float s_gq[64 * kLd];
+  __shared__ float s_gk[64 * kLd];
+  __shared__ float s_aw[C];
+  const int n = blockIdx.x / heads;
+  const int h = blockIdx.x % heads;
+  const int t = threadIdx.x;
+  if (t < C) s_aw[t] = attack_w[h * C + t];
+
+  // Row t of q . gate_q[h]^T and of k . gate_k[h]^T.
+  {
+    float aq[C], ak[C];
+#pragma unroll
+    for (int c = 0; c < C; ++c) aq[c] = ak[c] = 0.0f;
+    const size_t row = (static_cast<size_t>(n) * 64 + t) * d_model + h * depth;
+    const float* wq = gate_q + static_cast<size_t>(h) * C * depth;
+    const float* wk = gate_k + static_cast<size_t>(h) * C * depth;
+    for (int d = 0; d < depth; ++d) {
+      const float qv = (float)q[row + d];
+      const float kv = (float)k[row + d];
+#pragma unroll
+      for (int c = 0; c < C; ++c) {
+        aq[c] += qv * wq[c * depth + d];
+        ak[c] += kv * wk[c * depth + d];
+      }
+    }
+#pragma unroll
+    for (int c = 0; c < C; ++c) {
+      s_gq[t * kLd + c] = aq[c];
+      s_gk[t * kLd + c] = ak[c];
+    }
+  }
+  __syncthreads();
+
+  const int j = t;
+  const uint64_t* b = bits + static_cast<size_t>(n) * 64 * 64 + j;
+  T* out = logits + static_cast<size_t>(blockIdx.x) * 64 * 64 + j;
+  for (int i = 0; i < 64; ++i) {
+    float acc = 0.0f;
+    for (uint64_t m = b[i * 64]; m; m &= m - 1) {
+      const int c = __ffsll(static_cast<long long>(m)) - 1;
+      acc += s_aw[c] + s_gq[i * kLd + c] + s_gk[j * kLd + c];
+    }
+    if (accumulate) acc += (float)out[i * 64];
+    out[i * 64] = (T)acc;
+  }
+}
+
+template <typename T>
+void addAttackGraphBias(T* logits, const uint64_t* bits, const T* q,
+                        const T* k, const float* attack_w, const float* gate_q,
+                        const float* gate_k, int N, int heads, int depth,
+                        int d_model, bool accumulate, cudaStream_t stream) {
+  addAttackGraphBias_kernel<T><<<N * heads, 64, 0, stream>>>(
+      logits, bits, q, k, attack_w, gate_q, gate_k, heads, depth, d_model,
+      accumulate);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// x = x * scale * sigmoid(gate), elementwise: the attention output gate.
+template <typename T>
+__global__ void applySigmoidGate_kernel(T* x, const T* gate, float scale,
+                                        int size) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= size) return;
+  const float g = (float)gate[i];
+  x[i] = (T)((float)x[i] * scale / (1.0f + __expf(-g)));
+}
+
+template <typename T>
+void applySigmoidGate(T* x, const T* gate, float scale, int size,
+                      cudaStream_t stream) {
+  const int kBlockSize = 256;
+  applySigmoidGate_kernel<T><<<DivUp(size, kBlockSize), kBlockSize, 0,
+                               stream>>>(x, gate, scale, size);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// logits[n * stride + p] += factor * (u . z[n, p, :]) for p < 64 * 64: the
+// pair stream term of an attention policy head.
+template <typename T>
+__global__ void addPairPolicyLogits_kernel(T* logits, const T* z,
+                                           const float* u, float factor,
+                                           int pair_d_e, int stride,
+                                           int total) {
+  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total) return;
+  const T* zr = z + static_cast<size_t>(idx) * pair_d_e;
+  float s = 0.0f;
+  for (int d = 0; d < pair_d_e; ++d) s += u[d] * (float)zr[d];
+  T* o = logits + static_cast<size_t>(idx >> 12) * stride + (idx & 4095);
+  *o = (T)((float)*o + factor * s);
+}
+
+template <typename T>
+void addPairPolicyLogits(T* logits, const T* z, const float* u, float factor,
+                         int N, int pair_d_e, int stride,
+                         cudaStream_t stream) {
+  const int total = N * 64 * 64;
+  const int kBlockSize = 256;
+  addPairPolicyLogits_kernel<T>
+      <<<DivUp(total, kBlockSize), kBlockSize, 0, stream>>>(
+          logits, z, u, factor, pair_d_e, stride, total);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// ---------------------------------------------------------------------------
+// Pre-norm encoder blocks: the residual stream is kept in float.
+
+namespace {
+// Sum over the block (blockDim.x a power of two, at most 256), by a
+// shared-memory tree: no assumption on the warp size.
+__device__ float BlockSum256(float v, float* red) {
+  red[threadIdx.x] = v;
+  __syncthreads();
+  for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+    if (threadIdx.x < s) red[threadIdx.x] += red[threadIdx.x + s];
+    __syncthreads();
+  }
+  const float r = red[0];
+  __syncthreads();
+  return r;
+}
+}  // namespace
+
+// One block per row: v = (in + bias) * alpha + skip (bias and skip optional),
+// residual_out = v (optional; may alias skip), out = (v - mean) /
+// sqrt(var + eps) * gammas + betas. The row and its statistics are in float.
+template <typename TIn, typename TSkip, typename TOut, typename T>
+__global__ void layerNormRows_kernel(TOut* out, float* residual_out,
+                                     const TIn* in, const T* bias,
+                                     const TSkip* skip, const T* gammas,
+                                     const T* betas, int C, float eps,
+                                     float alpha) {
+  extern __shared__ float row[];  // C floats
+  __shared__ float red[256];
+  const size_t base = static_cast<size_t>(blockIdx.x) * C;
+  float s = 0.0f;
+  for (int c = threadIdx.x; c < C; c += blockDim.x) {
+    float v = (float)in[base + c];
+    if (bias) v += (float)bias[c];
+    v *= alpha;
+    if (skip) v += (float)skip[base + c];
+    if (residual_out) residual_out[base + c] = v;
+    row[c] = v;
+    s += v;
+  }
+  const float mean = BlockSum256(s, red) / C;
+  float q = 0.0f;
+  for (int c = threadIdx.x; c < C; c += blockDim.x) {
+    const float d = row[c] - mean;
+    q += d * d;
+  }
+  const float rstd = rsqrtf(BlockSum256(q, red) / C + eps);
+  for (int c = threadIdx.x; c < C; c += blockDim.x) {
+    out[base + c] =
+        (TOut)((row[c] - mean) * rstd * (float)gammas[c] + (float)betas[c]);
+  }
+}
+
+template <typename TIn, typename TSkip, typename TOut, typename T>
+void layerNormRows(TOut* out, float* residual_out, const TIn* in,
+                   const T* bias, const TSkip* skip, const T* gammas,
+                   const T* betas, int N, int C, float eps, float alpha,
+                   cudaStream_t stream) {
+  if (C > 8192) throw Exception("unsupported layer norm width");
+  const int kBlockSize = 256;
+  layerNormRows_kernel<TIn, TSkip, TOut, T>
+      <<<N, kBlockSize, C * sizeof(float), stream>>>(
+          out, residual_out, in, bias, skip, gammas, betas, C, eps, alpha);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// residual += alpha * (y + bias), bias [C] broadcast over the rows.
+template <typename T>
+__global__ void addToResidual_kernel(float* residual, const T* y,
+                                     const T* bias, float alpha, int size,
+                                     int C) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= size) return;
+  residual[i] += alpha * ((float)y[i] + (float)bias[i % C]);
+}
+
+template <typename T>
+void addToResidual(float* residual, const T* y, const T* bias, float alpha,
+                   int N, int C, cudaStream_t stream) {
+  const int size = N * C;
+  const int kBlockSize = 256;
+  addToResidual_kernel<T><<<DivUp(size, kBlockSize), kBlockSize, 0, stream>>>(
+      residual, y, bias, alpha, size, C);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// ---------------------------------------------------------------------------
+// Edge stream: a float state e [N, 64 * 64, d_e] (square pair (i, j), channels
+// last) that the attention of a block reads through its doors and that the
+// sites update.
+
+namespace {
+// Sum and max over a block of 64 threads in x (any blockDim.y): shared-memory
+// tree over red[threadIdx.y][64], no assumption on the warp size.
+__device__ float RowSum64(float v, float* red) {
+  float* r = red + threadIdx.y * 64;
+  r[threadIdx.x] = v;
+  __syncthreads();
+  for (int s = 32; s > 0; s >>= 1) {
+    if (threadIdx.x < s) r[threadIdx.x] += r[threadIdx.x + s];
+    __syncthreads();
+  }
+  const float out = r[0];
+  __syncthreads();
+  return out;
+}
+
+__device__ float RowMax64(float v, float* red) {
+  float* r = red + threadIdx.y * 64;
+  r[threadIdx.x] = v;
+  __syncthreads();
+  for (int s = 32; s > 0; s >>= 1) {
+    if (threadIdx.x < s)
+      r[threadIdx.x] = fmaxf(r[threadIdx.x], r[threadIdx.x + s]);
+    __syncthreads();
+  }
+  const float out = r[0];
+  __syncthreads();
+  return out;
+}
+
+__device__ __forceinline__ float SigmoidF(float x) {
+  return 1.0f / (1.0f + __expf(-x));
+}
+
+constexpr int kDoorHeadsPerBlock = 4;
+}  // namespace
+
+// One block per (n, i), threads (j, y), head h = y, y + 4, ...: the doors,
+// the softmax over j and the G gate of row (n, h, i); with o_e the readback
+// e[n, i, j, :] += sum_h L[n, h, i, j] o_e[h, :] of the final logits L.
+template <typename T, int kDe>
+__global__ void edgeDoorSoftmax_kernel(T* logits, const T* bias, float* e,
+                                       const float* doors, const float* o_e,
+                                       float gate_scale, int heads) {
+  constexpr int kRec = 3 * kDe + 3;
+  extern __shared__ float s_doors[];  // [heads][kRec], then o_e [heads][kDe]
+  __shared__ float red[kDoorHeadsPerBlock * 64];
+  __shared__ float s_rb[kDoorHeadsPerBlock][64][9];  // readback, 8 at a time
+  const int tid = threadIdx.y * 64 + threadIdx.x;
+  const int nthreads = 64 * kDoorHeadsPerBlock;
+  float* s_oe = s_doors + heads * kRec;
+  for (int k = tid; k < heads * kRec; k += nthreads) s_doors[k] = doors[k];
+  if (o_e) {
+    for (int k = tid; k < heads * kDe; k += nthreads) s_oe[k] = o_e[k];
+  }
+  __syncthreads();
+
+  const int n = blockIdx.x >> 6;
+  const int i = blockIdx.x & 63;
+  const int j = threadIdx.x;
+  float* ep = e + (static_cast<size_t>(n) * 4096 + i * 64 + j) * kDe;
+  float ev[kDe], rb[kDe];
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    ev[c] = ep[c];
+    rb[c] = 0.0f;
+  }
+  // Every y-row of threads runs the same number of heads, so the block-wide
+  // barriers in the reductions line up.
+  const int rounds = (heads + kDoorHeadsPerBlock - 1) / kDoorHeadsPerBlock;
+  for (int r = 0; r < rounds; r++) {
+    const int h = r * kDoorHeadsPerBlock + threadIdx.y;
+    const bool active = h < heads;
+    float L = 0.0f, g = 0.0f;
+    size_t idx = 0;
+    if (active) {
+      const float* w = s_doors + h * kRec;
+      float et = 0.0f, m = 0.0f;
+      g = w[3 * kDe + 2];
+#pragma unroll
+      for (int c = 0; c < kDe; c++) {
+        et += w[c] * ev[c];
+        m += w[kDe + c] * ev[c];
+        g += w[2 * kDe + c] * ev[c];
+      }
+      idx = ((static_cast<size_t>(n) * heads + h) * 64 + i) * 64 + j;
+      L = (float)logits[idx];
+      if (bias) L += (float)bias[idx];
+      L = (w[3 * kDe] * L + w[3 * kDe + 1] * et) * (1.0f + m);
+      if (o_e) {
+#pragma unroll
+        for (int c = 0; c < kDe; c++) rb[c] += L * s_oe[h * kDe + c];
+      }
+    }
+    const float mx = RowMax64(active ? L : -INFINITY, red);
+    const float ex = active ? __expf(L - mx) : 0.0f;
+    const float sum = RowSum64(ex, red);
+    if (active) {
+      logits[idx] = (T)(ex / sum * gate_scale * SigmoidF(g));
+    }
+  }
+  if (o_e) {
+    // The heads' readback sums, 8 channels at a time (fixed order: the
+    // result does not depend on scheduling).
+#pragma unroll
+    for (int c0 = 0; c0 < kDe; c0 += 8) {
+#pragma unroll
+      for (int c = 0; c < 8; c++) s_rb[threadIdx.y][j][c] = rb[c0 + c];
+      __syncthreads();
+      if (threadIdx.y == 0) {
+#pragma unroll
+        for (int c = 0; c < 8; c++) {
+          float acc = ev[c0 + c];
+          for (int y = 0; y < kDoorHeadsPerBlock; y++) acc += s_rb[y][j][c];
+          ep[c0 + c] = acc;
+        }
+      }
+      __syncthreads();
+    }
+  }
+}
+
+template <typename T>
+void edgeDoorSoftmax(T* logits, const T* bias, float* e, const float* doors,
+                     const float* o_e, float gate_scale, int N, int heads,
+                     int d_e, cudaStream_t stream) {
+  const dim3 block(64, kDoorHeadsPerBlock);
+  const size_t smem =
+      static_cast<size_t>(heads) * (3 * d_e + 3 + d_e) * sizeof(float);
+  switch (d_e) {
+    case 8:
+      edgeDoorSoftmax_kernel<T, 8><<<N * 64, block, smem, stream>>>(
+          logits, bias, e, doors, o_e, gate_scale, heads);
+      break;
+    case 16:
+      edgeDoorSoftmax_kernel<T, 16><<<N * 64, block, smem, stream>>>(
+          logits, bias, e, doors, o_e, gate_scale, heads);
+      break;
+    case 32:
+      edgeDoorSoftmax_kernel<T, 32><<<N * 64, block, smem, stream>>>(
+          logits, bias, e, doors, o_e, gate_scale, heads);
+      break;
+    default:
+      throw Exception("unsupported edge stream width");
+  }
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// ---- edge stream site: triplet, then the edge FFN.
+
+// Per pair p: n = rms(e[p]); v[p] = n tri_v; eg[p] = n tri_eg + tri_eg_b.
+template <int kDe>
+__global__ void edgeTripletIn_kernel(int pairs, const float* e,
+                                     const float* tri_v, const float* tri_eg,
+                                     const float* tri_eg_b, int eg_width,
+                                     float* v, float* eg) {
+  extern __shared__ float s_w[];  // tri_v [kDe][2 kDe], tri_eg, tri_eg_b
+  float* s_eg = s_w + kDe * 2 * kDe;
+  float* s_b = s_eg + kDe * eg_width;
+  for (int k = threadIdx.x; k < kDe * 2 * kDe; k += blockDim.x) {
+    s_w[k] = tri_v[k];
+  }
+  for (int k = threadIdx.x; k < kDe * eg_width; k += blockDim.x) {
+    s_eg[k] = tri_eg[k];
+  }
+  for (int k = threadIdx.x; k < eg_width; k += blockDim.x) s_b[k] = tri_eg_b[k];
+  __syncthreads();
+  const int p = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p >= pairs) return;
+  float x[kDe];
+  float ss = 0.0f;
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    x[c] = e[static_cast<size_t>(p) * kDe + c];
+    ss += x[c] * x[c];
+  }
+  const float sc = rsqrtf(ss / kDe + 1e-6f);
+#pragma unroll
+  for (int c = 0; c < kDe; c++) x[c] *= sc;
+  for (int o = 0; o < 2 * kDe; o++) {
+    float a = 0.0f;
+#pragma unroll
+    for (int c = 0; c < kDe; c++) a += x[c] * s_w[c * 2 * kDe + o];
+    v[static_cast<size_t>(p) * 2 * kDe + o] = a;
+  }
+  for (int o = 0; o < eg_width; o++) {
+    float a = s_b[o];
+#pragma unroll
+    for (int c = 0; c < kDe; c++) a += x[c] * s_eg[c * eg_width + o];
+    eg[static_cast<size_t>(p) * eg_width + o] = a;
+  }
+}
+
+// One block of 64 threads per (n, h, i), eg = [a_in | g_in | a_out | g_out]
+// (triplet_heads each): a_in[n, h, i, k] = softmax_k(eg[n, (i, k), h]) *
+// sigmoid(eg[n, (i, k), ht + h]) and a_out[n, h, k, i] = softmax over the
+// source square k of eg[n, (k, i), 2 ht + h] * sigmoid(eg[n, (k, i), 3 ht +
+// h]).
+__global__ void edgeTripletAttention_kernel(const float* eg, int ht,
+                                            float* a_in, float* a_out) {
+  __shared__ float red[64];
+  const int i = blockIdx.x & 63;
+  const int h = (blockIdx.x >> 6) % ht;
+  const size_t n = (blockIdx.x >> 6) / ht;
+  const int k = threadIdx.x;
+  const int w = 4 * ht;
+  const float* g = eg + n * 4096 * w;
+  {
+    const float x = g[(i * 64 + k) * w + h];
+    const float mx = RowMax64(x, red);
+    const float ex = __expf(x - mx);
+    const float sum = RowSum64(ex, red);
+    a_in[((n * ht + h) * 64 + i) * 64 + k] =
+        ex / sum * SigmoidF(g[(i * 64 + k) * w + ht + h]);
+  }
+  {
+    const float x = g[(k * 64 + i) * w + 2 * ht + h];
+    const float mx = RowMax64(x, red);
+    const float ex = __expf(x - mx);
+    const float sum = RowSum64(ex, red);
+    a_out[(n * ht + h) * 4096 + k * 64 + i] =
+        ex / sum * SigmoidF(g[(k * 64 + i) * w + 3 * ht + h]);
+  }
+}
+
+// One block of 256 threads per (n, h): thread (j, row group) computes
+// va_in[n, (i, j), h kDot + d] = sum_k A_in[i, k] v_in[(k, j) | (j, k)] and
+// va_out[n, (i, j), kDe + h kDot + d] = sum_k A_out[k, i] v_out[(j, k) |
+// (k, j)] (path form | TGT-Ag form) for 16 rows i.
+template <int kDe, int kDot>
+__global__ void __launch_bounds__(256)
+    edgeTripletContract_kernel(const float* v, const float* a_in,
+                               const float* a_out, int ht, bool path,
+                               float* va) {
+  __shared__ float s_ain[64 * 64], s_aout[64 * 64];
+  const size_t n = blockIdx.x / ht;
+  const int h = blockIdx.x % ht;
+  const float* ai = a_in + static_cast<size_t>(blockIdx.x) * 4096;
+  const float* ao = a_out + static_cast<size_t>(blockIdx.x) * 4096;
+  for (int k = threadIdx.x; k < 4096; k += 256) {
+    s_ain[k] = ai[k];
+    s_aout[k] = ao[k];
+  }
+  __syncthreads();
+  const int j = threadIdx.x & 63;
+  const int ib = (threadIdx.x >> 6) * 16;
+  const float* vn = v + n * 4096 * 2 * kDe;
+  float* out = va + n * 4096 * 2 * kDe;
+  float acc[16][kDot];
+  for (int side = 0; side < 2; side++) {
+#pragma unroll
+    for (int r = 0; r < 16; r++) {
+#pragma unroll
+      for (int d = 0; d < kDot; d++) acc[r][d] = 0.0f;
+    }
+    const int ch = side * kDe + h * kDot;
+    for (int k = 0; k < 64; k++) {
+      const bool kj = (side == 0) == path;
+      const int pr = kj ? (k * 64 + j) : (j * 64 + k);
+      float x[kDot];
+#pragma unroll
+      for (int d = 0; d < kDot; d++) x[d] = vn[pr * 2 * kDe + ch + d];
+#pragma unroll
+      for (int r = 0; r < 16; r++) {
+        const float a =
+            side == 0 ? s_ain[(ib + r) * 64 + k] : s_aout[k * 64 + ib + r];
+#pragma unroll
+        for (int d = 0; d < kDot; d++) acc[r][d] += a * x[d];
+      }
+    }
+#pragma unroll
+    for (int r = 0; r < 16; r++) {
+#pragma unroll
+      for (int d = 0; d < kDot; d++) {
+        out[((ib + r) * 64 + j) * 2 * kDe + ch + d] = acc[r][d];
+      }
+    }
+  }
+}
+
+// Per pair p: e[p] += va[p] tri_o; nrm[p] = rms(e[p]).
+template <int kDe>
+__global__ void edgeTripletOut_kernel(int pairs, const float* va,
+                                      const float* tri_o, float* e,
+                                      float* nrm) {
+  __shared__ float s_o[2 * kDe * kDe];
+  for (int k = threadIdx.x; k < 2 * kDe * kDe; k += blockDim.x) {
+    s_o[k] = tri_o[k];
+  }
+  __syncthreads();
+  const int p = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p >= pairs) return;
+  float y[kDe];
+#pragma unroll
+  for (int c = 0; c < kDe; c++) y[c] = e[static_cast<size_t>(p) * kDe + c];
+  for (int o = 0; o < 2 * kDe; o++) {
+    const float a = va[static_cast<size_t>(p) * 2 * kDe + o];
+#pragma unroll
+    for (int c = 0; c < kDe; c++) y[c] += a * s_o[o * kDe + c];
+  }
+  float ss = 0.0f;
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    e[static_cast<size_t>(p) * kDe + c] = y[c];
+    ss += y[c] * y[c];
+  }
+  const float sc = rsqrtf(ss / kDe + 1e-6f);
+#pragma unroll
+  for (int c = 0; c < kDe; c++)
+    nrm[static_cast<size_t>(p) * kDe + c] = y[c] * sc;
+}
+
+// Per pair p = (n, i, j), with n_ = nrm and pt = (n, j, i): e[p] = rms(e[p] +
+// relu(n_[p] ffn_in + ffn_in_b + n_[pt] ffn_rev) ffn_out).
+template <int kDe>
+__global__ void edgeFfn_kernel(int pairs, const float* nrm, const float* ffn_in,
+                               const float* ffn_in_b, const float* ffn_rev,
+                               const float* ffn_out, int hidden, float* e) {
+  extern __shared__ float s_w[];  // in [kDe][hid], rev, b [hid], out [hid][kDe]
+  float* s_rev = s_w + kDe * hidden;
+  float* s_b = s_rev + kDe * hidden;
+  float* s_out = s_b + hidden;
+  for (int k = threadIdx.x; k < kDe * hidden; k += blockDim.x) {
+    s_w[k] = ffn_in[k];
+    s_rev[k] = ffn_rev ? ffn_rev[k] : 0.0f;
+    s_out[k] = ffn_out[k];
+  }
+  for (int k = threadIdx.x; k < hidden; k += blockDim.x) s_b[k] = ffn_in_b[k];
+  __syncthreads();
+  const int p = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p >= pairs) return;
+  const int ij = p & 4095;
+  const int pt = (p - ij) + ((ij & 63) << 6) + (ij >> 6);
+  float x[kDe], a[kDe], at[kDe];
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    x[c] = e[static_cast<size_t>(p) * kDe + c];
+    a[c] = nrm[static_cast<size_t>(p) * kDe + c];
+    at[c] = nrm[static_cast<size_t>(pt) * kDe + c];
+  }
+  for (int m = 0; m < hidden; m++) {
+    float t = s_b[m];
+#pragma unroll
+    for (int c = 0; c < kDe; c++) {
+      t += a[c] * s_w[c * hidden + m] + at[c] * s_rev[c * hidden + m];
+    }
+    t = fmaxf(t, 0.0f);
+#pragma unroll
+    for (int c = 0; c < kDe; c++) x[c] += t * s_out[m * kDe + c];
+  }
+  float ss = 0.0f;
+#pragma unroll
+  for (int c = 0; c < kDe; c++) ss += x[c] * x[c];
+  const float sc = rsqrtf(ss / kDe + 1e-6f);
+#pragma unroll
+  for (int c = 0; c < kDe; c++) e[static_cast<size_t>(p) * kDe + c] = x[c] * sc;
+}
+
+size_t edgeStreamUpdateScratchBytes(int N, int d_e, int triplet_heads) {
+  const size_t pairs = static_cast<size_t>(N) * 4096;
+  // v (later the normalised state) [2 d_e], eg [4 ht], va [2 d_e] per pair;
+  // a_in, a_out [ht, 64, 64] per position.
+  return pairs * (4 * d_e + 6 * triplet_heads) * sizeof(float);
+}
+
+template <int kDe, int kDot>
+static void edgeStreamUpdateImpl(float* e, float* scratch,
+                                 const EdgeStreamUpdateWeights& w, int N,
+                                 cudaStream_t stream) {
+  constexpr int ht = kDe / kDot;
+  const int pairs = N * 4096;
+  float* v = scratch;
+  float* eg = v + static_cast<size_t>(pairs) * 2 * kDe;
+  float* va = eg + static_cast<size_t>(pairs) * 4 * ht;
+  float* a_in = va + static_cast<size_t>(pairs) * 2 * kDe;
+  float* a_out = a_in + static_cast<size_t>(pairs) * ht;
+  float* nrm = v;  // v is dead once va is written
+  const int kBlock = 128;
+  const int blocks = DivUp(pairs, kBlock);
+  const size_t ffn_smem = (3 * kDe * w.hidden + w.hidden) * sizeof(float);
+  if (ffn_smem > 48 * 1024) throw Exception("unsupported edge FFN width");
+  edgeTripletIn_kernel<kDe>
+      <<<blocks, kBlock,
+         (kDe * 2 * kDe + kDe * 4 * ht + 4 * ht) * sizeof(float), stream>>>(
+          pairs, e, w.tri_v, w.tri_eg, w.tri_eg_b, 4 * ht, v, eg);
+  edgeTripletAttention_kernel<<<N * ht * 64, 64, 0, stream>>>(eg, ht, a_in,
+                                                              a_out);
+  edgeTripletContract_kernel<kDe, kDot>
+      <<<N * ht, 256, 0, stream>>>(v, a_in, a_out, ht, w.path, va);
+  edgeTripletOut_kernel<kDe>
+      <<<blocks, kBlock, 0, stream>>>(pairs, va, w.tri_o, e, nrm);
+  edgeFfn_kernel<kDe><<<blocks, kBlock, ffn_smem, stream>>>(
+      pairs, nrm, w.ffn_in, w.ffn_in_b, w.ffn_rev, w.ffn_out, w.hidden, e);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+void edgeStreamUpdate(float* e, void* scratch, const EdgeStreamUpdateWeights& w,
+                      int N, int d_e, cudaStream_t stream) {
+  float* s = static_cast<float*>(scratch);
+  const int dot = w.triplet_heads > 0 ? d_e / w.triplet_heads : 0;
+  if (d_e == 16 && dot == 4) {
+    edgeStreamUpdateImpl<16, 4>(e, s, w, N, stream);
+  } else if (d_e == 32 && dot == 4) {
+    edgeStreamUpdateImpl<32, 4>(e, s, w, N, stream);
+  } else if (d_e == 32 && dot == 8) {
+    edgeStreamUpdateImpl<32, 8>(e, s, w, N, stream);
+  } else {
+    throw Exception("unsupported edge stream width / triplet heads");
+  }
+}
+
 template <typename T, int kWorkPerThread>
 __global__ void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
                                          int depth, int d_model, T* k, T* q,
@@ -1422,6 +2374,15 @@ template void addVectors<float>(float* c, float* a, float* b, int size,
 template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                int bsize, ActivationFunction act,
                                cudaStream_t stream);
+
+template void blendPolicyLogits<float>(float* main,
+                                       const PolicyBlendHeads<float>& heads,
+                                       float w_main, int count,
+                                       cudaStream_t stream);
+template void blendPolicyLogits<half>(half* main,
+                                      const PolicyBlendHeads<half>& heads,
+                                      float w_main, int count,
+                                      cudaStream_t stream);
 
 template void addVectorsHNC_NHC<float>(float* a, float* b, int N, int H, int C,
                                        cudaStream_t stream);
@@ -1703,6 +2664,81 @@ template void applyInputGating<float>(float* output, const float* input,
                                       int N, int C, int output_size,
                                       cudaStream_t stream);
 
+template void addBiasSwiGLU<half>(half* output, const half* input,
+                                  const half* bias, const half* gate, int N,
+                                  int C, cudaStream_t stream);
+template void addBiasSwiGLU<float>(float* output, const float* input,
+                                   const float* bias, const float* gate, int N,
+                                   int C, cudaStream_t stream);
+
+template void computeAttackGraph<half>(uint64_t* bits, const half* planes,
+                                      int N, int input_planes,
+                                      cudaStream_t stream);
+template void computePairStream<half>(half* z, const uint64_t* bits,
+                                     const float* p_in, const float* t_off,
+                                     int N, int pair_d_e, cudaStream_t stream);
+template void addAttackGraphBias<half>(
+    half* logits, const uint64_t* bits, const half* q, const half* k,
+    const float* attack_w, const float* gate_q, const float* gate_k, int N,
+    int heads, int depth, int d_model, bool accumulate, cudaStream_t stream);
+template void applySigmoidGate<half>(half* x, const half* gate, float scale,
+                                      int size, cudaStream_t stream);
+template void addPairPolicyLogits<half>(half* logits, const half* z,
+                                       const float* u, float factor, int N,
+                                       int pair_d_e, int stride,
+                                       cudaStream_t stream);
+// Pre-norm blocks: the embedding's last norm writes the float residual;
+// the block norms read it; the attention's dense adds into it.
+template void layerNormRows<half, half, float, half>(
+    float* out, float* residual_out, const half* in, const half* bias,
+    const half* skip, const half* gammas, const half* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void layerNormRows<float, float, half, half>(
+    half* out, float* residual_out, const float* in, const half* bias,
+    const float* skip, const half* gammas, const half* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void layerNormRows<half, float, half, half>(
+    half* out, float* residual_out, const half* in, const half* bias,
+    const float* skip, const half* gammas, const half* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void addToResidual<half>(float* residual, const half* y,
+                                  const half* bias, float alpha, int N, int C,
+                                  cudaStream_t stream);
+template void edgeDoorSoftmax<half>(half* logits, const half* bias, float* e,
+                                    const float* doors, const float* o_e,
+                                    float gate_scale, int N, int heads, int d_e,
+                                    cudaStream_t stream);
+
+template void computeAttackGraph<float>(uint64_t* bits, const float* planes,
+                                      int N, int input_planes,
+                                      cudaStream_t stream);
+template void computePairStream<float>(float* z, const uint64_t* bits,
+                                     const float* p_in, const float* t_off,
+                                     int N, int pair_d_e, cudaStream_t stream);
+template void addAttackGraphBias<float>(
+    float* logits, const uint64_t* bits, const float* q, const float* k,
+    const float* attack_w, const float* gate_q, const float* gate_k, int N,
+    int heads, int depth, int d_model, bool accumulate, cudaStream_t stream);
+template void applySigmoidGate<float>(float* x, const float* gate,
+                                       float scale, int size,
+                                       cudaStream_t stream);
+template void addPairPolicyLogits<float>(float* logits, const float* z,
+                                       const float* u, float factor, int N,
+                                       int pair_d_e, int stride,
+                                       cudaStream_t stream);
+// The three uses above coincide for float.
+template void layerNormRows<float, float, float, float>(
+    float* out, float* residual_out, const float* in, const float* bias,
+    const float* skip, const float* gammas, const float* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void addToResidual<float>(float* residual, const float* y,
+                                   const float* bias, float alpha, int N, int C,
+                                   cudaStream_t stream);
+template void edgeDoorSoftmax<float>(float* logits, const float* bias, float* e,
+                                     const float* doors, const float* o_e,
+                                     float gate_scale, int N, int heads,
+                                     int d_e, cudaStream_t stream);
+
 template void genOffsetPointers<float>(float** offsets, int heads,
                                        int max_batch, int depth, int d_model,
                                        float* k, float* q, float* b1, float* v,
@@ -1731,6 +2767,9 @@ template void batchNorm<__nv_bfloat16>(
 template void addVectors<__nv_bfloat16>(
     __nv_bfloat16* c, __nv_bfloat16* a, __nv_bfloat16* b, int size, int asize,
     int bsize, ActivationFunction act, cudaStream_t stream);
+template void blendPolicyLogits<__nv_bfloat16>(
+    __nv_bfloat16* main, const PolicyBlendHeads<__nv_bfloat16>& heads,
+    float w_main, int count, cudaStream_t stream);
 
 template void addVectorsHNC_NHC<__nv_bfloat16>(__nv_bfloat16* a,
                                                __nv_bfloat16* b, int N, int H,
@@ -1817,6 +2856,59 @@ template void genOffsetPointers<__nv_bfloat16>(
     __nv_bfloat16** offsets, int heads, int max_batch, int depth, int d_model,
     __nv_bfloat16* k, __nv_bfloat16* q, __nv_bfloat16* b1, __nv_bfloat16* v,
     __nv_bfloat16* b2, cudaStream_t stream);
+
+template void addBiasSwiGLU<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* bias, const __nv_bfloat16* gate, int N, int C,
+    cudaStream_t stream);
+
+template void computeAttackGraph<__nv_bfloat16>(
+    uint64_t* bits, const __nv_bfloat16* planes, int N, int input_planes,
+    cudaStream_t stream);
+template void computePairStream<__nv_bfloat16>(__nv_bfloat16* z,
+                                              const uint64_t* bits,
+                                              const float* p_in,
+                                              const float* t_off, int N,
+                                              int pair_d_e,
+                                              cudaStream_t stream);
+template void addAttackGraphBias<__nv_bfloat16>(
+    __nv_bfloat16* logits, const uint64_t* bits, const __nv_bfloat16* q,
+    const __nv_bfloat16* k, const float* attack_w, const float* gate_q,
+    const float* gate_k, int N, int heads, int depth, int d_model,
+    bool accumulate, cudaStream_t stream);
+template void applySigmoidGate<__nv_bfloat16>(__nv_bfloat16* x,
+                                               const __nv_bfloat16* gate,
+                                               float scale, int size,
+                                               cudaStream_t stream);
+template void addPairPolicyLogits<__nv_bfloat16>(
+    __nv_bfloat16* logits, const __nv_bfloat16* z, const float* u, float factor,
+    int N, int pair_d_e, int stride, cudaStream_t stream);
+template void layerNormRows<__nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16>(
+    float* out, float* residual_out, const __nv_bfloat16* in,
+    const __nv_bfloat16* bias, const __nv_bfloat16* skip,
+    const __nv_bfloat16* gammas, const __nv_bfloat16* betas, int N, int C,
+    float eps, float alpha, cudaStream_t stream);
+template void layerNormRows<float, float, __nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* out, float* residual_out, const float* in,
+    const __nv_bfloat16* bias, const float* skip, const __nv_bfloat16* gammas,
+    const __nv_bfloat16* betas, int N, int C, float eps, float alpha,
+    cudaStream_t stream);
+template void layerNormRows<__nv_bfloat16, float, __nv_bfloat16, __nv_bfloat16>(
+    __nv_bfloat16* out, float* residual_out, const __nv_bfloat16* in,
+    const __nv_bfloat16* bias, const float* skip, const __nv_bfloat16* gammas,
+    const __nv_bfloat16* betas, int N, int C, float eps, float alpha,
+    cudaStream_t stream);
+template void addToResidual<__nv_bfloat16>(float* residual,
+                                           const __nv_bfloat16* y,
+                                           const __nv_bfloat16* bias,
+                                           float alpha, int N, int C,
+                                           cudaStream_t stream);
+template void edgeDoorSoftmax<__nv_bfloat16>(__nv_bfloat16* logits,
+                                             const __nv_bfloat16* bias,
+                                             float* e, const float* doors,
+                                             const float* o_e, float gate_scale,
+                                             int N, int heads, int d_e,
+                                             cudaStream_t stream);
 #endif
 }  // namespace cudnn_backend
 }  // namespace lczero

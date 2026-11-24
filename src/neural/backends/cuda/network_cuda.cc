@@ -29,7 +29,9 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 #include "cuda_common.h"
 #include "inputs_outputs.h"
@@ -57,6 +59,25 @@ namespace {
 
 template <typename DataType>
 class CudaNetwork;
+
+// The error for a head the net does not offer; a head of the file that needs
+// features this backend lacks says so.
+static std::string MissingHeadMessage(
+    const std::string& kind, const std::string& name,
+    const std::vector<std::string>& unsupported, const std::string& features,
+    bool from_file) {
+  const std::string what = from_file
+                               ? "The net file's default " + kind + " head '"
+                               : "The " + kind + " head '";
+  if (std::find(unsupported.begin(), unsupported.end(), name) !=
+      unsupported.end()) {
+    return what + name + "' needs features (" + features +
+           ") that this backend does not support.";
+  }
+  if (from_file) return what + name + "' does not exist in this net.";
+  return "The " + kind + " head you specified '" + name +
+         "' does not exist in this net.";
+}
 
 static size_t getMaxAttentionHeadSize(
     const MultiHeadWeights::PolicyHead& weights, int N) {
@@ -94,8 +115,64 @@ static size_t getMaxAttentionHeadSize(
   return size;
 }
 
+// The parts of a NETWORK_ATTENTIONBODY_BT6 file this backend runs: the SwiGLU
+// FFN, the attack-graph attention terms, the static pair stream, the
+// attention output gate, pre-norm blocks and the edge stream. Other BT6 parts
+// are refused by name rather than ignored.
+void CheckBt6Format(const pblczero::Net& file) {
+  const auto& nf = file.format().network_format();
+  if (!nf.has_bt6()) {
+    throw Exception("NETWORK_ATTENTIONBODY_BT6 file without bt6 format.");
+  }
+  const auto& bt6 = nf.bt6();
+  const auto& w = file.weights();
+  auto refuse = [](const std::string& what) {
+    throw Exception(what + " is not supported by the " BACKEND_NAME
+                           " backend yet.");
+  };
+  if (bt6.prenorm() != w.has_encoder_final_norm()) {
+    throw Exception(
+        "bt6.prenorm and encoder_final_norm must be given together.");
+  }
+  if (bt6.kv_heads() != 0 && bt6.kv_heads() != bt6.heads()) {
+    refuse("Grouped KV heads (bt6.kv_heads)");
+  }
+  if (bt6.edge_update_after_size() != w.edge_stream().update_size()) {
+    throw Exception("bt6.edge_update_after does not match the edge stream.");
+  }
+  // The attack-graph channels must be those computeAttackGraph produces:
+  // the base channels, then their transposes.
+  static const char* const kBaseChannels[] = {
+      "attacks_stm",   "attacks_opp",   "defends_stm",   "defends_opp",
+      "xray_stm",      "xray_opp",      "pinray_stm",    "pinray_opp",
+      "kingring1_opp", "kingring1_own", "kingring2_opp", "kingring2_own",
+      "blockescape",   "gained_stm",    "gained_opp",    "lost_stm",
+      "lost_opp"};
+  constexpr int kBase = sizeof(kBaseChannels) / sizeof(kBaseChannels[0]);
+  static_assert(2 * kBase == kAttackGraphChannels);
+  const int channels = static_cast<int>(bt6.edge_channel_size());
+  if (channels == 0) return;
+  if (channels != kAttackGraphChannels) {
+    throw Exception("The net's attack graph has " + std::to_string(channels) +
+                    " channels; this backend computes " +
+                    std::to_string(kAttackGraphChannels) + ".");
+  }
+  for (int c = 0; c < kAttackGraphChannels; c++) {
+    const std::string expected = c < kBase ? std::string(kBaseChannels[c])
+                                           : kBaseChannels[c - kBase] +
+                                                 std::string("_T");
+    if (bt6.edge_channel(c) != expected) {
+      throw Exception("Attack-graph channel " + std::to_string(c) + " is '" +
+                      std::string(bt6.edge_channel(c)) + "', expected '" +
+                      expected + "'.");
+    }
+  }
+}
+
 static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
   const size_t embedding_op_size = weights.ip_emb_b.size();
+  // The embedding FFN's hidden width can exceed the encoder's.
+  const size_t embedding_dff = weights.ip_emb_ffn.dense1_b.size();
 
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
@@ -113,7 +190,8 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
 
   size_t size =
       N * 64 *
-      std::max(std::max(embedding_op_size, encoder_dff), encoder_d_model);
+      std::max({embedding_op_size, embedding_dff, encoder_dff,
+                encoder_d_model});
 
   // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
   const size_t matmul_qk_size = encoder_heads * N * 64 * 64;
@@ -121,9 +199,15 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
   size = std::max(size, std::max(matmul_qk_size, output_size));
 
   size_t qkv_size = N * 64 * encoder_d_model;
+  // q, k, v (and the attention output gate's input) share one allocation.
+  size_t qkv_slices = 3;
+  if (weights.encoder.size() > 0 &&
+      !weights.encoder[0].mha.output_gate_w.empty()) {
+    qkv_slices = 4;
+  }
   // We store qkv in single allocation, and other intermediate tensors are
   // sometimes stored by splitting an allocation into two halves.
-  size = std::max(2 * size, 3 * qkv_size);
+  size = std::max(2 * size, qkv_slices * qkv_size);
   return size;
 }
 
@@ -215,8 +299,11 @@ class CudaNetwork : public Network {
     using NF = pblczero::NetworkFormat;
     conv_policy_ = nf.policy() == NF::POLICY_CONVOLUTION;
     attn_policy_ = nf.policy() == NF::POLICY_ATTENTION;
-    attn_body_ = nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
-                 nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
+    attn_body_ =
+        nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
+        nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT ||
+        nf.network() == NF::NETWORK_ATTENTIONBODY_BT6;
+    if (nf.network() == NF::NETWORK_ATTENTIONBODY_BT6) CheckBt6Format(file);
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
     // min_batch_size_ is chosen as 4 as it is common that for sizes less than
@@ -424,32 +511,157 @@ class CudaNetwork : public Network {
     }
 
     std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
+        options.GetOrDefault<std::string>("policy_head",
+                                          weights.default_policy_head);
     // Check that selected policy head exists.
     if (!weights.policy_heads.contains(policy_head)) {
-      throw Exception("The policy head you specified '" + policy_head +
-                      "' does not exist in this net.");
+      throw Exception(MissingHeadMessage(
+          "policy", policy_head, weights.unsupported_policy_heads,
+          "child-Q bins or depth attention",
+          !options.Exists<std::string>("policy_head")));
     }
     std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
+        options.GetOrDefault<std::string>("value_head",
+                                          weights.default_value_head);
     // Check that selected value head exists.
     if (!weights.value_heads.contains(value_head)) {
-      throw Exception("The value head you specified '" + value_head +
-                      "' does not exist in this net.");
+      throw Exception(MissingHeadMessage(
+          "value", value_head, weights.unsupported_value_heads,
+          "depth attention", !options.Exists<std::string>("value_head")));
+    }
+    const size_t pair_d_e = weights.pair_t_off.size() / 225;
+    if (!weights.policy_heads.at(policy_head).pair_u.empty() &&
+        weights.policy_heads.at(policy_head).pair_u.size() != pair_d_e) {
+      throw Exception("The policy head's pair_u does not match the net's "
+                      "pair stream.");
+    }
+
+    // Pooling the policy heads here rather than anywhere downstream. Geometric
+    // pooling is a sum of logits, and the logits are exactly what this backend
+    // hands over, so the whole blend fits in the gap before the output is
+    // copied out -- and what leaves the backend is one policy vector,
+    // indistinguishable from an unblended one to everything downstream, which
+    // is why nothing outside this file has to know about it.
+    // The backend-opts lexer sorts `1` into the integer dictionary and `0.55`
+    // into the float one, so reading a weight as a float only would silently
+    // ignore any whole-number value. Both dictionaries are read and the float
+    // wins, which is also the precedence the UCI option needs: it is written
+    // as a float on top of whatever the backend options said. Reading both
+    // also leaves the key marked as read either way, and an unread key is a
+    // hard error.
+    auto blend_weight = [&options](const char* key) {
+      float weight = 0.0f;
+      if (options.Exists<int>(key)) weight = options.Get<int>(key);
+      if (options.Exists<float>(key)) weight = options.Get<float>(key);
+      return weight;
+    };
+    // Any head of the net other than the selected one joins the blend with
+    // policy_blend_<name>=weight; the selected head takes what is left. The
+    // heads are taken in name order, which fixes the order of the sum.
+    const std::string kBlendPrefix = "policy_blend_";
+    if (options.Exists<int>(kBlendPrefix + policy_head) ||
+        options.Exists<float>(kBlendPrefix + policy_head)) {
+      throw Exception("The selected policy head '" + policy_head +
+                      "' takes the rest of the blend (1 - the other weights); "
+                      "drop " + kBlendPrefix + policy_head + ".");
+    }
+    std::vector<std::string> head_names;
+    for (const auto& entry : weights.policy_heads) {
+      head_names.push_back(entry.first);
+    }
+    std::sort(head_names.begin(), head_names.end());
+    for (const auto& name : head_names) {
+      if (name == policy_head) continue;
+      const float weight = blend_weight((kBlendPrefix + name).c_str());
+      if (weight < 0.0f || weight > 1.0f) {
+        throw Exception("The policy blend weight for the '" + name +
+                        "' head must be between 0 and 1.");
+      }
+      // A head stays in the blend however small its weight is, so that moving
+      // the weight cannot move the cost of a search.
+      if (weight > 0.0f) {
+        extra_policy_heads_.emplace_back();
+        extra_policy_heads_.back().name = name;
+        extra_policy_heads_.back().weight = weight;
+      }
+    }
+    blend_active_ = !extra_policy_heads_.empty();
+    if (blend_active_) {
+      if (!attn_policy_ || !attn_body_) {
+        throw Exception(
+            "The policy blend needs an attention policy network with an "
+            "attention body (multihead format).");
+      }
+      if (extra_policy_heads_.size() >
+          static_cast<size_t>(PolicyBlendHeads<DataType>::kMax)) {
+        throw Exception("The policy blend takes at most " +
+                        std::to_string(PolicyBlendHeads<DataType>::kMax) +
+                        " heads besides the selected one.");
+      }
+      // Weights past the simplex would scale every logit by the same factor,
+      // which is a temperature rather than a blend. Renormalize onto itself.
+      float w_sum = 0.0f;
+      for (const auto& extra : extra_policy_heads_) w_sum += extra.weight;
+      if (w_sum > 1.0f) {
+        for (auto& extra : extra_policy_heads_) extra.weight /= w_sum;
+      }
+      float w_main = 1.0f;
+      for (const auto& extra : extra_policy_heads_) w_main -= extra.weight;
+      blend_w_main_ = std::max(0.0f, w_main);
+      for (const auto& extra : extra_policy_heads_) {
+        const auto& pair_u = weights.policy_heads.at(extra.name).pair_u;
+        if (!pair_u.empty() && pair_u.size() != pair_d_e) {
+          throw Exception("The policy head '" + extra.name +
+                          "''s pair_u does not match the net's pair stream.");
+        }
+      }
     }
 
     // Attention policy head or body may need more memory
-    const size_t attentionPolicySize =
+    size_t attentionPolicySize =
         getMaxAttentionHeadSize(weights.policy_heads.at(policy_head),
                                 max_batch_size_) *
         sizeof(DataType);
+    // The extra policy heads run over the same scratch allocation, so it has
+    // to fit the largest of them too.
+    for (const auto& extra : extra_policy_heads_) {
+      attentionPolicySize = std::max(
+          attentionPolicySize,
+          getMaxAttentionHeadSize(weights.policy_heads.at(extra.name),
+                                  max_batch_size_) *
+              sizeof(DataType));
+    }
 
     const size_t attentionBodySize =
         getMaxAttentionBodySize(weights, max_batch_size_) * sizeof(DataType);
     scratch_size_ = std::max(scratch_size_,
                              std::max(attentionPolicySize, attentionBodySize));
 
-    ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
+    // The attack-graph state lives after the scratch area (layers.h).
+    attack_graph_bytes_ =
+        UsesAttackGraph(weights)
+            ? AttackGraphState<DataType>::Bytes(max_batch_size_, pair_d_e)
+            : 0;
+    // Pre-norm blocks: the float residual stream after that; the edge
+    // stream's state after that (layers.h).
+    if (nf.network() == NF::NETWORK_ATTENTIONBODY_BT6 && nf.bt6().prenorm()) {
+      prenorm_residual_bytes_ =
+          PrenormResidual::Bytes(max_batch_size_, weights.ip_emb_b.size());
+    }
+    const int edge_d_e = weights.edge_t_off.size() / 225;
+    if (edge_d_e > 0) {
+      size_t site_scratch = 0;
+      for (const auto& u : weights.edge_updates) {
+        site_scratch = std::max(site_scratch, edgeStreamUpdateScratchBytes(
+                                                  max_batch_size_, edge_d_e,
+                                                  u.tri_eg_b.size() / 4));
+      }
+      edge_state_bytes_ =
+          EdgeStreamState::Bytes(max_batch_size_, edge_d_e, site_scratch);
+    }
+    ReportCUDAErrors(cudaMalloc(
+        &scratch_mem_, scratch_size_ + attack_graph_bytes_ +
+                           prenorm_residual_bytes_ + edge_state_bytes_));
 
     const bool mish_net = file.format().network_format().default_activation() ==
                           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH;
@@ -545,13 +757,31 @@ class CudaNetwork : public Network {
               : static_cast<ActivationFunction>(ffn_activation);
       activations.default_activation = act;
 
+      AttentionBodyConstants constants;
+      if (nf.network() == NF::NETWORK_ATTENTIONBODY_BT6) {
+        const auto& bt6 = nf.bt6();
+        constants.encoder_alpha =
+            bt6.has_residual_alpha() ? bt6.residual_alpha() : 1.0f;
+        constants.embedding_ffn_alpha = bt6.embedding_ffn_alpha();
+        constants.epsilon = bt6.norm_epsilon();
+        constants.input_gate_relu = true;
+        constants.output_gate_scale =
+            bt6.has_output_gate_scale() ? bt6.output_gate_scale() : 1.0f;
+        constants.prenorm = bt6.prenorm();
+        constants.edge_update_after.assign(bt6.edge_update_after().begin(),
+                                           bt6.edge_update_after().end());
+        constants.triplet_path = bt6.triplet_path();
+        constants.edge_gate_scale =
+            bt6.has_edge_gate_scale() ? bt6.edge_gate_scale() : 1.0f;
+      }
+
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, activations, numBlocks_,
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
               InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
-          use_gemm_ex, use_fused_mha);
+          use_gemm_ex, use_fused_mha, constants);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -624,6 +854,51 @@ class CudaNetwork : public Network {
       }
     }
 
+    // Extra policy heads, for the blend below. They read the same attention
+    // body output as the selected head, so they are kept out of network_
+    // (which forwardEval walks in order) and evaluated separately, after it.
+    if (attn_policy_ && attn_body_) {
+      // Reusing the selected head's policy embedding is what makes an extra
+      // head cheap. Turned off, every extra head recomputes its own
+      // Exposed so the two can be compared, and as a way out if a
+      // future net trips the detection below.
+      const bool allow_shared_embedding =
+          options.GetOrDefault<bool>("shared_policy_embedding", true);
+      const MultiHeadWeights::PolicyHead& main_head =
+          weights.policy_heads.at(policy_head);
+      for (auto& extra : extra_policy_heads_) {
+        const MultiHeadWeights::PolicyHead& head =
+            weights.policy_heads.at(extra.name);
+        // Multihead nets keep a single policy embedding for all heads: the
+        // weights loader binds every head's ip_pol_w to the same vector unless
+        // the head carries its own. When it is shared, the extra head can pick
+        // up the embedding the selected head already computed and pay only for
+        // its own query/key projections.
+        extra.shares_embedding =
+            allow_shared_embedding && &head.ip_pol_w == &main_head.ip_pol_w &&
+            &head.ip_pol_b == &main_head.ip_pol_b && head.pol_encoder.empty() &&
+            main_head.pol_encoder.empty();
+        extra.head = std::make_unique<AttentionPolicyHead<DataType>>(
+            encoder_last_, head, scratch_mem_, attn_body_, act, max_batch_size_,
+            use_gemm_ex, extra.shares_embedding);
+        auto policymap = std::make_unique<PolicyMapLayer<DataType>>(
+            extra.head.get(), kNumOutputPolicy, 1, 1, 64 * 64 + 8 * 24, true);
+        policymap->LoadWeights(kAttnPolicyMap, scratch_mem_);
+        extra.map = std::move(policymap);
+      }
+      extra_head_offset_pointers_.assign(extra_policy_heads_.size(), nullptr);
+    }
+
+    if (blend_active_) {
+      std::string pooled = policy_head + "=" + std::to_string(blend_w_main_);
+      for (const auto& extra : extra_policy_heads_) {
+        pooled += " " + extra.name + "=" + std::to_string(extra.weight);
+      }
+      CERR << "GPU policy blend: " << pooled
+           << " (geometric/logit-space, pre-softmax); extra policy heads are "
+              "consumed internally.";
+    }
+
     // Value heads.
     {
       const MultiHeadWeights::ValueHead& head =
@@ -678,6 +953,10 @@ class CudaNetwork : public Network {
     // take max size of all layers
     for (auto& layer : network_) {
       maxSize = std::max(maxSize, layer->GetOutputSize(max_batch_size_));
+    }
+    for (const auto& extra : extra_policy_heads_) {
+      maxSize = std::max(maxSize, extra.head->GetOutputSize(max_batch_size_));
+      maxSize = std::max(maxSize, extra.map->GetOutputSize(max_batch_size_));
     }
 
     if ((attn_policy_ || use_res_block_winograd_fuse_opt_ || attn_body_) &&
@@ -795,6 +1074,7 @@ class CudaNetwork : public Network {
     void* scratch_mem;
     DataType*** offset_pointers;
     DataType*** head_offset_pointers;
+    void*** extra_head_offset_pointers;
     cudaStream_t compute_stream, upload_stream, download_stream;
     cublasHandle_t cublas;
     if (multi_stream_) {
@@ -804,6 +1084,7 @@ class CudaNetwork : public Network {
       scratch_mem = io->scratch_mem_;
       offset_pointers = (DataType***)&io->offset_pointers_;
       head_offset_pointers = (DataType***)&io->head_offset_pointers_;
+      extra_head_offset_pointers = io->extra_head_offset_pointers_.data();
       compute_stream = io->compute_stream_;
       upload_stream = io->upload_stream_;
       download_stream = io->download_stream_;
@@ -813,6 +1094,7 @@ class CudaNetwork : public Network {
       scratch_mem = scratch_mem_;
       offset_pointers = (DataType***)&offset_pointers_;
       head_offset_pointers = (DataType***)&head_offset_pointers_;
+      extra_head_offset_pointers = extra_head_offset_pointers_.data();
       compute_stream = compute_stream_;
       upload_stream = upload_stream_;
       download_stream = download_stream_;
@@ -953,6 +1235,46 @@ class CudaNetwork : public Network {
           batchSize, (DataType*)opPol, spare1, nullptr, scratch_mem,
           scratch_size_, nullptr, cublas,
           compute_stream);  // policy map layer  // POLICY output
+
+      if (blend_active_) {
+        // The pooled heads run over the same body output. spare1 and spare2 are
+        // free again now that the policy map has consumed them, and `flow` is
+        // untouched by the attention policy head, so each extra head is just
+        // its own query/key projections plus a policy map.
+        //
+        // extra_policy_heads_ holds exactly the heads with weight, so every
+        // head evaluated is pooled and every buffer pooled was written.
+        // spare2 still holds the policy embedding the selected head computed.
+        // A head that has to recompute its own embedding overwrites it, so the
+        // heads that reuse it go first.
+        for (int pass = 0; pass < 2; pass++) {
+          const bool shared_pass = pass == 0;
+          for (size_t i = 0; i < extra_policy_heads_.size(); i++) {
+            const auto& extra = extra_policy_heads_[i];
+            if (extra.shares_embedding != shared_pass) continue;
+            extra.head->Eval(batchSize, spare1, flow, spare2, scratch_mem,
+                             scratch_size_, nullptr, cublas, compute_stream,
+                             (DataType***)&extra_head_offset_pointers[i]);
+            extra.map->Eval(
+                batchSize, (DataType*)io->op_policy_extra_mem_gpu_[i], spare1,
+                nullptr, scratch_mem, scratch_size_, nullptr, cublas,
+                compute_stream);
+          }
+        }
+
+        // Folding the heads together here, before the policy output is copied
+        // out, is what keeps the rest of the engine on its vanilla path: one
+        // download, one softmax, one prior per position.
+        PolicyBlendHeads<DataType> blended;
+        for (size_t i = 0; i < extra_policy_heads_.size(); i++) {
+          blended.head[i] = io->op_policy_extra_mem_gpu_[i];
+          blended.weight[i] = extra_policy_heads_[i].weight;
+        }
+        blended.count = static_cast<int>(extra_policy_heads_.size());
+        blendPolicyLogits<DataType>((DataType*)opPol, blended, blend_w_main_,
+                                    batchSize * kNumOutputPolicy,
+                                    compute_stream);
+      }
 
     } else if (conv_policy_) {
       network_[l++]->Eval(batchSize, spare1, flow, nullptr, scratch_mem,
@@ -1097,6 +1419,9 @@ class CudaNetwork : public Network {
       if (offset_pointers_) ReportCUDAErrors(cudaFree(offset_pointers_));
       if (head_offset_pointers_)
         ReportCUDAErrors(cudaFree(head_offset_pointers_));
+      for (auto ptrs : extra_head_offset_pointers_) {
+        if (ptrs) ReportCUDAErrors(cudaFree(ptrs));
+      }
       ReportCUBLASErrors(cublasDestroy(cublas_));
       ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
       ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
@@ -1139,8 +1464,11 @@ class CudaNetwork : public Network {
     if (free_inputs_outputs_.empty()) {
       constexpr bool is_fp16 = std::is_same<half, DataType>::value;
       return std::make_unique<InputsOutputs<DataType>>(
-          max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
-          !has_tensor_cores_ && is_fp16);
+          max_batch_size_, wdl_, moves_left_, tensor_mem_size_,
+          scratch_size_ + attack_graph_bytes_ + prenorm_residual_bytes_ +
+              edge_state_bytes_,
+          !has_tensor_cores_ && is_fp16,
+          static_cast<int>(extra_policy_heads_.size()));
     } else {
       std::unique_ptr<InputsOutputs<DataType>> resource =
           std::move(free_inputs_outputs_.front());
@@ -1190,17 +1518,39 @@ class CudaNetwork : public Network {
   std::vector<std::unique_ptr<BaseLayer<DataType>>> network_;
   BaseLayer<DataType>* getLastLayer() { return network_.back().get(); }
 
+  // The heads pooled into the selected one, in name order: only heads with
+  // weight, each with its own attention policy head and policy map.
+  struct ExtraPolicyHead {
+    std::string name;
+    float weight = 0.0f;
+    // Reuses the selected head's policy embedding (see the constructor).
+    bool shares_embedding = false;
+    std::unique_ptr<BaseLayer<DataType>> head;
+    std::unique_ptr<BaseLayer<DataType>> map;
+  };
+  std::vector<ExtraPolicyHead> extra_policy_heads_;
+
+  // Geometric pooling of the policy heads inside the backend. Fixed at load,
+  // which is what lets the captured cuda graphs bake the weights in: the heads
+  // to evaluate are the ones carrying weight, and the weights sum to one.
+  bool blend_active_ = false;
+  float blend_w_main_ = 1.0f;
+
   BaseLayer<DataType>* resi_last_;
   BaseLayer<DataType>* encoder_last_;
 
   size_t tensor_mem_size_;
   size_t scratch_size_;
+  size_t attack_graph_bytes_ = 0;  // after the scratch area (layers.h)
+  size_t prenorm_residual_bytes_ = 0;  // after the attack graph (layers.h)
+  size_t edge_state_bytes_ = 0;        // after the residual (layers.h)
 
   // this copy is used only for initialization when multi-stream is enabled
   void* scratch_mem_;
   // this is only used when multi-stream is disabled
   void** offset_pointers_ = nullptr;
   void** head_offset_pointers_ = nullptr;
+  std::vector<void**> extra_head_offset_pointers_;  // one per extra head
 
   bool has_tensor_cores_;
 
@@ -1361,6 +1711,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
     case NF::NETWORK_SE_WITH_HEADFORMAT:
     case NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
     case NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_BT6:
       break;
     default:
       throw Exception("Network format " +
@@ -1451,7 +1802,8 @@ std::unique_ptr<Network> MakeCudaNetworkBf16(
     auto nf = weights->format().network_format();
     using NF = pblczero::NetworkFormat;
     if (nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT &&
-        nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT) {
+        nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT &&
+        nf.network() != NF::NETWORK_ATTENTIONBODY_BT6) {
       CERR << "WARNING: The " BACKEND_NAME_LC "-bf16 backend currently only supports transformer networks (BT2/BT3/BT4). "
               "Switching to [" BACKEND_NAME_LC "-fp16]...";
       return MakeCudaNetwork<half>(weights, options);

@@ -28,6 +28,35 @@
 namespace lczero {
 namespace {
 static constexpr float kEpsilon = 1e-5f;
+
+// A layer that carries its shape (dims) holds the tensor with the axes
+// reversed: row-major over dims[k-1], ..., dims[0], the layout lc0's dense
+// weights use. Returns it row-major over dims[0], ..., dims[k-1].
+std::vector<float> RowMajorByDims(const pblczero::Weights::Layer& layer) {
+  std::vector<float> stored = LayerAdapter(layer).as_vector();
+  const auto& dims = layer.dims();
+  if (stored.empty() || dims.size() < 2) return stored;
+  size_t total = 1;
+  for (auto d : dims) total *= d;
+  if (total != stored.size()) {
+    throw Exception("Weights layer size does not match its dims.");
+  }
+  const size_t k = dims.size();
+  std::vector<float> out(total);
+  std::vector<size_t> idx(k, 0);
+  for (size_t o = 0; o < total; o++) {
+    // idx = the row-major multi-index of o over dims; stored index = the
+    // row-major index of the reversed multi-index over the reversed dims.
+    size_t s = 0;
+    for (size_t a = k; a-- > 0;) s = s * dims[a] + idx[a];
+    out[o] = stored[s];
+    for (size_t a = k; a-- > 0;) {
+      if (++idx[a] < dims[a]) break;
+      idx[a] = 0;
+    }
+  }
+  return out;
+}
 }  // namespace
 
 BaseWeights::BaseWeights(const pblczero::Weights& weights)
@@ -53,13 +82,24 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
       ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
       ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()),
       smolgen_w(LayerAdapter(weights.smolgen_w()).as_vector()),
-      has_smolgen(weights.has_smolgen_w()) {
+      has_smolgen(weights.has_smolgen_w()),
+      pair_p_in(RowMajorByDims(weights.pair_stream().p_in())),
+      pair_t_off(RowMajorByDims(weights.pair_stream().t_off())),
+      edge_p_in(RowMajorByDims(weights.edge_stream().p_in())),
+      edge_t_off(RowMajorByDims(weights.edge_stream().t_off())),
+      encoder_final_norm_gammas(
+          LayerAdapter(weights.encoder_final_norm().gammas()).as_vector()),
+      encoder_final_norm_betas(
+          LayerAdapter(weights.encoder_final_norm().betas()).as_vector()) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
   encoder_head_count = weights.headcount();
   for (const auto& enc : weights.encoder()) {
     encoder.emplace_back(enc);
+  }
+  for (const auto& update : weights.edge_stream().update()) {
+    edge_updates.emplace_back(update);
   }
 }
 
@@ -142,17 +182,42 @@ BaseWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
       dense_w(LayerAdapter(mha.dense_w()).as_vector()),
       dense_b(LayerAdapter(mha.dense_b()).as_vector()),
       smolgen(Smolgen(mha.smolgen())),
-      has_smolgen(mha.has_smolgen()) {
+      has_smolgen(mha.has_smolgen()),
+      attack_w(RowMajorByDims(mha.attack_w())),
+      attack_gate_q(RowMajorByDims(mha.attack_gate_q())),
+      attack_gate_k(RowMajorByDims(mha.attack_gate_k())),
+      pair_att_w(RowMajorByDims(mha.pair_att_w())),
+      output_gate_w(LayerAdapter(mha.output_gate_w()).as_vector()),
+      output_gate_b(LayerAdapter(mha.output_gate_b()).as_vector()),
+      edge_e_w(RowMajorByDims(mha.edge_e_w())),
+      edge_m_w(RowMajorByDims(mha.edge_m_w())),
+      edge_g_w(RowMajorByDims(mha.edge_g_w())),
+      edge_g_b(LayerAdapter(mha.edge_g_b()).as_vector()),
+      edge_t_edge(LayerAdapter(mha.edge_t_edge()).as_vector()),
+      edge_t_node(LayerAdapter(mha.edge_t_node()).as_vector()) {
   if (mha.has_rpe_q() || mha.has_rpe_k() || mha.has_rpe_v()) {
     throw Exception("RPE weights file not supported.");
   }
 }
 
+BaseWeights::EdgeStreamUpdate::EdgeStreamUpdate(
+    const pblczero::Weights::EdgeStreamUpdate& u)
+    : o_e(RowMajorByDims(u.o_e())),
+      tri_v(RowMajorByDims(u.tri_v())),
+      tri_eg(RowMajorByDims(u.tri_eg())),
+      tri_eg_b(LayerAdapter(u.tri_eg_b()).as_vector()),
+      tri_o(RowMajorByDims(u.tri_o())),
+      ffn_in(RowMajorByDims(u.ffn_in())),
+      ffn_in_b(LayerAdapter(u.ffn_in_b()).as_vector()),
+      ffn_rev(RowMajorByDims(u.ffn_rev())),
+      ffn_out(RowMajorByDims(u.ffn_out())) {}
+
 BaseWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
     : dense1_w(LayerAdapter(ffn.dense1_w()).as_vector()),
       dense1_b(LayerAdapter(ffn.dense1_b()).as_vector()),
       dense2_w(LayerAdapter(ffn.dense2_w()).as_vector()),
-      dense2_b(LayerAdapter(ffn.dense2_b()).as_vector()) {}
+      dense2_b(LayerAdapter(ffn.dense2_b()).as_vector()),
+      dense_gate_w(LayerAdapter(ffn.dense_gate_w()).as_vector()) {}
 
 BaseWeights::EncoderLayer::EncoderLayer(
     const pblczero::Weights::EncoderLayer& encoder)
@@ -186,7 +251,8 @@ MultiHeadWeights::PolicyHead::PolicyHead(
       ip2_pol_b(LayerAdapter(policyhead.ip2_pol_b()).as_vector()),
       ip3_pol_w(LayerAdapter(policyhead.ip3_pol_w()).as_vector()),
       ip3_pol_b(LayerAdapter(policyhead.ip3_pol_b()).as_vector()),
-      ip4_pol_w(LayerAdapter(policyhead.ip4_pol_w()).as_vector()) {
+      ip4_pol_w(LayerAdapter(policyhead.ip4_pol_w()).as_vector()),
+      pair_u(LayerAdapter(policyhead.pair_u()).as_vector()) {
   pol_encoder_head_count = policyhead.pol_headcount();
   for (const auto& enc : policyhead.pol_encoder()) {
     pol_encoder.emplace_back(enc);
@@ -262,6 +328,24 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
           std::forward_as_tuple(weights.policy_heads().opponent(), ip_pol_w,
                                 ip_pol_b));
     }
+    // Named heads beyond the fixed ones. A head that needs more than these
+    // structs hold (child-Q bins, depth attention) is not loaded, only noted.
+    // An entry without a name (some files carry an empty one) is skipped.
+    for (const auto& entry : weights.policy_heads().policy_head_map()) {
+      const std::string name(entry.key());
+      if (name.empty()) continue;
+      const auto& head = entry.value();
+      if (head.has_cq_w_bins() || head.has_depth_square_attention()) {
+        unsupported_policy_heads.push_back(name);
+        continue;
+      }
+      if (!policy_heads
+               .emplace(std::piecewise_construct, std::forward_as_tuple(name),
+                        std::forward_as_tuple(head, ip_pol_w, ip_pol_b))
+               .second) {
+        throw Exception("Policy head '" + name + "' is given twice.");
+      }
+    }
   } else {
     if (weights.has_policy() || weights.has_policy1() ||
         weights.has_ip_pol_w()) {
@@ -290,6 +374,19 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
     if (weights.value_heads().has_st()) {
       value_heads.emplace("st", weights.value_heads().st());
     }
+    for (const auto& entry : weights.value_heads().value_head_map()) {
+      const std::string name(entry.key());
+      if (name.empty()) continue;
+      const auto& head = entry.value();
+      if (head.has_depth_square_attention() ||
+          head.has_depth_global_attention()) {
+        unsupported_value_heads.push_back(name);
+        continue;
+      }
+      if (!value_heads.emplace(name, head).second) {
+        throw Exception("Value head '" + name + "' is given twice.");
+      }
+    }
   } else {
     if (weights.has_value() || weights.has_ip_val_w()) {
       auto& winner = value_heads.at("winner");
@@ -303,6 +400,12 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
     } else {
       throw Exception("Could not find valid value head weights.");
     }
+  }
+  if (weights.policy_heads().has_default_head()) {
+    default_policy_head = weights.policy_heads().default_head();
+  }
+  if (weights.value_heads().has_default_head()) {
+    default_value_head = weights.value_heads().default_head();
   }
 }
 

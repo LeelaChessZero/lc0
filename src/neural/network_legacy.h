@@ -81,6 +81,26 @@ struct BaseWeights {
     Vec dense_b;
     Smolgen smolgen;
     bool has_smolgen;
+    // Attention-logit terms from the attack graph E [C, 64, 64] and the pair
+    // stream Z [pair_d_e, 64, 64] (net.proto MHA); row-major, empty if absent.
+    Vec attack_w;       // [heads, C]
+    Vec attack_gate_q;  // [heads, C, depth]
+    Vec attack_gate_k;  // [heads, C, depth]
+    Vec pair_att_w;     // [heads, pair_d_e]
+    // Attention output gate: the attention output is multiplied by
+    // scale * sigmoid(x @ output_gate_w + output_gate_b) before dense_w.
+    Vec output_gate_w;  // like q_w
+    Vec output_gate_b;  // like q_b
+    // Edge-stream doors: the logits L and weights W of a block read the edge
+    // state e [d_e, 64, 64] as L = (edge_t_node L + edge_t_edge (edge_e_w . e))
+    // * (1 + edge_m_w . e) and W = softmax(L) * scale * sigmoid(edge_g_w . e +
+    // edge_g_b) (net.proto MHA); row-major, empty if absent.
+    Vec edge_e_w;     // [heads, d_e]
+    Vec edge_m_w;     // [heads, d_e]
+    Vec edge_g_w;     // [heads, d_e]
+    Vec edge_g_b;     // [heads]
+    Vec edge_t_edge;  // [heads]
+    Vec edge_t_node;  // [heads]
   };
 
   struct FFN {
@@ -89,6 +109,7 @@ struct BaseWeights {
     Vec dense1_b;
     Vec dense2_w;
     Vec dense2_b;
+    Vec dense_gate_w;  // ACTIVATION_SWIGLU only
   };
 
   struct EncoderLayer {
@@ -145,6 +166,34 @@ struct BaseWeights {
   // Smolgen global weights
   Vec smolgen_w;
   bool has_smolgen;
+
+  // Static pair stream Z = rms(E @ p_in + t_off[rel(i, j)]) (net.proto
+  // PairStream); row-major, empty if absent.
+  Vec pair_p_in;   // [C, pair_d_e]
+  Vec pair_t_off;  // [225, pair_d_e]
+
+  // Edge stream (net.proto EdgeStream): seed e = rms(E @ p_in +
+  // t_off[rel(i, j)]), then one update per site; row-major, empty if absent.
+  struct EdgeStreamUpdate {
+    explicit EdgeStreamUpdate(const pblczero::Weights::EdgeStreamUpdate& u);
+    Vec o_e;       // [heads, d_e] logit readback
+    Vec tri_v;     // [d_e, 2 d_e]
+    Vec tri_eg;    // [d_e, 4 triplet_heads]
+    Vec tri_eg_b;  // [4 triplet_heads]
+    Vec tri_o;     // [2 d_e, d_e]
+    Vec ffn_in;    // [d_e, hidden]
+    Vec ffn_in_b;  // [hidden]
+    Vec ffn_rev;   // [d_e, hidden], empty without rev_edge
+    Vec ffn_out;   // [hidden, d_e]
+  };
+  Vec edge_p_in;   // [C, d_e]
+  Vec edge_t_off;  // [225, d_e]
+  std::vector<EdgeStreamUpdate> edge_updates;  // in site order
+
+  // Final norm of a pre-norm encoder tower (net.proto encoder_final_norm);
+  // empty if absent.
+  Vec encoder_final_norm_gammas;
+  Vec encoder_final_norm_betas;
 };
 
 struct LegacyWeights : public BaseWeights {
@@ -202,6 +251,8 @@ struct MultiHeadWeights : public BaseWeights {
     Vec ip4_pol_w;
     int pol_encoder_head_count;
     std::vector<EncoderLayer> pol_encoder;
+    // logits[from, to] += pair_u . Z[:, from, to]; empty if absent.
+    Vec pair_u;  // [pair_d_e]
   };
 
   struct ValueHead {
@@ -226,6 +277,14 @@ struct MultiHeadWeights : public BaseWeights {
   // Policy and value multiheads
   std::unordered_map<std::string, ValueHead> value_heads;
   std::unordered_map<std::string, PolicyHead> policy_heads;
+  // Heads of the head maps that need more than the structs above hold (child-Q
+  // bins, depth attention): not loaded, named here for error messages.
+  std::vector<std::string> unsupported_policy_heads;
+  std::vector<std::string> unsupported_value_heads;
+  // The heads served when the backend options select none (the net file's
+  // default_head, else vanilla / winner).
+  std::string default_policy_head = "vanilla";
+  std::string default_value_head = "winner";
 };
 
 enum InputEmbedding {

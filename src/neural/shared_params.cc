@@ -34,6 +34,22 @@ const OptionId SharedBackendParams::kPolicySoftmaxTemp{
     "policy-softmax-temp", "PolicyTemperature",
     "Policy softmax temperature. Higher values make priors of move candidates "
     "closer to each other, widening the search."};
+const OptionId SharedBackendParams::kPolicyBlendOptimistic{
+    {.long_flag = "backend-policy-blend-optimistic",
+     .uci_option = "BackendPolicyBlendOptimistic",
+     .help_text =
+         "Weight of the optimistic policy head where the backend pools the "
+         "policy heads itself, geometrically and before the softmax. Cuda "
+         "backends only.",
+     .visibility = OptionId::kProOnly}};
+const OptionId SharedBackendParams::kPolicyBlendSoft{
+    {.long_flag = "backend-policy-blend-soft",
+     .uci_option = "BackendPolicyBlendSoft",
+     .help_text =
+         "Weight of the soft policy head in the backend's own pooling of the "
+         "policy heads. If the two weights sum to more than one they are "
+         "scaled down to sum to one.",
+     .visibility = OptionId::kProOnly}};
 const OptionId SharedBackendParams::kHistoryFill{
     "history-fill", "HistoryFill",
     "Neural network uses 7 previous board positions in addition to the current "
@@ -67,6 +83,8 @@ const OptionId SharedBackendParams::kNNCacheSizeId{
 
 void SharedBackendParams::Populate(OptionsParser* options) {
   options->Add<FloatOption>(kPolicySoftmaxTemp, 0.1f, 10.0f) = 1.359f;
+  options->Add<FloatOption>(kPolicyBlendOptimistic, 0.0f, 1.0f) = 0.0f;
+  options->Add<FloatOption>(kPolicyBlendSoft, 0.0f, 1.0f) = 0.0f;
   std::vector<std::string> history_fill_opt{"no", "fen_only", "always"};
   options->Add<ChoiceOption>(kHistoryFill, history_fill_opt) = "fen_only";
 

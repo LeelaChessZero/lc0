@@ -26,6 +26,7 @@
 */
 #include "layers.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <vector>
@@ -1581,9 +1582,11 @@ template <typename DataType>
 AttentionPolicyHead<DataType>::AttentionPolicyHead(
     BaseLayer<DataType>* ip, const MultiHeadWeights::PolicyHead& weights,
     void* scratch, bool attention_body, ActivationFunction act,
-    int max_batch_size, bool use_gemm_ex)
+    int max_batch_size, bool use_gemm_ex, bool shared_embedding)
     : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
+      max_batch_size_(max_batch_size),
       attention_body_(attention_body),
+      shared_embedding_(shared_embedding),
       // Old networks without attention body (e.g. T79) use hardcoded SELU
       // activations.
       act_(attention_body ? act : ACTIVATION_SELU) {
@@ -1594,8 +1597,15 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
   encoder_heads_ = weights.pol_encoder_head_count;
   policy_d_model_ = wq_op_size_;
 
-  allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
-  allocAndUpload<DataType>(&ip_pol_b_, weights.ip_pol_b, scratch);
+  if (shared_embedding_) {
+    // Another head owns the embedding weights and computes the embedding.
+    assert(weights.pol_encoder.empty());
+    ip_pol_w_ = nullptr;
+    ip_pol_b_ = nullptr;
+  } else {
+    allocAndUpload<DataType>(&ip_pol_w_, weights.ip_pol_w, scratch);
+    allocAndUpload<DataType>(&ip_pol_b_, weights.ip_pol_b, scratch);
+  }
 
   allocAndUpload<DataType>(&ip2_pol_w_, weights.ip2_pol_w, scratch);
   allocAndUpload<DataType>(&ip2_pol_b_, weights.ip2_pol_b, scratch);
@@ -1626,6 +1636,11 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
 
   allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
 
+  if (!weights.pair_u.empty()) {
+    pair_d_e_ = weights.pair_u.size();
+    allocAndUpload<float>(&pair_u_, weights.pair_u, scratch);
+  }
+
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_heads_, embedding_op_size_,
@@ -1646,7 +1661,8 @@ EncoderBlock<DataType>::EncoderBlock(
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
     ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
-    bool fused_mha)
+    bool fused_mha, float output_gate_scale, bool prenorm,
+    float edge_gate_scale)
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
@@ -1655,8 +1671,13 @@ EncoderBlock<DataType>::EncoderBlock(
       smolgen_activation_(smolgen_act),
       ffn_activation_(ffn_act),
       max_batch_size_(max_batch_size),
-      use_fused_mha_(fused_mha),
+      // The edge doors act on the full logits, which the fused attention
+      // never materialises.
+      use_fused_mha_(fused_mha && cpu_weights.mha.edge_e_w.empty()),
       use_gemm_ex_(use_gemm_ex) {
+  output_gate_scale_ = output_gate_scale;
+  prenorm_ = prenorm;
+  edge_gate_scale_ = edge_gate_scale;
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1673,27 +1694,51 @@ EncoderBlock<DataType>::EncoderBlock(
   allocAndUpload<DataType>(&mha_v_w, cpu_weights.mha.v_w, scratch);
   allocAndUpload<DataType>(&mha_v_b, cpu_weights.mha.v_b, scratch);
 
+  // Attention output gate (optional): a fourth slice of the QKV GEMM.
+  has_output_gate_ = !cpu_weights.mha.output_gate_w.empty();
+  if (has_output_gate_) {
+    if (cpu_weights.mha.output_gate_w.size() != cpu_weights.mha.q_w.size() ||
+        cpu_weights.mha.output_gate_b.size() != cpu_weights.mha.q_b.size()) {
+      throw Exception("Attention output gate weights have unexpected sizes.");
+    }
+    allocAndUpload<DataType>(&mha_og_w, cpu_weights.mha.output_gate_w,
+                             scratch);
+    allocAndUpload<DataType>(&mha_og_b, cpu_weights.mha.output_gate_b,
+                             scratch);
+  }
+  const int qkv_slices = has_output_gate_ ? 4 : 3;
+
   // big allocation to hold qkv weights one after the other
   {
     size_t elements = cpu_weights.mha.q_w.size();
-    size_t size = elements * sizeof(DataType) * 3;
+    size_t size = elements * sizeof(DataType) * qkv_slices;
     ReportCUDAErrors(cudaMalloc(&mha_qkv_w, size));
-    ReportCUDAErrors(
-        cudaMemcpy(mha_qkv_w, mha_q_w, size / 3, cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements, mha_k_w, size / 3,
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_w, mha_q_w, size / qkv_slices,
                                 cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements * 2, mha_v_w, size / 3,
-                                cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements, mha_k_w,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements * 2, mha_v_w,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    if (has_output_gate_) {
+      ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements * 3, mha_og_w,
+                                  size / qkv_slices,
+                                  cudaMemcpyDeviceToDevice));
+    }
 
     elements = cpu_weights.mha.q_b.size();
-    size = elements * sizeof(DataType) * 3;
+    size = elements * sizeof(DataType) * qkv_slices;
     ReportCUDAErrors(cudaMalloc(&mha_qkv_b, size));
-    ReportCUDAErrors(
-        cudaMemcpy(mha_qkv_b, mha_q_b, size / 3, cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements, mha_k_b, size / 3,
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_b, mha_q_b, size / qkv_slices,
                                 cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements * 2, mha_v_b, size / 3,
-                                cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements, mha_k_b,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements * 2, mha_v_b,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    if (has_output_gate_) {
+      ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements * 3, mha_og_b,
+                                  size / qkv_slices,
+                                  cudaMemcpyDeviceToDevice));
+    }
   }
 
   allocAndUpload<DataType>(&mha_dense_w, cpu_weights.mha.dense_w, scratch);
@@ -1704,6 +1749,14 @@ EncoderBlock<DataType>::EncoderBlock(
 
   allocAndUpload<DataType>(&ffn_dense1_w, cpu_weights.ffn.dense1_w, scratch);
   allocAndUpload<DataType>(&ffn_dense1_b, cpu_weights.ffn.dense1_b, scratch);
+  if (ffn_activation_ == ACTIVATION_SWIGLU) {
+    if (cpu_weights.ffn.dense_gate_w.size() !=
+        cpu_weights.ffn.dense1_w.size()) {
+      throw Exception("SwiGLU FFN needs dense_gate_w of dense1_w's shape.");
+    }
+    allocAndUpload<DataType>(&ffn_dense_gate_w, cpu_weights.ffn.dense_gate_w,
+                             scratch);
+  }
 
   allocAndUpload<DataType>(&ffn_dense2_w, cpu_weights.ffn.dense2_w, scratch);
   allocAndUpload<DataType>(&ffn_dense2_b, cpu_weights.ffn.dense2_b, scratch);
@@ -1740,6 +1793,54 @@ EncoderBlock<DataType>::EncoderBlock(
 
     // GPU memory already allocated in AttentionBody.
     smol_global = smolgen_global_scratch;
+  }
+
+  // Attention-logit terms from the attack graph and the pair stream.
+  const auto& mha = cpu_weights.mha;
+  if (!mha.attack_w.empty() || !mha.attack_gate_q.empty() ||
+      !mha.attack_gate_k.empty()) {
+    const size_t c = static_cast<size_t>(heads) * kAttackGraphChannels;
+    const size_t depth = mha_q_size_ / heads;
+    if (mha.attack_w.size() != c || mha.attack_gate_q.size() != c * depth ||
+        mha.attack_gate_k.size() != c * depth) {
+      throw Exception("Attack-graph attention weights have unexpected sizes.");
+    }
+    allocAndUpload<float>(&attack_w, mha.attack_w, scratch);
+    allocAndUpload<float>(&attack_gate_q, mha.attack_gate_q, scratch);
+    allocAndUpload<float>(&attack_gate_k, mha.attack_gate_k, scratch);
+  }
+  if (!mha.pair_att_w.empty()) {
+    if (mha.pair_att_w.size() % heads != 0) {
+      throw Exception("pair_att_w size is not a multiple of the head count.");
+    }
+    pair_d_e_ = mha.pair_att_w.size() / heads;
+    allocAndUpload<DataType>(&pair_att_w, mha.pair_att_w, scratch);
+  }
+
+  // Edge doors, packed per head: [edge_e_w, edge_m_w, edge_g_w, edge_t_node,
+  // edge_t_edge, edge_g_b].
+  if (!mha.edge_e_w.empty()) {
+    const size_t h = heads;
+    edge_d_e_ = mha.edge_e_w.size() / h;
+    const size_t d = edge_d_e_;
+    if (mha.edge_e_w.size() != h * d || mha.edge_m_w.size() != h * d ||
+        mha.edge_g_w.size() != h * d || mha.edge_g_b.size() != h ||
+        mha.edge_t_edge.size() != h || mha.edge_t_node.size() != h) {
+      throw Exception("Edge door weights have unexpected sizes.");
+    }
+    const size_t rec = 3 * d + 3;
+    std::vector<float> doors(h * rec);
+    for (size_t k = 0; k < h; k++) {
+      for (size_t c = 0; c < d; c++) {
+        doors[k * rec + c] = mha.edge_e_w[k * d + c];
+        doors[k * rec + d + c] = mha.edge_m_w[k * d + c];
+        doors[k * rec + 2 * d + c] = mha.edge_g_w[k * d + c];
+      }
+      doors[k * rec + 3 * d] = mha.edge_t_node[k];
+      doors[k * rec + 3 * d + 1] = mha.edge_t_edge[k];
+      doors[k * rec + 3 * d + 2] = mha.edge_g_b[k];
+    }
+    allocAndUpload<float>(&edge_doors_, doors, scratch);
   }
 }
 
@@ -1843,9 +1944,20 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                                   DataType* scratch, DataType* buffer1,
                                   DataType* buffer2, cublasHandle_t cublas,
                                   cudaStream_t stream,
-                                  DataType*** offset_pointers) const {
+                                  DataType*** offset_pointers,
+                                  const uint64_t* attack_bits,
+                                  const DataType* pair_stream,
+                                  float* residual, float* edge,
+                                  const float* edge_readback) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
+
+  // Pre-norm: the attention reads ln1(residual), residual -> in_out_tensor.
+  if (prenorm_) {
+    layerNormRows<float, float, DataType, DataType>(
+        in_out_tensor, nullptr, residual, nullptr, nullptr, ln1_gammas,
+        ln1_betas, N * 64, embedding_op_size_, default_eps_, 1.0f, stream);
+  }
 
   // Calculate smolgen weights. Do this first so we can make use of
   // scratch, buffer1 and buffer2.
@@ -1917,25 +2029,48 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   DataType* mha_q;
   DataType* mha_k;
   DataType* mha_v;
+  DataType* mha_og;  // output gate input, when the block has the gate
 
   {
     const int num_inputs = embedding_op_size_;
     const int num_outputs = d_model;
     const int batch = N * 64;
     const int max_batch = max_batch_size_ * 64;
+    const int slices = has_output_gate_ ? 4 : 3;
 
     mha_q = scratch;
     mha_k = mha_q + num_outputs * max_batch;
     mha_v = mha_k + num_outputs * max_batch;
+    mha_og = mha_v + num_outputs * max_batch;
 
     cublasXGemmStridedBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
         mha_qkv_w, num_inputs, num_inputs * num_outputs, in_out_tensor,
-        num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch, 3,
-        use_gemm_ex_);
-    addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs,
-                             max_batch, ACTIVATION_NONE, stream);
+        num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch,
+        slices, use_gemm_ex_);
+    addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, slices, batch,
+                             num_outputs, max_batch, ACTIVATION_NONE, stream);
   }
+
+  // Attention-logit terms from the pair stream and the attack graph, summed
+  // into buffer2 after smolgen's; buffer2 is then the logits' bias.
+  if (pair_att_w) {
+    // buffer2[n, h, p] (+)= pair_att_w[h, :] . pair_stream[n, p, :]
+    assert(pair_stream != nullptr);
+    cublasXGemmStridedBatched<DataType>(
+        cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 * 64, encoder_heads_, pair_d_e_,
+        1.0f, pair_stream, pair_d_e_, 64 * 64 * pair_d_e_, pair_att_w,
+        pair_d_e_, 0, has_smolgen_ ? 1.0f : 0.0f, buffer2, 64 * 64,
+        64 * 64 * encoder_heads_, N, use_gemm_ex_);
+  }
+  if (attack_w) {
+    assert(attack_bits != nullptr);
+    addAttackGraphBias<DataType>(buffer2, attack_bits, mha_q, mha_k, attack_w,
+                                 attack_gate_q, attack_gate_k, N,
+                                 encoder_heads_, depth, d_model,
+                                 has_smolgen_ || pair_att_w, stream);
+  }
+  const bool has_logit_bias = has_smolgen_ || pair_att_w || attack_w;
 
   // Apply split_heads() to q, k and v
   // which basically transposes (batch_size, 64, num_heads, depth)
@@ -1961,7 +2096,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     // TODO: check if we need skip in a different tensor than same tensor as
     // output!
     fusedMHA<DataType>(buffer2, mha_q, mha_k, mha_v,
-                       has_smolgen_ ? buffer2 : nullptr, N, encoder_heads_,
+                       has_logit_bias ? buffer2 : nullptr, N, encoder_heads_,
                        depth, stream);
   } else
 #endif
@@ -2007,9 +2142,16 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
 
     // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
     // attention_weights -> buffer1
-    if (has_smolgen_) {
-      // Add smolgen weights to the scaled matmul_qk attention logits before
-      // softmax.
+    if (edge_doors_) {
+      // The edge doors around the softmax (and the site's readback).
+      assert(edge != nullptr);
+      edgeDoorSoftmax<DataType>(buffer1, has_logit_bias ? buffer2 : nullptr,
+                                edge, edge_doors_, edge_readback,
+                                edge_gate_scale_, N, encoder_heads_,
+                                edge_d_e_, stream);
+    } else if (has_logit_bias) {
+      // Add smolgen weights (and the attack-graph and pair stream terms) to
+      // the scaled matmul_qk attention logits before softmax.
       Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, stream);
     } else {
       Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
@@ -2034,6 +2176,12 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         N * encoder_heads_);
   }
 
+  // Attention output gate: buffer2 *= scale * sigmoid(mha_og).
+  if (has_output_gate_) {
+    applySigmoidGate<DataType>(buffer2, mha_og, output_gate_scale_,
+                               N * 64 * d_model, stream);
+  }
+
   // #final dense layer (mha_dense), buffer2 -> buffer1
   {
     const int num_inputs = d_model;
@@ -2044,11 +2192,18 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                 buffer2, num_inputs, 0.0f, buffer1, num_outputs);
   }
 
-  // LN1: skip connection and layer normalization (also bias add of prev gemm)
-  // buffer1/in_out_tensor -> scratch
-  LayerNorm<DataType>(N * 64, embedding_op_size_, scratch, buffer1, mha_dense_b,
-                      in_out_tensor, ln1_gammas, ln1_betas, default_eps_,
-                      alpha_, ACTIVATION_NONE, stream);
+  if (prenorm_) {
+    // residual += alpha * (buffer1 + mha_dense_b); scratch = ln2(residual).
+    layerNormRows<DataType, float, DataType, DataType>(
+        scratch, residual, buffer1, mha_dense_b, residual, ln2_gammas,
+        ln2_betas, N * 64, embedding_op_size_, default_eps_, alpha_, stream);
+  } else {
+    // LN1: skip connection and layer normalization (also bias add of prev
+    // gemm) buffer1/in_out_tensor -> scratch
+    LayerNorm<DataType>(N * 64, embedding_op_size_, scratch, buffer1,
+                        mha_dense_b, in_out_tensor, ln1_gammas, ln1_betas,
+                        default_eps_, alpha_, ACTIVATION_NONE, stream);
+  }
 
   // #FFN dense 1, scratch -> in_out_tensor
   {
@@ -2058,8 +2213,18 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                 num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                 scratch, num_inputs, 0.0f, in_out_tensor, num_outputs);
-    addBiasBatched(in_out_tensor, in_out_tensor, ffn_dense1_b, 1, batch,
-                   num_outputs, ffn_activation_, stream);
+    if (ffn_activation_ == ACTIVATION_SWIGLU) {
+      // Gate, scratch -> buffer1; in_out_tensor = (in_out_tensor + b1) *
+      // sigmoid(buffer1).
+      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)ffn_dense_gate_w,
+                  num_inputs, scratch, num_inputs, 0.0f, buffer1, num_outputs);
+      addBiasSwiGLU(in_out_tensor, in_out_tensor, ffn_dense1_b, buffer1, batch,
+                    num_outputs, stream);
+    } else {
+      addBiasBatched(in_out_tensor, in_out_tensor, ffn_dense1_b, 1, batch,
+                     num_outputs, ffn_activation_, stream);
+    }
   }
 
   // #FFN dense 2, in_out_tensor -> buffer1
@@ -2070,6 +2235,13 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                 num_inputs, 1.0f, (const DataType*)ffn_dense2_w, num_inputs,
                 in_out_tensor, num_inputs, 0.0f, buffer1, num_outputs);
+  }
+
+  if (prenorm_) {
+    // residual += alpha * (buffer1 + ffn_dense2_b).
+    addToResidual<DataType>(residual, buffer1, ffn_dense2_b, alpha_, N * 64,
+                            embedding_op_size_, stream);
+    return;
   }
 
   // LN2: skip connection and layer normilization (also bias add of prev gemm)
@@ -2088,33 +2260,39 @@ void AttentionPolicyHead<DataType>::Eval(
   DataType* buffer1 = output + scratch_size / (2 * sizeof(DataType));
   DataType* buffer2 = input2_tensor + scratch_size / (2 * sizeof(DataType));
 
-  int inputC = this->input_->GetC();
-  bool input_nhwc = attention_body_ || this->input_->isNHWC();
-  if (!input_nhwc)
-    convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8,
-                      stream);
+  // Steps 1 and 2 produce the policy embedding in input2_tensor. A head
+  // sharing the embedding finds it already there and starts at step 3; note
+  // that steps 3 onwards only read input2_tensor, so several such heads can
+  // run off the same embedding.
+  if (!shared_embedding_) {
+    int inputC = this->input_->GetC();
+    bool input_nhwc = attention_body_ || this->input_->isNHWC();
+    if (!input_nhwc)
+      convertNCHWtoNHWC((DataType*)scratch, input, N, inputC, N, inputC, 8, 8,
+                        stream);
 
-  // 1. Policy embedding (fully connected layer)
-  // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
-  DataType* pol_embedding = input2_tensor;
-  {
-    const int num_outputs = embedding_op_size_;
-    const int num_inputs = inputC;
-    const int batch = N * 64;
-    cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
-                          num_inputs, 1.0f, (const DataType*)ip_pol_w_,
-                          num_inputs,
-                          input_nhwc ? input : (DataType*)scratch,
-                          num_inputs, 0.0f, pol_embedding, num_outputs);
-    addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
-                   num_outputs, act_, stream);
+    // 1. Policy embedding (fully connected layer)
+    // Input data in NHWC layout N*(64)*C, output is N*(64)*embedding_op_size_
+    DataType* pol_embedding = input2_tensor;
+    {
+      const int num_outputs = embedding_op_size_;
+      const int num_inputs = inputC;
+      const int batch = N * 64;
+      cublasXgemm<DataType>(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs,
+                            batch, num_inputs, 1.0f,
+                            (const DataType*)ip_pol_w_, num_inputs,
+                            input_nhwc ? input : (DataType*)scratch, num_inputs,
+                            0.0f, pol_embedding, num_outputs);
+      addBiasBatched(pol_embedding, pol_embedding, ip_pol_b_, 1, batch,
+                     num_outputs, act_, stream);
+    }
+
+    // 2. Encoder layers
+    for (const auto pEnc : encoder_weights_) {
+      pEnc->Eval(N, input2_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
+                 stream, offset_pointers);
+    }  // End of encoder blocks
   }
-
-  // 2. Encoder layers
-  for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, input2_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
-               stream, offset_pointers);
-  }  // End of encoder blocks
 
   DataType* wq;
   DataType* wk;
@@ -2152,6 +2330,14 @@ void AttentionPolicyHead<DataType>::Eval(
         wq /*B*/, policy_d_model_ /*LDB*/, 64 * policy_d_model_, /*strideB*/
         0.0f, output /*C*/,  // output (policy_attn_logits)
         64 /*LDC*/, 64 * 64 + 8 * 24 /*strideC*/, N, use_gemm_ex_);
+
+    if (pair_u_) {
+      // policy_attn_logits[from, to] += pair_u . Z[from, to] / dk
+      AttackGraphState<DataType> state(scratch, scratch_size,
+                                       max_batch_size_);
+      addPairPolicyLogits<DataType>(output, state.pair, pair_u_, factor, N,
+                                    pair_d_e_, 64 * 64 + 8 * 24, stream);
+    }
   }
 
   // Compute promotion_logits in a single kernel (and put the result just after
@@ -2173,6 +2359,7 @@ AttentionPolicyHead<DataType>::~AttentionPolicyHead() {
   ReportCUDAErrors(cudaFree(ip4_pol_w_));
   ReportCUDAErrors(cudaFree(wqk_w_));
   ReportCUDAErrors(cudaFree(wqk_b_));
+  if (pair_u_) ReportCUDAErrors(cudaFree(pair_u_));
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
@@ -2186,12 +2373,15 @@ EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(mha_v_b));
   ReportCUDAErrors(cudaFree(mha_qkv_w));
   ReportCUDAErrors(cudaFree(mha_qkv_b));
+  if (mha_og_w) ReportCUDAErrors(cudaFree(mha_og_w));
+  if (mha_og_b) ReportCUDAErrors(cudaFree(mha_og_b));
   ReportCUDAErrors(cudaFree(mha_dense_w));
   ReportCUDAErrors(cudaFree(mha_dense_b));
   ReportCUDAErrors(cudaFree(ln1_gammas));
   ReportCUDAErrors(cudaFree(ln1_betas));
   ReportCUDAErrors(cudaFree(ffn_dense1_w));
   ReportCUDAErrors(cudaFree(ffn_dense1_b));
+  if (ffn_dense_gate_w) ReportCUDAErrors(cudaFree(ffn_dense_gate_w));
   ReportCUDAErrors(cudaFree(ffn_dense2_w));
   ReportCUDAErrors(cudaFree(ffn_dense2_b));
   ReportCUDAErrors(cudaFree(ln2_gammas));
@@ -2207,6 +2397,11 @@ EncoderBlock<DataType>::~EncoderBlock() {
     ReportCUDAErrors(cudaFree(smol_ln2_gammas));
     ReportCUDAErrors(cudaFree(smol_ln2_betas));
   }
+  if (attack_w) ReportCUDAErrors(cudaFree(attack_w));
+  if (attack_gate_q) ReportCUDAErrors(cudaFree(attack_gate_q));
+  if (attack_gate_k) ReportCUDAErrors(cudaFree(attack_gate_k));
+  if (edge_doors_) ReportCUDAErrors(cudaFree(edge_doors_));
+  if (pair_att_w) ReportCUDAErrors(cudaFree(pair_att_w));
 }
 
 template <typename DataType>
@@ -2245,7 +2440,8 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                                        int num_res_blocks, int input_c,
                                        int max_batch_size,
                                        bool is_pe_dense_embedding,
-                                       bool use_gemm_ex, bool fused_mha)
+                                       bool use_gemm_ex, bool fused_mha,
+                                       const AttentionBodyConstants& constants)
     : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr, false,
                           use_gemm_ex),
       embedding_op_size_(weights.ip_emb_b.size()),
@@ -2253,6 +2449,7 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
       activations_(activations),
       num_resi_blocks_(num_res_blocks),
       input_c_(input_c),
+      max_batch_size_(max_batch_size),
       has_gating_(weights.ip_mult_gate.size() > 0 &&
                   weights.ip_add_gate.size() > 0),
       has_smolgen_(weights.has_smolgen),
@@ -2272,6 +2469,15 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                              scratch);
     allocAndUpload<DataType>(&ip_emb_ffn_d1_b_, weights.ip_emb_ffn.dense1_b,
                              scratch);
+    if (activations_.ffn_activation == ACTIVATION_SWIGLU) {
+      if (weights.ip_emb_ffn.dense_gate_w.size() !=
+          weights.ip_emb_ffn.dense1_w.size()) {
+        throw Exception(
+            "SwiGLU embedding FFN needs dense_gate_w of dense1_w's shape.");
+      }
+      allocAndUpload<DataType>(&ip_emb_ffn_dg_w_,
+                               weights.ip_emb_ffn.dense_gate_w, scratch);
+    }
 
     allocAndUpload<DataType>(&ip_emb_ffn_d2_w_, weights.ip_emb_ffn.dense2_w,
                              scratch);
@@ -2296,8 +2502,84 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
   }
 
   if (has_gating_) {
-    allocAndUpload<DataType>(&ip_mult_gate_, weights.ip_mult_gate, scratch);
+    if (constants.input_gate_relu) {
+      std::vector<float> mult = weights.ip_mult_gate;
+      for (auto& g : mult) g = std::max(g, 0.0f);
+      allocAndUpload<DataType>(&ip_mult_gate_, mult, scratch);
+    } else {
+      allocAndUpload<DataType>(&ip_mult_gate_, weights.ip_mult_gate, scratch);
+    }
     allocAndUpload<DataType>(&ip_add_gate_, weights.ip_add_gate, scratch);
+  }
+
+  // Static pair stream.
+  if (!weights.pair_p_in.empty() || !weights.pair_t_off.empty()) {
+    pair_d_e_ = weights.pair_t_off.size() / 225;
+    if (weights.pair_t_off.size() != 225 * static_cast<size_t>(pair_d_e_) ||
+        weights.pair_p_in.size() !=
+            static_cast<size_t>(kAttackGraphChannels) * pair_d_e_) {
+      throw Exception("Pair stream weights have unexpected sizes.");
+    }
+    allocAndUpload<float>(&pair_p_in_, weights.pair_p_in, scratch);
+    allocAndUpload<float>(&pair_t_off_, weights.pair_t_off, scratch);
+  }
+
+  // Edge stream: the seed and the sites.
+  if (!weights.edge_p_in.empty() || !weights.edge_t_off.empty()) {
+    edge_d_e_ = weights.edge_t_off.size() / 225;
+    if (weights.edge_t_off.size() != 225 * static_cast<size_t>(edge_d_e_) ||
+        weights.edge_p_in.size() !=
+            static_cast<size_t>(kAttackGraphChannels) * edge_d_e_) {
+      throw Exception("Edge stream weights have unexpected sizes.");
+    }
+    allocAndUpload<float>(&edge_p_in_, weights.edge_p_in, scratch);
+    allocAndUpload<float>(&edge_t_off_, weights.edge_t_off, scratch);
+  }
+  if (weights.edge_updates.size() != constants.edge_update_after.size() ||
+      (!weights.edge_updates.empty() && !edge_p_in_)) {
+    throw Exception("Edge stream sites do not match their weights.");
+  }
+  for (size_t k = 0; k < weights.edge_updates.size(); k++) {
+    const auto& u = weights.edge_updates[k];
+    const size_t d = edge_d_e_;
+    const size_t h = encoder_head_count_;
+    const size_t hidden = u.ffn_in_b.size();
+    const size_t ht = u.tri_eg_b.size() / 4;
+    if (u.o_e.size() != h * d || u.tri_v.size() != d * 2 * d ||
+        u.tri_eg_b.size() != 4 * ht || ht == 0 || d % ht != 0 ||
+        u.tri_eg.size() != d * 4 * ht || u.tri_o.size() != 2 * d * d ||
+        u.ffn_in.size() != d * hidden || u.ffn_out.size() != hidden * d ||
+        (!u.ffn_rev.empty() && u.ffn_rev.size() != d * hidden)) {
+      throw Exception("Edge stream site weights have unexpected sizes.");
+    }
+    const int after = constants.edge_update_after[k];
+    if (after < 0 || after >= static_cast<int>(weights.encoder.size()) ||
+        (k > 0 && after <= edge_sites_.back().after_block) ||
+        weights.encoder[after].mha.edge_e_w.empty()) {
+      throw Exception("Edge stream sites must follow blocks with edge doors.");
+    }
+    auto upload = [&](const std::vector<float>& v) -> const float* {
+      if (v.empty()) return nullptr;
+      float* p = nullptr;
+      allocAndUpload<float>(&p, v, scratch);
+      edge_site_memory_.push_back(p);
+      return p;
+    };
+    EdgeSite site;
+    site.after_block = after;
+    site.o_e = upload(u.o_e);
+    site.weights.tri_v = upload(u.tri_v);
+    site.weights.tri_eg = upload(u.tri_eg);
+    site.weights.tri_eg_b = upload(u.tri_eg_b);
+    site.weights.tri_o = upload(u.tri_o);
+    site.weights.ffn_in = upload(u.ffn_in);
+    site.weights.ffn_in_b = upload(u.ffn_in_b);
+    site.weights.ffn_rev = upload(u.ffn_rev);
+    site.weights.ffn_out = upload(u.ffn_out);
+    site.weights.hidden = static_cast<int>(hidden);
+    site.weights.triplet_heads = static_cast<int>(ht);
+    site.weights.path = constants.triplet_path;
+    edge_sites_.push_back(site);
   }
 
   if (has_smolgen_) {
@@ -2306,14 +2588,55 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
   }
 
   int num_encoders = weights.encoder.size();
-  float alpha = (float)pow(2.0 * num_encoders, -0.25);
+  const float deepnorm_alpha = (float)pow(2.0 * num_encoders, -0.25);
+  float alpha = constants.encoder_alpha > 0.0f ? constants.encoder_alpha
+                                               : deepnorm_alpha;
+  embedding_ffn_alpha_ = constants.embedding_ffn_alpha > 0.0f
+                             ? constants.embedding_ffn_alpha
+                             : deepnorm_alpha;
+  const float eps = constants.epsilon > 0.0f
+                        ? constants.epsilon
+                        : (is_pe_dense_embedding_ ? 1e-3f : 1e-6f);
+  eps_ = eps;
+  prenorm_ = constants.prenorm;
+  if (prenorm_) {
+    if (!is_pe_dense_embedding_ || num_res_blocks > 0) {
+      throw Exception("Pre-norm encoder blocks need the PE-dense embedding.");
+    }
+    if (weights.encoder_final_norm_gammas.size() !=
+            static_cast<size_t>(embedding_op_size_) ||
+        weights.encoder_final_norm_betas.size() !=
+            static_cast<size_t>(embedding_op_size_)) {
+      throw Exception("Pre-norm encoder blocks need the final norm.");
+    }
+    allocAndUpload<DataType>(&final_norm_g_, weights.encoder_final_norm_gammas,
+                             scratch);
+    allocAndUpload<DataType>(&final_norm_b_, weights.encoder_final_norm_betas,
+                             scratch);
+  }
+  const float output_gate_scale = constants.output_gate_scale > 0.0f
+                                      ? constants.output_gate_scale
+                                      : 1.0f;
+  const float edge_gate_scale =
+      constants.edge_gate_scale > 0.0f ? constants.edge_gate_scale : 1.0f;
+  has_attack_graph_ = UsesAttackGraph(weights);
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        is_pe_dense_embedding_ ? 1e-3 : 1e-6, use_gemm_ex, use_fused_mha_);
+        eps, use_gemm_ex, use_fused_mha_, output_gate_scale, prenorm_,
+        edge_gate_scale);
     encoder_weights_.emplace_back(pW);
+    if (pW->pair_att_w && pW->pair_d_e_ != pair_d_e_) {
+      throw Exception("pair_att_w does not match the pair stream.");
+    }
+    if (pW->edge_doors_ && pW->edge_d_e_ != edge_d_e_) {
+      throw Exception("Edge doors do not match the edge stream.");
+    }
+  }
+  if (has_attack_graph_ && num_res_blocks > 0) {
+    throw Exception("Attack-graph attention needs a pure transformer body.");
   }
 }
 
@@ -2328,6 +2651,7 @@ AttentionBody<DataType>::~AttentionBody() {
     ReportCUDAErrors(cudaFree(ip_emb_ln_b_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d1_w_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d1_b_));
+    if (ip_emb_ffn_dg_w_) ReportCUDAErrors(cudaFree(ip_emb_ffn_dg_w_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d2_w_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d2_b_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_ln_g_));
@@ -2342,6 +2666,13 @@ AttentionBody<DataType>::~AttentionBody() {
   if (has_smolgen_) {
     ReportCUDAErrors(cudaFree(smolgen_global_));
   }
+  if (pair_p_in_) ReportCUDAErrors(cudaFree(pair_p_in_));
+  if (pair_t_off_) ReportCUDAErrors(cudaFree(pair_t_off_));
+  if (final_norm_g_) ReportCUDAErrors(cudaFree(final_norm_g_));
+  if (final_norm_b_) ReportCUDAErrors(cudaFree(final_norm_b_));
+  if (edge_p_in_) ReportCUDAErrors(cudaFree(edge_p_in_));
+  if (edge_t_off_) ReportCUDAErrors(cudaFree(edge_t_off_));
+  for (float* p : edge_site_memory_) ReportCUDAErrors(cudaFree(p));
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
@@ -2355,6 +2686,48 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   DataType* output_tensor = (DataType*)output;
   DataType* buffer1 = (DataType*)input2;
   DataType* buffer2 = buffer1 + scratch_size / (2 * sizeof(DataType));
+
+  // Pre-norm: the float residual stream, after the AttackGraphState; the
+  // edge stream's state after that.
+  const size_t attack_graph_bytes =
+      has_attack_graph_
+          ? AttackGraphState<DataType>::Bytes(max_batch_size_, pair_d_e_)
+          : 0;
+  const size_t residual_bytes =
+      prenorm_ ? PrenormResidual::Bytes(max_batch_size_, embedding_op_size_)
+               : 0;
+  float* residual = nullptr;
+  if (prenorm_) {
+    residual = PrenormResidual::At(scratch, scratch_size, attack_graph_bytes);
+  }
+  float* edge = nullptr;
+  void* edge_site_scratch = nullptr;
+  if (edge_p_in_) {
+    EdgeStreamState state(scratch, scratch_size,
+                          attack_graph_bytes + residual_bytes, max_batch_size_,
+                          edge_d_e_);
+    edge = state.e;
+    edge_site_scratch = state.site_scratch;
+  }
+
+  // Attack graph and pair stream, from the input planes.
+  const uint64_t* attack_bits = nullptr;
+  const DataType* pair_stream = nullptr;
+  if (has_attack_graph_) {
+    AttackGraphState<DataType> state(scratch, scratch_size, max_batch_size_);
+    computeAttackGraph<DataType>(state.bits, input, N, kInputPlanes, stream);
+    attack_bits = state.bits;
+    if (pair_p_in_) {
+      computePairStream<DataType>(state.pair, state.bits, pair_p_in_,
+                                  pair_t_off_, N, pair_d_e_, stream);
+      pair_stream = state.pair;
+    }
+    if (edge) {
+      // The edge stream's seed, rms(E @ p_in + t_off[rel]), in float.
+      computePairStream<float>(edge, state.bits, edge_p_in_, edge_t_off_, N,
+                               edge_d_e_, stream);
+    }
+  }
 
   int inputC = input_c_;
   if (num_resi_blocks_ == 0) {
@@ -2448,8 +2821,17 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d1_w_,
                   num_inputs, temp, num_inputs, 0.0f, buffer1, num_outputs);
-      addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch, num_outputs,
-                     activations_.ffn_activation, stream);
+      if (activations_.ffn_activation == ACTIVATION_SWIGLU) {
+        // Gate, temp -> buffer2; buffer1 = (buffer1 + b1) * sigmoid(buffer2).
+        cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                    num_inputs, 1.0f, (const DataType*)ip_emb_ffn_dg_w_,
+                    num_inputs, temp, num_inputs, 0.0f, buffer2, num_outputs);
+        addBiasSwiGLU(buffer1, buffer1, ip_emb_ffn_d1_b_, buffer2, batch,
+                      num_outputs, stream);
+      } else {
+        addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch,
+                       num_outputs, activations_.ffn_activation, stream);
+      }
     }
 
     // embedding FFN dense 2
@@ -2461,12 +2843,18 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
                   num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d2_w_,
                   num_inputs, buffer1, num_inputs, 0.0f, buffer2, num_outputs);
       // Embedding LN: skip connection and layer normilization (also bias add of
-      // prev gemm) buffer2 -> embedding
-      float alpha = (float)pow(2. * encoder_weights_.size(), -0.25);
-      LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
-                          ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_,
-                          ip_emb_ffn_ln_b_, 1e-3, alpha, ACTIVATION_NONE,
-                          stream);
+      // prev gemm) buffer2 -> embedding (pre-norm: -> the float residual)
+      if (prenorm_) {
+        layerNormRows<DataType, DataType, float, DataType>(
+            residual, nullptr, buffer2, ip_emb_ffn_d2_b_, temp,
+            ip_emb_ffn_ln_g_, ip_emb_ffn_ln_b_, N * 64, embedding_ffn_size_,
+            1e-3f, embedding_ffn_alpha_, stream);
+      } else {
+        LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
+                            ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_,
+                            ip_emb_ffn_ln_b_, 1e-3, embedding_ffn_alpha_,
+                            ACTIVATION_NONE, stream);
+      }
     }
 
   } else {
@@ -2493,10 +2881,30 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   }
 
   // 2. Encoder blocks
-  for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, output_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
-               stream, offset_pointers);
+  size_t next_site = 0;
+  for (size_t b = 0; b < encoder_weights_.size(); b++) {
+    const EdgeSite* site = nullptr;
+    if (next_site < edge_sites_.size() &&
+        edge_sites_[next_site].after_block == static_cast<int>(b)) {
+      site = &edge_sites_[next_site++];
+    }
+    encoder_weights_[b]->Eval(N, output_tensor, (DataType*)scratch, buffer1,
+                              buffer2, cublas, stream, offset_pointers,
+                              attack_bits, pair_stream, residual, edge,
+                              site ? site->o_e : nullptr);
+    if (site) {
+      // The edge stream's site (the block added the readback).
+      edgeStreamUpdate(edge, edge_site_scratch, site->weights, N, edge_d_e_,
+                       stream);
+    }
   }  // End of encoder blocks
+
+  // Pre-norm: the heads read final_norm(residual).
+  if (prenorm_) {
+    layerNormRows<float, float, DataType, DataType>(
+        output_tensor, nullptr, residual, nullptr, nullptr, final_norm_g_,
+        final_norm_b_, N * 64, embedding_op_size_, eps_, 1.0f, stream);
+  }
 }
 
 template <typename DataType>

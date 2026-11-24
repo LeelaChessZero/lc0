@@ -146,14 +146,16 @@ MetalNetwork::MetalNetwork(const WeightsFile& file, const OptionsDict& options)
                     ffn_activation));
 
   std::string policy_head =
-      options.GetOrDefault<std::string>("policy_head", "vanilla");
+      options.GetOrDefault<std::string>("policy_head",
+                                        weights.default_policy_head);
   // Check that selected policy head exists.
   if (weights.policy_heads.count(policy_head) == 0) {
     throw Exception("The policy head you specified '" + policy_head +
                     "' does not exist in this net.");
   }
   std::string value_head =
-      options.GetOrDefault<std::string>("value_head", "winner");
+      options.GetOrDefault<std::string>("value_head",
+                                        weights.default_value_head);
   // Check that selected value head exists.
   if (weights.value_heads.count(value_head) == 0) {
     throw Exception("The value head you specified '" + value_head +

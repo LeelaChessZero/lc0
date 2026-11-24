@@ -960,10 +960,16 @@ std::unique_ptr<Network> MakeOnnxNetwork(const std::optional<WeightsFile>& w,
             ? true
             : false);
     converter_options.no_shape = opts.GetOrDefault<bool>("no_shape", false);
-    converter_options.policy_head =
-        opts.GetOrDefault<std::string>("policy_head", "vanilla");
-    converter_options.value_head =
-        opts.GetOrDefault<std::string>("value_head", "winner");
+    // The net file's default heads, else vanilla / winner.
+    const auto& heads = w->weights();
+    converter_options.policy_head = opts.GetOrDefault<std::string>(
+        "policy_head", heads.policy_heads().has_default_head()
+                           ? std::string(heads.policy_heads().default_head())
+                           : "vanilla");
+    converter_options.value_head = opts.GetOrDefault<std::string>(
+        "value_head", heads.value_heads().has_default_head()
+                          ? std::string(heads.value_heads().default_head())
+                          : "winner");
     converter_options.no_wdl_softmax = true;
     converter_options.alt_selu =
         kProvider == OnnxProvider::COREML ? true : false;

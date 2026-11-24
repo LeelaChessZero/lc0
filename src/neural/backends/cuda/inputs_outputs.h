@@ -29,6 +29,7 @@
 
 #include <cassert>
 #include <memory>
+#include <vector>
 
 #include "cuda_common.h"
 #include "neural/network.h"
@@ -83,7 +84,8 @@ template <typename DataType>
 struct InputsOutputs {
   InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
-                [[maybe_unused]] bool cublasDisableTensorCores = false) {
+                [[maybe_unused]] bool cublasDisableTensorCores = false,
+                int extra_policy_heads = 0) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -108,6 +110,17 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaMalloc(
         &op_policy_mem_gpu_,
         maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
+
+    // Output of the extra policy heads. Device only: the blend folds them into
+    // the policy output before it is copied out, so their logits never leave
+    // the card.
+    op_policy_extra_mem_gpu_.assign(extra_policy_heads, nullptr);
+    extra_head_offset_pointers_.assign(extra_policy_heads, nullptr);
+    for (auto& mem : op_policy_extra_mem_gpu_) {
+      ReportCUDAErrors(cudaMalloc(
+          &mem, maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
+    }
+
     ReportCUDAErrors(cudaHostAlloc(
         &op_value_mem_, maxBatchSize * (wdl ? 3 : 1) * sizeof(op_value_mem_[0]),
         cudaHostAllocMapped));
@@ -178,6 +191,9 @@ struct InputsOutputs {
     ReportCUDAErrors(cudaFree(input_val_mem_gpu_));
     ReportCUDAErrors(cudaFreeHost(op_policy_mem_));
     ReportCUDAErrors(cudaFree(op_policy_mem_gpu_));
+    for (auto mem : op_policy_extra_mem_gpu_) {
+      if (mem) ReportCUDAErrors(cudaFree(mem));
+    }
     ReportCUDAErrors(cudaFreeHost(op_value_mem_));
     ReportCUDAErrors(cudaFree(op_value_mem_gpu_));
     ReportCUDAErrors(cudaEventDestroy(upload_done_event_));
@@ -202,6 +218,9 @@ struct InputsOutputs {
       if (head_offset_pointers_) {
         ReportCUDAErrors(cudaFree(head_offset_pointers_));
       }
+      for (auto ptrs : extra_head_offset_pointers_) {
+        if (ptrs) ReportCUDAErrors(cudaFree(ptrs));
+      }
       ReportCUDAErrors(cudaStreamDestroy(compute_stream_));
       ReportCUDAErrors(cudaStreamDestroy(upload_stream_));
       ReportCUDAErrors(cudaStreamDestroy(download_stream_));
@@ -220,6 +239,8 @@ struct InputsOutputs {
   DataType* op_policy_mem_gpu_;
   DataType* op_value_mem_gpu_;
   DataType* op_moves_left_mem_gpu_ = nullptr;
+  // One per extra policy head of the blend, in the network's blend order.
+  std::vector<DataType*> op_policy_extra_mem_gpu_;
 
   std::unique_ptr<float[]> wdl_cpu_softmax_;
 
@@ -230,6 +251,9 @@ struct InputsOutputs {
   void* scratch_mem_;
   void** offset_pointers_ = nullptr;
   void** head_offset_pointers_ = nullptr;
+  // The extra heads keep their own, because their policy encoder blocks may
+  // differ in shape from the selected head's.
+  std::vector<void**> extra_head_offset_pointers_;
 
   // cuda stream used to run the network
   cudaStream_t compute_stream_ = nullptr;
