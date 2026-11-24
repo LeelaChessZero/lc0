@@ -85,14 +85,14 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
 }
 
 template <typename T>
-__global__ void blendPolicyLogits_kernel(T* main, const T* opt, const T* soft,
-                                         float w_main, float w_opt,
-                                         float w_soft, int count) {
+__global__ void blendPolicyLogits_kernel(T* main, PolicyBlendHeads<T> heads,
+                                         float w_main, int count) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
   if (i < count) {
     float val = w_main * (float)main[i];
-    if (opt) val += w_opt * (float)opt[i];
-    if (soft) val += w_soft * (float)soft[i];
+    for (int k = 0; k < heads.count; k++) {
+      val += heads.weight[k] * (float)heads.head[k][i];
+    }
     main[i] = (T)val;
   }
 }
@@ -100,14 +100,13 @@ __global__ void blendPolicyLogits_kernel(T* main, const T* opt, const T* soft,
 // Pools the policy heads geometrically, which in log space is a weighted sum
 // of their logits.
 template <typename T>
-void blendPolicyLogits(T* main, const T* opt, const T* soft, float w_main,
-                       float w_opt, float w_soft, int count,
-                       cudaStream_t stream) {
+void blendPolicyLogits(T* main, const PolicyBlendHeads<T>& heads,
+                       float w_main, int count, cudaStream_t stream) {
   const int kBlockSize = 256;
   int blocks = DivUp(count, kBlockSize);
 
-  blendPolicyLogits_kernel<<<blocks, kBlockSize, 0, stream>>>(
-      main, opt, soft, w_main, w_opt, w_soft, count);
+  blendPolicyLogits_kernel<<<blocks, kBlockSize, 0, stream>>>(main, heads,
+                                                              w_main, count);
   ReportCUDAErrors(cudaGetLastError());
 }
 
@@ -2376,13 +2375,13 @@ template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                int bsize, ActivationFunction act,
                                cudaStream_t stream);
 
-template void blendPolicyLogits<float>(float* main, const float* opt,
-                                       const float* soft, float w_main,
-                                       float w_opt, float w_soft, int count,
+template void blendPolicyLogits<float>(float* main,
+                                       const PolicyBlendHeads<float>& heads,
+                                       float w_main, int count,
                                        cudaStream_t stream);
-template void blendPolicyLogits<half>(half* main, const half* opt,
-                                      const half* soft, float w_main,
-                                      float w_opt, float w_soft, int count,
+template void blendPolicyLogits<half>(half* main,
+                                      const PolicyBlendHeads<half>& heads,
+                                      float w_main, int count,
                                       cudaStream_t stream);
 
 template void addVectorsHNC_NHC<float>(float* a, float* b, int N, int H, int C,
@@ -2769,8 +2768,8 @@ template void addVectors<__nv_bfloat16>(
     __nv_bfloat16* c, __nv_bfloat16* a, __nv_bfloat16* b, int size, int asize,
     int bsize, ActivationFunction act, cudaStream_t stream);
 template void blendPolicyLogits<__nv_bfloat16>(
-    __nv_bfloat16* main, const __nv_bfloat16* opt, const __nv_bfloat16* soft,
-    float w_main, float w_opt, float w_soft, int count, cudaStream_t stream);
+    __nv_bfloat16* main, const PolicyBlendHeads<__nv_bfloat16>& heads,
+    float w_main, int count, cudaStream_t stream);
 
 template void addVectorsHNC_NHC<__nv_bfloat16>(__nv_bfloat16* a,
                                                __nv_bfloat16* b, int N, int H,

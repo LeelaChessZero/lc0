@@ -39,13 +39,21 @@ template <typename T>
 void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
                 ActivationFunction activation, cudaStream_t stream);
 
-// Geometric pooling of the policy heads, as a weighted sum of their logits
-// written over the first vector. A null head pointer drops that term, which is
-// how a head that is not part of the blend is never even evaluated.
+// The heads pooled into the selected one, passed by value to the kernel.
 template <typename T>
-void blendPolicyLogits(T* main, const T* opt, const T* soft, float w_main,
-                       float w_opt, float w_soft, int count,
-                       cudaStream_t stream);
+struct PolicyBlendHeads {
+  static constexpr int kMax = 8;
+  const T* head[kMax];
+  float weight[kMax];
+  int count = 0;
+};
+
+// Geometric pooling of the policy heads, as a weighted sum of their logits
+// written over the first vector: main = w_main * main + sum_k w_k * head_k,
+// summed in float in the order of the heads.
+template <typename T>
+void blendPolicyLogits(T* main, const PolicyBlendHeads<T>& heads,
+                       float w_main, int count, cudaStream_t stream);
 
 // Adds two vectors of equal size overwriting the first with the sum.
 // This specialisation performs a transposition of the first 2 indexes

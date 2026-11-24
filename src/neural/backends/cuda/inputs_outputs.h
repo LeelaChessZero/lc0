@@ -29,6 +29,7 @@
 
 #include <cassert>
 #include <memory>
+#include <vector>
 
 #include "cuda_common.h"
 #include "neural/network.h"
@@ -36,18 +37,6 @@
 
 namespace lczero {
 namespace NS_BACKEND {
-
-enum ExtraPolicyHeadIndex {
-  kExtraPolicyOptimistic = 0,
-  kExtraPolicySoft = 1,
-  kNumExtraPolicyHeads = 2
-};
-
-// Subset of policyheads for geometric blending.
-struct ExtraPolicyHeads {
-  bool optimistic = false;
-  bool soft = false;
-};
 
 inline void ToType(float& dst, float src) { dst = src; }
 inline void ToType(half& dst, float src) {
@@ -96,7 +85,7 @@ struct InputsOutputs {
   InputsOutputs(unsigned maxBatchSize, bool wdl, bool moves_left,
                 size_t tensor_mem_size = 0, size_t scratch_size = 0,
                 [[maybe_unused]] bool cublasDisableTensorCores = false,
-                ExtraPolicyHeads extra_policy_heads = {}) {
+                int extra_policy_heads = 0) {
     ReportCUDAErrors(cudaHostAlloc(
         &input_masks_mem_, maxBatchSize * kInputPlanes * sizeof(uint64_t),
         cudaHostAllocMapped));
@@ -125,13 +114,11 @@ struct InputsOutputs {
     // Output of the extra policy heads. Device only: the blend folds them into
     // the policy output before it is copied out, so their logits never leave
     // the card.
-    const bool wanted[kNumExtraPolicyHeads] = {extra_policy_heads.optimistic,
-                                               extra_policy_heads.soft};
-    for (int i = 0; i < kNumExtraPolicyHeads; i++) {
-      if (!wanted[i]) continue;
+    op_policy_extra_mem_gpu_.assign(extra_policy_heads, nullptr);
+    extra_head_offset_pointers_.assign(extra_policy_heads, nullptr);
+    for (auto& mem : op_policy_extra_mem_gpu_) {
       ReportCUDAErrors(cudaMalloc(
-          &op_policy_extra_mem_gpu_[i],
-          maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
+          &mem, maxBatchSize * kNumOutputPolicy * sizeof(op_policy_mem_[0])));
     }
 
     ReportCUDAErrors(cudaHostAlloc(
@@ -252,8 +239,8 @@ struct InputsOutputs {
   DataType* op_policy_mem_gpu_;
   DataType* op_value_mem_gpu_;
   DataType* op_moves_left_mem_gpu_ = nullptr;
-  // Indexed by ExtraPolicyHeadIndex; null for heads the network cannot make.
-  DataType* op_policy_extra_mem_gpu_[kNumExtraPolicyHeads] = {};
+  // One per extra policy head of the blend, in the network's blend order.
+  std::vector<DataType*> op_policy_extra_mem_gpu_;
 
   std::unique_ptr<float[]> wdl_cpu_softmax_;
 
@@ -266,7 +253,7 @@ struct InputsOutputs {
   void** head_offset_pointers_ = nullptr;
   // The extra heads keep their own, because their policy encoder blocks may
   // differ in shape from the selected head's.
-  void** extra_head_offset_pointers_[kNumExtraPolicyHeads] = {};
+  std::vector<void**> extra_head_offset_pointers_;
 
   // cuda stream used to run the network
   cudaStream_t compute_stream_ = nullptr;
