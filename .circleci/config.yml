@@ -65,9 +65,16 @@ jobs:
             python3 -c '
             import xml.etree.ElementTree as ET
             cases = ET.parse("build-gcc/syzygy.xml").findall("testsuite/testcase")
+            required = {
+                "Simple3PieceProbes", "Root3PieceProbes", "Simple4PieceProbes",
+                "Simple5PieceProbes", "Root5PieceProbes",
+            }
             for case in cases:
                 print(case.get("name"), case.get("result"))
-            if not cases or any(case.get("result") != "completed" for case in cases):
+            missing = required - {case.get("name") for case in cases if case.get("classname") == "Syzygy"}
+            if missing:
+                raise SystemExit("Missing Syzygy probe tests: " + ", ".join(sorted(missing)))
+            if any(case.get("result") != "completed" for case in cases):
                 raise SystemExit("Expected every Syzygy probe test to run")
             '
       - run:
