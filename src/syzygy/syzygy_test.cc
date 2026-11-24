@@ -96,7 +96,7 @@ TEST(Syzygy, Simple3PieceProbes) {
   tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 3) {
     // These probes require 3 piece tablebase.
-    return;
+    GTEST_SKIP();
   }
   // Longest 3 piece position.
   TestValidExpectation(&tablebase, "8/8/8/8/8/8/2Rk4/1K6 b - - 0 1", WDL_LOSS,
@@ -136,7 +136,7 @@ TEST(Syzygy, Root3PieceProbes) {
   tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 3) {
     // These probes require 3 piece tablebase.
-    return;
+    GTEST_SKIP();
   }
   TestValidRootExpectation(&tablebase, "5Qk1/8/8/8/8/8/8/4K3 b - - 0 1",
                            {"g8f8"}, {"g8h7"});
@@ -155,7 +155,7 @@ TEST(Syzygy, Simple4PieceProbes) {
   tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 4) {
     // These probes require 4 piece tablebase.
-    return;
+    GTEST_SKIP();
   }
 
   // Longest 4 piece position.
@@ -178,7 +178,7 @@ TEST(Syzygy, Simple5PieceProbes) {
   tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 5) {
     // These probes require 5 piece tablebase.
-    return;
+    GTEST_SKIP();
   }
 
   // Longest 5 piece position.
@@ -228,7 +228,7 @@ TEST(Syzygy, Root5PieceProbes) {
   tablebase.init(kPaths);
   if (tablebase.max_cardinality() < 5) {
     // These probes require 5 piece tablebase.
-    return;
+    GTEST_SKIP();
   }
   TestValidRootExpectation(&tablebase, "8/8/8/Q7/8/1k1K4/1r6/8 w - - 79 44",
                            {"a5a1"}, {}, {"a5d5"});
