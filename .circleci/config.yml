@@ -1,4 +1,4 @@
-version: 2
+version: 2.1
 jobs:
   build:
     docker:
@@ -9,26 +9,27 @@ jobs:
           name: Install build tools
           command: |
             apt-get update
-            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev wget
+            apt-get -y install git python3-pip gcc-10 g++-10 clang-12 zlib1g zlib1g-dev wget unzip
             pip3 install meson==0.63
             pip3 install ninja
       - run:
           name: Install onnxruntime
           command: |
-            wget https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz -P /tmp
-            tar xzf /tmp/onnxruntime-linux-x64-1.22.0.tgz -C /tmp
+            wget -nv -O /tmp/onnxruntime.nupkg https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.22.0/microsoft.ml.onnxruntime.1.22.0.nupkg
+            unzip -q /tmp/onnxruntime.nupkg 'build/native/include/*' 'runtimes/linux-x64/native/*' -d /tmp/onnxruntime
+            ln -s libonnxruntime.so /tmp/onnxruntime/runtimes/linux-x64/native/libonnxruntime.so.1
       - run:
           name: Meson GCC
           environment:
             CC: gcc-10
             CXX: g++-10
-          command: meson build-gcc -Dgtest=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
+          command: meson build-gcc -Dgtest=false -Donnx_include=/tmp/onnxruntime/build/native/include -Donnx_libdir=/tmp/onnxruntime/runtimes/linux-x64/native
       - run:
           name: Meson Clang
           environment:
             CC: clang-12
             CXX: clang++-12
-          command: meson build-clang -Dgtest=false -Db_lto=false -Donnx_include=/tmp/onnxruntime-linux-x64-1.22.0/include -Donnx_libdir=/tmp/onnxruntime-linux-x64-1.22.0/lib
+          command: meson build-clang -Dgtest=false -Db_lto=false -Donnx_include=/tmp/onnxruntime/build/native/include -Donnx_libdir=/tmp/onnxruntime/runtimes/linux-x64/native
       - run:
           name: Build GCC
           command: |
@@ -41,7 +42,7 @@ jobs:
             ninja -j 4
   "mac":
     macos:
-      xcode: 14.3.1
+      xcode: 15.4.0
     steps:
       - checkout
       - run:
@@ -69,7 +70,7 @@ jobs:
           command: lipo -create -o /tmp/lc0 build/lc0 build-arm/lc0
       - store_artifacts:
           path: /tmp/lc0
-          destination: lc0-macos_13.2.1
+          destination: lc0-macos_14.3.1
       - run:
           name: Prepare Workspace
           command: |
@@ -81,7 +82,7 @@ jobs:
             - lc0
   "mac latest":
     macos:
-      xcode: 26.1.0
+      xcode: 27.2.0
     steps:
       - checkout
       - run:
@@ -97,7 +98,7 @@ jobs:
             ninja
   "upload-github-release":
     macos:
-      xcode: 14.3.1
+      xcode: 15.4.0
     steps:
       - attach_workspace:
           at: /tmp/workspace
@@ -111,13 +112,13 @@ jobs:
       - run:
           name: Upload to GitHub Release
           command: |
-            mv /tmp/workspace/lc0 /tmp/lc0-$CIRCLE_TAG-macos_13.2.1
+            mv /tmp/workspace/lc0 /tmp/lc0-$CIRCLE_TAG-macos_14.3.1
             gh release upload \
               "$CIRCLE_TAG" \
-              /tmp/lc0-$CIRCLE_TAG-macos_13.2.1 \
+              /tmp/lc0-$CIRCLE_TAG-macos_14.3.1 \
               --clobber --repo LeelaChessZero/lc0
 workflows:
-  version: 2
+  version: 2.1
   builds:
     jobs:
       - build

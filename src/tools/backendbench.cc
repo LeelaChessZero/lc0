@@ -102,7 +102,14 @@ void BackendBenchmark::Run() {
 
     classic::NodeTree tree;
     tree.ResetToPosition(option_dict.Get<std::string>(kFenId), {});
-    EvalPosition pos{tree.GetPositionHistory().GetPositions(), {}};
+    const MoveList legal_moves =
+        tree.GetPositionHistory().Last().GetBoard().GenerateLegalMoves();
+    EvalPosition pos{tree.GetPositionHistory().GetPositions(), legal_moves};
+    thread_local EvalResult bench_result;
+    auto result_ptr = [&]() {
+      bench_result.p.resize(legal_moves.size());
+      return bench_result.AsPtr();
+    };
     std::vector<std::thread> handles;
 
     // Do any backend initialization outside the loop.
@@ -111,7 +118,7 @@ void BackendBenchmark::Run() {
       for (int i = 0; i < 2; i++) {
         auto warmup = backend->CreateComputation();
         for (int j = 0; j < option_dict.Get<int>(kMaxBatchSizeId); ++j) {
-          warmup->AddInput(pos, {});
+          warmup->AddInput(pos, result_ptr());
         }
         warmup->ComputeBlocking();
       }
@@ -154,11 +161,12 @@ void BackendBenchmark::Run() {
         bool first = true;
         auto& end = ends[tid];
         // Ignore the first batch to let GPU queue fill for stable measurements.
-        while (j++ < batches) {
+        // It is not one of the --batches.
+        while (first || j++ < batches) {
           // Put i copies of tree root node into computation and compute.
           auto computation = backend->CreateComputation();
           for (int k = 0; k < i; k++) {
-            computation->AddInput(pos, {});
+            computation->AddInput(pos, result_ptr());
           }
           computation->ComputeBlocking();
           end[count++] = std::chrono::steady_clock::now();
@@ -202,7 +210,7 @@ void BackendBenchmark::Run() {
         double diff = times[j].count() - mean;
         stddev += diff * diff;
       }
-      stddev = std::sqrt(stddev / (batches_done - 1));
+      stddev = batches_done > 1 ? std::sqrt(stddev / (batches_done - 1)) : 0;
       double cv = stddev / mean;
 
       std::sort(times.begin(), times.begin() + batches_done);

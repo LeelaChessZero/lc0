@@ -148,6 +148,7 @@ void ConvertLeelaToOnnx() {
     onnx_options.output_policy_head = dict.Get<std::string>(kOutputPolicyHead);
     onnx_options.output_wdl = dict.Get<std::string>(kOutputWdl);
     onnx_options.output_value = dict.Get<std::string>(kOutputValue);
+    onnx_options.output_mlh = dict.Get<std::string>(kOutputMlh);
     onnx_options.opset = dict.Get<int>(kOnnxOpsetId);
     onnx_options.ir = dict.Get<int>(kOnnxIrId);
     onnx_options.batch_size = dict.Get<int>(kOnnxBatchSizeId);
