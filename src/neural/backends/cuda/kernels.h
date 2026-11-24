@@ -189,6 +189,11 @@ void addAttackGraphBias(T* logits, const uint64_t* bits, const T* q,
                         const float* gate_k, int N, int heads, int depth,
                         int d_model, bool accumulate, cudaStream_t stream);
 
+// x = x * scale * sigmoid(gate), elementwise: the attention output gate.
+template <typename T>
+void applySigmoidGate(T* x, const T* gate, float scale, int size,
+                      cudaStream_t stream);
+
 // logits[n * stride + p] += factor * (u . z[n, p, :]), p < 64 * 64.
 template <typename T>
 void addPairPolicyLogits(T* logits, const T* z, const float* u, float factor,

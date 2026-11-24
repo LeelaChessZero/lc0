@@ -1713,6 +1713,25 @@ void addAttackGraphBias(T* logits, const uint64_t* bits, const T* q,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+// x = x * scale * sigmoid(gate), elementwise: the attention output gate.
+template <typename T>
+__global__ void applySigmoidGate_kernel(T* x, const T* gate, float scale,
+                                        int size) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= size) return;
+  const float g = (float)gate[i];
+  x[i] = (T)((float)x[i] * scale / (1.0f + __expf(-g)));
+}
+
+template <typename T>
+void applySigmoidGate(T* x, const T* gate, float scale, int size,
+                      cudaStream_t stream) {
+  const int kBlockSize = 256;
+  applySigmoidGate_kernel<T><<<DivUp(size, kBlockSize), kBlockSize, 0,
+                               stream>>>(x, gate, scale, size);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 // logits[n * stride + p] += factor * (u . z[n, p, :]) for p < 64 * 64: the
 // pair stream term of an attention policy head.
 template <typename T>
@@ -2124,6 +2143,8 @@ template void addAttackGraphBias<half>(
     half* logits, const uint64_t* bits, const half* q, const half* k,
     const float* attack_w, const float* gate_q, const float* gate_k, int N,
     int heads, int depth, int d_model, bool accumulate, cudaStream_t stream);
+template void applySigmoidGate<half>(half* x, const half* gate, float scale,
+                                      int size, cudaStream_t stream);
 template void addPairPolicyLogits<half>(half* logits, const half* z,
                                        const float* u, float factor, int N,
                                        int pair_d_e, int stride,
@@ -2139,6 +2160,9 @@ template void addAttackGraphBias<float>(
     float* logits, const uint64_t* bits, const float* q, const float* k,
     const float* attack_w, const float* gate_q, const float* gate_k, int N,
     int heads, int depth, int d_model, bool accumulate, cudaStream_t stream);
+template void applySigmoidGate<float>(float* x, const float* gate,
+                                       float scale, int size,
+                                       cudaStream_t stream);
 template void addPairPolicyLogits<float>(float* logits, const float* z,
                                        const float* u, float factor, int N,
                                        int pair_d_e, int stride,
@@ -2278,6 +2302,10 @@ template void addAttackGraphBias<__nv_bfloat16>(
     const __nv_bfloat16* k, const float* attack_w, const float* gate_q,
     const float* gate_k, int N, int heads, int depth, int d_model,
     bool accumulate, cudaStream_t stream);
+template void applySigmoidGate<__nv_bfloat16>(__nv_bfloat16* x,
+                                               const __nv_bfloat16* gate,
+                                               float scale, int size,
+                                               cudaStream_t stream);
 template void addPairPolicyLogits<__nv_bfloat16>(
     __nv_bfloat16* logits, const __nv_bfloat16* z, const float* u, float factor,
     int N, int pair_d_e, int stride, cudaStream_t stream);

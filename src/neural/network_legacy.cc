@@ -177,7 +177,9 @@ BaseWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
       attack_w(RowMajorByDims(mha.attack_w())),
       attack_gate_q(RowMajorByDims(mha.attack_gate_q())),
       attack_gate_k(RowMajorByDims(mha.attack_gate_k())),
-      pair_att_w(RowMajorByDims(mha.pair_att_w())) {
+      pair_att_w(RowMajorByDims(mha.pair_att_w())),
+      output_gate_w(LayerAdapter(mha.output_gate_w()).as_vector()),
+      output_gate_b(LayerAdapter(mha.output_gate_b()).as_vector()) {
   if (mha.has_rpe_q() || mha.has_rpe_k() || mha.has_rpe_v()) {
     throw Exception("RPE weights file not supported.");
   }

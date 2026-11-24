@@ -1653,7 +1653,7 @@ EncoderBlock<DataType>::EncoderBlock(
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
     ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
-    bool fused_mha)
+    bool fused_mha, float output_gate_scale)
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
@@ -1664,6 +1664,7 @@ EncoderBlock<DataType>::EncoderBlock(
       max_batch_size_(max_batch_size),
       use_fused_mha_(fused_mha),
       use_gemm_ex_(use_gemm_ex) {
+  output_gate_scale_ = output_gate_scale;
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1680,27 +1681,51 @@ EncoderBlock<DataType>::EncoderBlock(
   allocAndUpload<DataType>(&mha_v_w, cpu_weights.mha.v_w, scratch);
   allocAndUpload<DataType>(&mha_v_b, cpu_weights.mha.v_b, scratch);
 
+  // Attention output gate (optional): a fourth slice of the QKV GEMM.
+  has_output_gate_ = !cpu_weights.mha.output_gate_w.empty();
+  if (has_output_gate_) {
+    if (cpu_weights.mha.output_gate_w.size() != cpu_weights.mha.q_w.size() ||
+        cpu_weights.mha.output_gate_b.size() != cpu_weights.mha.q_b.size()) {
+      throw Exception("Attention output gate weights have unexpected sizes.");
+    }
+    allocAndUpload<DataType>(&mha_og_w, cpu_weights.mha.output_gate_w,
+                             scratch);
+    allocAndUpload<DataType>(&mha_og_b, cpu_weights.mha.output_gate_b,
+                             scratch);
+  }
+  const int qkv_slices = has_output_gate_ ? 4 : 3;
+
   // big allocation to hold qkv weights one after the other
   {
     size_t elements = cpu_weights.mha.q_w.size();
-    size_t size = elements * sizeof(DataType) * 3;
+    size_t size = elements * sizeof(DataType) * qkv_slices;
     ReportCUDAErrors(cudaMalloc(&mha_qkv_w, size));
-    ReportCUDAErrors(
-        cudaMemcpy(mha_qkv_w, mha_q_w, size / 3, cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements, mha_k_w, size / 3,
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_w, mha_q_w, size / qkv_slices,
                                 cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements * 2, mha_v_w, size / 3,
-                                cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements, mha_k_w,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements * 2, mha_v_w,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    if (has_output_gate_) {
+      ReportCUDAErrors(cudaMemcpy(mha_qkv_w + elements * 3, mha_og_w,
+                                  size / qkv_slices,
+                                  cudaMemcpyDeviceToDevice));
+    }
 
     elements = cpu_weights.mha.q_b.size();
-    size = elements * sizeof(DataType) * 3;
+    size = elements * sizeof(DataType) * qkv_slices;
     ReportCUDAErrors(cudaMalloc(&mha_qkv_b, size));
-    ReportCUDAErrors(
-        cudaMemcpy(mha_qkv_b, mha_q_b, size / 3, cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements, mha_k_b, size / 3,
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_b, mha_q_b, size / qkv_slices,
                                 cudaMemcpyDeviceToDevice));
-    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements * 2, mha_v_b, size / 3,
-                                cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements, mha_k_b,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements * 2, mha_v_b,
+                                size / qkv_slices, cudaMemcpyDeviceToDevice));
+    if (has_output_gate_) {
+      ReportCUDAErrors(cudaMemcpy(mha_qkv_b + elements * 3, mha_og_b,
+                                  size / qkv_slices,
+                                  cudaMemcpyDeviceToDevice));
+    }
   }
 
   allocAndUpload<DataType>(&mha_dense_w, cpu_weights.mha.dense_w, scratch);
@@ -1956,24 +1981,27 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
   DataType* mha_q;
   DataType* mha_k;
   DataType* mha_v;
+  DataType* mha_og;  // output gate input, when the block has the gate
 
   {
     const int num_inputs = embedding_op_size_;
     const int num_outputs = d_model;
     const int batch = N * 64;
     const int max_batch = max_batch_size_ * 64;
+    const int slices = has_output_gate_ ? 4 : 3;
 
     mha_q = scratch;
     mha_k = mha_q + num_outputs * max_batch;
     mha_v = mha_k + num_outputs * max_batch;
+    mha_og = mha_v + num_outputs * max_batch;
 
     cublasXGemmStridedBatched<DataType>(
         cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch, num_inputs, 1.0f,
         mha_qkv_w, num_inputs, num_inputs * num_outputs, in_out_tensor,
-        num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch, 3,
-        use_gemm_ex_);
-    addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, 3, batch, num_outputs,
-                             max_batch, ACTIVATION_NONE, stream);
+        num_inputs, 0, 0.0f, mha_q, num_outputs, num_outputs * max_batch,
+        slices, use_gemm_ex_);
+    addBiasBatched<DataType>(mha_q, mha_q, mha_qkv_b, slices, batch,
+                             num_outputs, max_batch, ACTIVATION_NONE, stream);
   }
 
   // Attention-logit terms from the pair stream and the attack graph, summed
@@ -2091,6 +2119,12 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
         d_model /*LDC*/,
         // 64 * d_model /*strideC*/,
         N * encoder_heads_);
+  }
+
+  // Attention output gate: buffer2 *= scale * sigmoid(mha_og).
+  if (has_output_gate_) {
+    applySigmoidGate<DataType>(buffer2, mha_og, output_gate_scale_,
+                               N * 64 * d_model, stream);
   }
 
   // #final dense layer (mha_dense), buffer2 -> buffer1
@@ -2264,6 +2298,8 @@ EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(mha_v_b));
   ReportCUDAErrors(cudaFree(mha_qkv_w));
   ReportCUDAErrors(cudaFree(mha_qkv_b));
+  if (mha_og_w) ReportCUDAErrors(cudaFree(mha_og_w));
+  if (mha_og_b) ReportCUDAErrors(cudaFree(mha_og_b));
   ReportCUDAErrors(cudaFree(mha_dense_w));
   ReportCUDAErrors(cudaFree(mha_dense_b));
   ReportCUDAErrors(cudaFree(ln1_gammas));
@@ -2427,13 +2463,16 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
   const float eps = constants.epsilon > 0.0f
                         ? constants.epsilon
                         : (is_pe_dense_embedding_ ? 1e-3f : 1e-6f);
+  const float output_gate_scale = constants.output_gate_scale > 0.0f
+                                      ? constants.output_gate_scale
+                                      : 1.0f;
   has_attack_graph_ = UsesAttackGraph(weights);
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        eps, use_gemm_ex, use_fused_mha_);
+        eps, use_gemm_ex, use_fused_mha_, output_gate_scale);
     encoder_weights_.emplace_back(pW);
     if (pW->pair_att_w && pW->pair_d_e_ != pair_d_e_) {
       throw Exception("pair_att_w does not match the pair stream.");

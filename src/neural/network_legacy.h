@@ -87,6 +87,10 @@ struct BaseWeights {
     Vec attack_gate_q;  // [heads, C, depth]
     Vec attack_gate_k;  // [heads, C, depth]
     Vec pair_att_w;     // [heads, pair_d_e]
+    // Attention output gate: the attention output is multiplied by
+    // scale * sigmoid(x @ output_gate_w + output_gate_b) before dense_w.
+    Vec output_gate_w;  // like q_w
+    Vec output_gate_b;  // like q_b
   };
 
   struct FFN {

@@ -97,6 +97,7 @@ struct AttentionBodyConstants {
   float encoder_alpha = 0.0f;        // (2 * encoders)^-0.25
   float embedding_ffn_alpha = 0.0f;  // (2 * encoders)^-0.25
   float epsilon = 0.0f;              // 1e-3 (PE-dense nets) or 1e-6
+  float output_gate_scale = 0.0f;    // 1 (blocks with an output gate)
   bool input_gate_relu = false;      // multiplicative input gate max(g, 0)
 };
 
@@ -395,7 +396,7 @@ class EncoderBlock {
                DataType* smolgen_global_scratch, int smolgen_global_size,
                int max_batch_size, ActivationFunction smolgen_act,
                ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
-               bool fused_mha);
+               bool fused_mha, float output_gate_scale = 1.0f);
   ~EncoderBlock();
 
   // attack_bits and pair_stream: the AttackGraphState, for blocks with
@@ -410,6 +411,8 @@ class EncoderBlock {
   DataType *mha_q_w, *mha_q_b;
   DataType *mha_k_w, *mha_k_b;
   DataType *mha_v_w, *mha_v_b;
+  DataType *mha_og_w = nullptr, *mha_og_b = nullptr;  // output gate
+  // q, k, v (and the output gate's when present) one after the other.
   DataType *mha_qkv_w, *mha_qkv_b;
   DataType *mha_dense_w, *mha_dense_b;
 
@@ -458,6 +461,9 @@ class EncoderBlock {
   int smol_global_size_;
 
   int pair_d_e_ = 0;  // pair_att_w: [heads, pair_d_e_]
+
+  bool has_output_gate_ = false;
+  float output_gate_scale_;
 
   const int max_batch_size_;
   const bool use_fused_mha_;

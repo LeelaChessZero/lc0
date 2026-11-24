@@ -96,8 +96,9 @@ static size_t getMaxAttentionHeadSize(
 }
 
 // The parts of a NETWORK_ATTENTIONBODY_BT6 file this backend runs: the SwiGLU
-// FFN, the attack-graph attention terms and the static pair stream. Other BT6
-// parts are refused by name rather than ignored.
+// FFN, the attack-graph attention terms, the static pair stream and the
+// attention output gate. Other BT6 parts are refused by name rather than
+// ignored.
 void CheckBt6Format(const pblczero::Net& file) {
   const auto& nf = file.format().network_format();
   if (!nf.has_bt6()) {
@@ -120,9 +121,6 @@ void CheckBt6Format(const pblczero::Net& file) {
   }
   for (const auto& enc : w.encoder()) {
     const auto& mha = enc.mha();
-    if (mha.has_output_gate_w() || mha.has_output_gate_b()) {
-      refuse("The attention output gate (output_gate_w)");
-    }
     if (mha.has_edge_e_w() || mha.has_edge_m_w() || mha.has_edge_g_w() ||
         mha.has_edge_g_b() || mha.has_edge_t_edge() || mha.has_edge_t_node()) {
       refuse("The edge stream");
@@ -187,9 +185,15 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
   size = std::max(size, std::max(matmul_qk_size, output_size));
 
   size_t qkv_size = N * 64 * encoder_d_model;
+  // q, k, v (and the attention output gate's input) share one allocation.
+  size_t qkv_slices = 3;
+  if (weights.encoder.size() > 0 &&
+      !weights.encoder[0].mha.output_gate_w.empty()) {
+    qkv_slices = 4;
+  }
   // We store qkv in single allocation, and other intermediate tensors are
   // sometimes stored by splitting an allocation into two halves.
-  size = std::max(2 * size, 3 * qkv_size);
+  size = std::max(2 * size, qkv_slices * qkv_size);
   return size;
 }
 
@@ -634,6 +638,8 @@ class CudaNetwork : public Network {
         constants.embedding_ffn_alpha = bt6.embedding_ffn_alpha();
         constants.epsilon = bt6.norm_epsilon();
         constants.input_gate_relu = true;
+        constants.output_gate_scale =
+            bt6.has_output_gate_scale() ? bt6.output_gate_scale() : 1.0f;
       }
 
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
