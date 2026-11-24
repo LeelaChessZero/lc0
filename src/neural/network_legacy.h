@@ -281,6 +281,10 @@ struct MultiHeadWeights : public BaseWeights {
   // bins, depth attention): not loaded, named here for error messages.
   std::vector<std::string> unsupported_policy_heads;
   std::vector<std::string> unsupported_value_heads;
+  // The heads served when the backend options select none (the net file's
+  // default_head, else vanilla / winner).
+  std::string default_policy_head = "vanilla";
+  std::string default_value_head = "winner";
 };
 
 enum InputEmbedding {

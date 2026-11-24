@@ -64,12 +64,17 @@ class CudaNetwork;
 // features this backend lacks says so.
 static std::string MissingHeadMessage(
     const std::string& kind, const std::string& name,
-    const std::vector<std::string>& unsupported, const std::string& features) {
+    const std::vector<std::string>& unsupported, const std::string& features,
+    bool from_file) {
+  const std::string what = from_file
+                               ? "The net file's default " + kind + " head '"
+                               : "The " + kind + " head '";
   if (std::find(unsupported.begin(), unsupported.end(), name) !=
       unsupported.end()) {
-    return "The " + kind + " head '" + name + "' needs features (" + features +
+    return what + name + "' needs features (" + features +
            ") that this backend does not support.";
   }
+  if (from_file) return what + name + "' does not exist in this net.";
   return "The " + kind + " head you specified '" + name +
          "' does not exist in this net.";
 }
@@ -506,20 +511,23 @@ class CudaNetwork : public Network {
     }
 
     std::string policy_head =
-        options.GetOrDefault<std::string>("policy_head", "vanilla");
+        options.GetOrDefault<std::string>("policy_head",
+                                          weights.default_policy_head);
     // Check that selected policy head exists.
     if (!weights.policy_heads.contains(policy_head)) {
-      throw Exception(MissingHeadMessage("policy", policy_head,
-                                         weights.unsupported_policy_heads,
-                                         "child-Q bins or depth attention"));
+      throw Exception(MissingHeadMessage(
+          "policy", policy_head, weights.unsupported_policy_heads,
+          "child-Q bins or depth attention",
+          !options.Exists<std::string>("policy_head")));
     }
     std::string value_head =
-        options.GetOrDefault<std::string>("value_head", "winner");
+        options.GetOrDefault<std::string>("value_head",
+                                          weights.default_value_head);
     // Check that selected value head exists.
     if (!weights.value_heads.contains(value_head)) {
-      throw Exception(MissingHeadMessage("value", value_head,
-                                         weights.unsupported_value_heads,
-                                         "depth attention"));
+      throw Exception(MissingHeadMessage(
+          "value", value_head, weights.unsupported_value_heads,
+          "depth attention", !options.Exists<std::string>("value_head")));
     }
     const size_t pair_d_e = weights.pair_t_off.size() / 225;
     if (!weights.policy_heads.at(policy_head).pair_u.empty() &&

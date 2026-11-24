@@ -273,6 +273,10 @@ message Weights {
     optional PolicyHead opponent = 6;
     // map<string, PolicyHead> policy_head_map = 7;
     repeated PolicyHeadMap policy_head_map = 7;
+    // The head a backend serves when no policy head is selected: one of the
+    // heads above by its backend name ("vanilla", "optimistic", "soft",
+    // "opponent") or a policy_head_map key. Absent: "vanilla".
+    optional string default_head = 8;
   }
 
   message ValueHeadMap {
@@ -286,6 +290,9 @@ message Weights {
     optional ValueHead st = 3;
     // map<string, ValueHead> value_head_map = 4;
     repeated ValueHeadMap value_head_map = 4;
+    // The head a backend serves when no value head is selected: "winner",
+    // "q", "st" or a value_head_map key. Absent: "winner".
+    optional string default_head = 5;
   }
   // BT6: the static pair stream (it replaces smolgen). Z = rms(E @ p_in +
   // t_off[rel(i, j)]) [pair_d_e, 64, 64], computed once per position, with

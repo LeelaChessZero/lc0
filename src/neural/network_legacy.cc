@@ -401,6 +401,12 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
       throw Exception("Could not find valid value head weights.");
     }
   }
+  if (weights.policy_heads().has_default_head()) {
+    default_policy_head = weights.policy_heads().default_head();
+  }
+  if (weights.value_heads().has_default_head()) {
+    default_value_head = weights.value_heads().default_head();
+  }
 }
 
 }  // namespace lczero

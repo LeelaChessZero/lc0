@@ -1048,14 +1048,16 @@ BlasNetwork<use_eigen>::BlasNetwork(const WeightsFile& file,
     conv2.weights = WinogradFilterTransformF(conv2.weights, channels, channels);
   }
 
-  policy_head_ = options.GetOrDefault<std::string>("policy_head", "vanilla");
+  policy_head_ = options.GetOrDefault<std::string>(
+      "policy_head", weights_.default_policy_head);
   // Check that selected policy head exists.
   if (weights_.policy_heads.count(policy_head_) == 0) {
     throw Exception("The policy head you specified '" + policy_head_ +
                     "' does not exist in this net.");
   }
 
-  value_head_ = options.GetOrDefault<std::string>("value_head", "winner");
+  value_head_ = options.GetOrDefault<std::string>(
+      "value_head", weights_.default_value_head);
   // Check that selected value head exists.
   if (weights_.value_heads.count(value_head_) == 0) {
     throw Exception("The value head you specified '" + value_head_ +
