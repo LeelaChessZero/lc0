@@ -29,6 +29,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <type_traits>
 
 #include "cuda_common.h"
@@ -92,6 +93,68 @@ static size_t getMaxAttentionHeadSize(
   // sometimes stored by splitting an allocation into two halves.
   size = std::max(2 * size, 3 * qkv_size);
   return size;
+}
+
+// The parts of a NETWORK_ATTENTIONBODY_BT6 file this backend runs: the SwiGLU
+// FFN, the attack-graph attention terms and the static pair stream. Other BT6
+// parts are refused by name rather than ignored.
+void CheckBt6Format(const pblczero::Net& file) {
+  const auto& nf = file.format().network_format();
+  if (!nf.has_bt6()) {
+    throw Exception("NETWORK_ATTENTIONBODY_BT6 file without bt6 format.");
+  }
+  const auto& bt6 = nf.bt6();
+  const auto& w = file.weights();
+  auto refuse = [](const std::string& what) {
+    throw Exception(what + " is not supported by the " BACKEND_NAME
+                           " backend yet.");
+  };
+  if (bt6.prenorm() || w.has_encoder_final_norm()) {
+    refuse("Pre-norm encoder blocks (bt6.prenorm, encoder_final_norm)");
+  }
+  if (bt6.kv_heads() != 0 && bt6.kv_heads() != bt6.heads()) {
+    refuse("Grouped KV heads (bt6.kv_heads)");
+  }
+  if (bt6.edge_update_after_size() > 0 || w.has_edge_stream()) {
+    refuse("The edge stream");
+  }
+  for (const auto& enc : w.encoder()) {
+    const auto& mha = enc.mha();
+    if (mha.has_output_gate_w() || mha.has_output_gate_b()) {
+      refuse("The attention output gate (output_gate_w)");
+    }
+    if (mha.has_edge_e_w() || mha.has_edge_m_w() || mha.has_edge_g_w() ||
+        mha.has_edge_g_b() || mha.has_edge_t_edge() || mha.has_edge_t_node()) {
+      refuse("The edge stream");
+    }
+  }
+  // The attack-graph channels must be those computeAttackGraph produces:
+  // the base channels, then their transposes.
+  static const char* const kBaseChannels[] = {
+      "attacks_stm",   "attacks_opp",   "defends_stm",   "defends_opp",
+      "xray_stm",      "xray_opp",      "pinray_stm",    "pinray_opp",
+      "kingring1_opp", "kingring1_own", "kingring2_opp", "kingring2_own",
+      "blockescape",   "gained_stm",    "gained_opp",    "lost_stm",
+      "lost_opp"};
+  constexpr int kBase = sizeof(kBaseChannels) / sizeof(kBaseChannels[0]);
+  static_assert(2 * kBase == kAttackGraphChannels);
+  const int channels = static_cast<int>(bt6.edge_channel_size());
+  if (channels == 0) return;
+  if (channels != kAttackGraphChannels) {
+    throw Exception("The net's attack graph has " + std::to_string(channels) +
+                    " channels; this backend computes " +
+                    std::to_string(kAttackGraphChannels) + ".");
+  }
+  for (int c = 0; c < kAttackGraphChannels; c++) {
+    const std::string expected = c < kBase ? std::string(kBaseChannels[c])
+                                           : kBaseChannels[c - kBase] +
+                                                 std::string("_T");
+    if (bt6.edge_channel(c) != expected) {
+      throw Exception("Attack-graph channel " + std::to_string(c) + " is '" +
+                      std::string(bt6.edge_channel(c)) + "', expected '" +
+                      expected + "'.");
+    }
+  }
 }
 
 static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
@@ -218,8 +281,11 @@ class CudaNetwork : public Network {
     using NF = pblczero::NetworkFormat;
     conv_policy_ = nf.policy() == NF::POLICY_CONVOLUTION;
     attn_policy_ = nf.policy() == NF::POLICY_ATTENTION;
-    attn_body_ = nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
-                 nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT;
+    attn_body_ =
+        nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT ||
+        nf.network() == NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT ||
+        nf.network() == NF::NETWORK_ATTENTIONBODY_BT6;
+    if (nf.network() == NF::NETWORK_ATTENTIONBODY_BT6) CheckBt6Format(file);
 
     max_batch_size_ = options.GetOrDefault<int>("max_batch", 1024);
     // min_batch_size_ is chosen as 4 as it is common that for sizes less than
@@ -440,6 +506,12 @@ class CudaNetwork : public Network {
       throw Exception("The value head you specified '" + value_head +
                       "' does not exist in this net.");
     }
+    const size_t pair_d_e = weights.pair_t_off.size() / 225;
+    if (!weights.policy_heads.at(policy_head).pair_u.empty() &&
+        weights.policy_heads.at(policy_head).pair_u.size() != pair_d_e) {
+      throw Exception("The policy head's pair_u does not match the net's "
+                      "pair stream.");
+    }
 
     // Attention policy head or body may need more memory
     const size_t attentionPolicySize =
@@ -452,7 +524,13 @@ class CudaNetwork : public Network {
     scratch_size_ = std::max(scratch_size_,
                              std::max(attentionPolicySize, attentionBodySize));
 
-    ReportCUDAErrors(cudaMalloc(&scratch_mem_, scratch_size_));
+    // The attack-graph state lives after the scratch area (layers.h).
+    attack_graph_bytes_ =
+        UsesAttackGraph(weights)
+            ? AttackGraphState<DataType>::Bytes(max_batch_size_, pair_d_e)
+            : 0;
+    ReportCUDAErrors(
+        cudaMalloc(&scratch_mem_, scratch_size_ + attack_graph_bytes_));
 
     const bool mish_net = file.format().network_format().default_activation() ==
                           pblczero::NetworkFormat::DEFAULT_ACTIVATION_MISH;
@@ -548,13 +626,23 @@ class CudaNetwork : public Network {
               : static_cast<ActivationFunction>(ffn_activation);
       activations.default_activation = act;
 
+      AttentionBodyConstants constants;
+      if (nf.network() == NF::NETWORK_ATTENTIONBODY_BT6) {
+        const auto& bt6 = nf.bt6();
+        constants.encoder_alpha =
+            bt6.has_residual_alpha() ? bt6.residual_alpha() : 1.0f;
+        constants.embedding_ffn_alpha = bt6.embedding_ffn_alpha();
+        constants.epsilon = bt6.norm_epsilon();
+        constants.input_gate_relu = true;
+      }
+
       auto attention_body = std::make_unique<AttentionBody<DataType>>(
           weights, scratch_mem_, activations, numBlocks_,
           numBlocks_ > 0 ? kNumFilters : kInputPlanes, max_batch_size_,
           static_cast<InputEmbedding>(
               file.format().network_format().input_embedding()) ==
               InputEmbedding::INPUT_EMBEDDING_PE_DENSE,
-          use_gemm_ex, use_fused_mha);
+          use_gemm_ex, use_fused_mha, constants);
       network_.emplace_back(std::move(attention_body));
 
       encoder_last_ = getLastLayer();
@@ -1142,8 +1230,8 @@ class CudaNetwork : public Network {
     if (free_inputs_outputs_.empty()) {
       constexpr bool is_fp16 = std::is_same<half, DataType>::value;
       return std::make_unique<InputsOutputs<DataType>>(
-          max_batch_size_, wdl_, moves_left_, tensor_mem_size_, scratch_size_,
-          !has_tensor_cores_ && is_fp16);
+          max_batch_size_, wdl_, moves_left_, tensor_mem_size_,
+          scratch_size_ + attack_graph_bytes_, !has_tensor_cores_ && is_fp16);
     } else {
       std::unique_ptr<InputsOutputs<DataType>> resource =
           std::move(free_inputs_outputs_.front());
@@ -1198,6 +1286,7 @@ class CudaNetwork : public Network {
 
   size_t tensor_mem_size_;
   size_t scratch_size_;
+  size_t attack_graph_bytes_ = 0;  // after the scratch area (layers.h)
 
   // this copy is used only for initialization when multi-stream is enabled
   void* scratch_mem_;
@@ -1364,6 +1453,7 @@ std::unique_ptr<Network> MakeCudaNetwork(const std::optional<WeightsFile>& w,
     case NF::NETWORK_SE_WITH_HEADFORMAT:
     case NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT:
     case NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT:
+    case NF::NETWORK_ATTENTIONBODY_BT6:
       break;
     default:
       throw Exception("Network format " +
@@ -1454,7 +1544,8 @@ std::unique_ptr<Network> MakeCudaNetworkBf16(
     auto nf = weights->format().network_format();
     using NF = pblczero::NetworkFormat;
     if (nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_HEADFORMAT &&
-        nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT) {
+        nf.network() != NF::NETWORK_ATTENTIONBODY_WITH_MULTIHEADFORMAT &&
+        nf.network() != NF::NETWORK_ATTENTIONBODY_BT6) {
       CERR << "WARNING: The " BACKEND_NAME_LC "-bf16 backend currently only supports transformer networks (BT2/BT3/BT4). "
               "Switching to [" BACKEND_NAME_LC "-fp16]...";
       return MakeCudaNetwork<half>(weights, options);

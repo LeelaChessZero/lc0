@@ -31,6 +31,7 @@
 #endif
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include "cuda_common.h"
@@ -48,6 +49,56 @@ namespace NS_BACKEND {
 
 // The Layer objects only hold memory for weights, biases, etc
 // memory for input and output tensors is provided by caller of Eval.
+
+// Per-position state of nets whose attention reads the board's attack graph
+// (NETWORK_ATTENTIONBODY_BT6): the attack-graph bits [N, 64, 64] (one uint64
+// per square pair, see kernels.h) and the static pair stream Z
+// [N, 64 * 64, pair_d_e]. AttentionBody computes them once per evaluation;
+// the encoder blocks and the policy head read them. They live after the
+// scratch area: the network allocates scratch_size + Bytes() and every layer
+// is still given scratch_size.
+template <typename DataType>
+struct AttackGraphState {
+  uint64_t* bits;
+  DataType* pair;
+
+  static size_t Bytes(int max_batch_size, int pair_d_e) {
+    return kAlign + BitsBytes(max_batch_size) +
+           static_cast<size_t>(max_batch_size) * 64 * 64 * pair_d_e *
+               sizeof(DataType);
+  }
+  AttackGraphState(void* scratch, size_t scratch_size, int max_batch_size) {
+    char* base = static_cast<char*>(scratch) +
+                 (scratch_size + kAlign - 1) / kAlign * kAlign;
+    bits = reinterpret_cast<uint64_t*>(base);
+    pair = reinterpret_cast<DataType*>(base + BitsBytes(max_batch_size));
+  }
+
+ private:
+  static constexpr size_t kAlign = 256;
+  static size_t BitsBytes(int max_batch_size) {
+    return static_cast<size_t>(max_batch_size) * 64 * 64 * sizeof(uint64_t);
+  }
+};
+
+// Whether the attention body computes an AttackGraphState for these weights:
+// a pair stream, or attack-graph / pair stream terms in an encoder block.
+inline bool UsesAttackGraph(const MultiHeadWeights& weights) {
+  bool uses = !weights.pair_p_in.empty();
+  for (const auto& enc : weights.encoder) {
+    uses = uses || !enc.mha.attack_w.empty() || !enc.mha.pair_att_w.empty();
+  }
+  return uses;
+}
+
+// Constants of the attention body that a net format sets; zero (false) means
+// the value older formats imply.
+struct AttentionBodyConstants {
+  float encoder_alpha = 0.0f;        // (2 * encoders)^-0.25
+  float embedding_ffn_alpha = 0.0f;  // (2 * encoders)^-0.25
+  float epsilon = 0.0f;              // 1e-3 (PE-dense nets) or 1e-6
+  bool input_gate_relu = false;      // multiplicative input gate max(g, 0)
+};
 
 template <typename DataType>
 class BaseLayer {
@@ -347,9 +398,13 @@ class EncoderBlock {
                bool fused_mha);
   ~EncoderBlock();
 
+  // attack_bits and pair_stream: the AttackGraphState, for blocks with
+  // attack-graph terms or pair_att_w.
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas, cudaStream_t stream,
-            DataType*** offset_pointers) const;
+            DataType*** offset_pointers,
+            const uint64_t* attack_bits = nullptr,
+            const DataType* pair_stream = nullptr) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
@@ -372,6 +427,11 @@ class EncoderBlock {
   DataType *smol_ln1_gammas, *smol_ln1_betas;
   DataType *smol_ln2_gammas, *smol_ln2_betas;
   DataType *smol_global;
+
+  // Attention-logit terms from the attack graph and the pair stream.
+  float *attack_w = nullptr, *attack_gate_q = nullptr,
+        *attack_gate_k = nullptr;
+  DataType *pair_att_w = nullptr;
 
   int mha_q_size_;
   int mha_k_size_;
@@ -396,6 +456,8 @@ class EncoderBlock {
   int smol_dense_1_size_;
   int smol_dense_2_size_;
   int smol_global_size_;
+
+  int pair_d_e_ = 0;  // pair_att_w: [heads, pair_d_e_]
 
   const int max_batch_size_;
   const bool use_fused_mha_;
@@ -435,6 +497,7 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   DataType *ip4_pol_w_;               // "ppo" in policy attention
 
   DataType *wqk_w_, *wqk_b_;  // allocation containing both "wq" and "wq"
+  float *pair_u_ = nullptr;   // pair stream term [pair_d_e_]
 
   int embedding_op_size_;
   int wq_op_size_;
@@ -442,6 +505,8 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
 
   int encoder_heads_;
   int policy_d_model_;
+  int pair_d_e_ = 0;
+  int max_batch_size_;
   bool attention_body_;
   ActivationFunction act_;
 
@@ -486,7 +551,8 @@ class AttentionBody : public BaseLayer<DataType> {
   AttentionBody(const MultiHeadWeights& weights, void* scratch,
                 Activations activations, int num_res_blocks, int input_c,
                 int max_batch_size, bool is_pe_dense_embedding,
-                bool use_gemm_ex, bool fused_mha);
+                bool use_gemm_ex, bool fused_mha,
+                const AttentionBodyConstants& constants = {});
   ~AttentionBody();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -505,6 +571,7 @@ class AttentionBody : public BaseLayer<DataType> {
   DataType *ip_emb_ffn_ln_g_, *ip_emb_ffn_ln_b_;  // input embedding FFN layernorm gamma and beta
   DataType *smolgen_global_;  // global smolgen weights for all encoder layers
   DataType *pos_encoding_;
+  float *pair_p_in_ = nullptr, *pair_t_off_ = nullptr;  // static pair stream
   int embedding_dense_size_;
   int embedding_op_size_;
   int embedding_ffn_size_;
@@ -515,6 +582,10 @@ class AttentionBody : public BaseLayer<DataType> {
   int num_resi_blocks_;
   int input_c_;
   int smolgen_global_size_;
+  int max_batch_size_;
+  int pair_d_e_ = 0;
+  bool has_attack_graph_ = false;  // computes the AttackGraphState
+  float embedding_ffn_alpha_;
   const bool has_gating_;
   const bool has_smolgen_;
   bool is_pe_dense_embedding_;  // flag for dense position encoding

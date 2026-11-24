@@ -28,6 +28,35 @@
 namespace lczero {
 namespace {
 static constexpr float kEpsilon = 1e-5f;
+
+// A layer that carries its shape (dims) holds the tensor with the axes
+// reversed: row-major over dims[k-1], ..., dims[0], the layout lc0's dense
+// weights use. Returns it row-major over dims[0], ..., dims[k-1].
+std::vector<float> RowMajorByDims(const pblczero::Weights::Layer& layer) {
+  std::vector<float> stored = LayerAdapter(layer).as_vector();
+  const auto& dims = layer.dims();
+  if (stored.empty() || dims.size() < 2) return stored;
+  size_t total = 1;
+  for (auto d : dims) total *= d;
+  if (total != stored.size()) {
+    throw Exception("Weights layer size does not match its dims.");
+  }
+  const size_t k = dims.size();
+  std::vector<float> out(total);
+  std::vector<size_t> idx(k, 0);
+  for (size_t o = 0; o < total; o++) {
+    // idx = the row-major multi-index of o over dims; stored index = the
+    // row-major index of the reversed multi-index over the reversed dims.
+    size_t s = 0;
+    for (size_t a = k; a-- > 0;) s = s * dims[a] + idx[a];
+    out[o] = stored[s];
+    for (size_t a = k; a-- > 0;) {
+      if (++idx[a] < dims[a]) break;
+      idx[a] = 0;
+    }
+  }
+  return out;
+}
 }  // namespace
 
 BaseWeights::BaseWeights(const pblczero::Weights& weights)
@@ -53,7 +82,9 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
       ip2_mov_w(LayerAdapter(weights.ip2_mov_w()).as_vector()),
       ip2_mov_b(LayerAdapter(weights.ip2_mov_b()).as_vector()),
       smolgen_w(LayerAdapter(weights.smolgen_w()).as_vector()),
-      has_smolgen(weights.has_smolgen_w()) {
+      has_smolgen(weights.has_smolgen_w()),
+      pair_p_in(RowMajorByDims(weights.pair_stream().p_in())),
+      pair_t_off(RowMajorByDims(weights.pair_stream().t_off())) {
   for (const auto& res : weights.residual()) {
     residual.emplace_back(res);
   }
@@ -142,7 +173,11 @@ BaseWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
       dense_w(LayerAdapter(mha.dense_w()).as_vector()),
       dense_b(LayerAdapter(mha.dense_b()).as_vector()),
       smolgen(Smolgen(mha.smolgen())),
-      has_smolgen(mha.has_smolgen()) {
+      has_smolgen(mha.has_smolgen()),
+      attack_w(RowMajorByDims(mha.attack_w())),
+      attack_gate_q(RowMajorByDims(mha.attack_gate_q())),
+      attack_gate_k(RowMajorByDims(mha.attack_gate_k())),
+      pair_att_w(RowMajorByDims(mha.pair_att_w())) {
   if (mha.has_rpe_q() || mha.has_rpe_k() || mha.has_rpe_v()) {
     throw Exception("RPE weights file not supported.");
   }
@@ -187,7 +222,8 @@ MultiHeadWeights::PolicyHead::PolicyHead(
       ip2_pol_b(LayerAdapter(policyhead.ip2_pol_b()).as_vector()),
       ip3_pol_w(LayerAdapter(policyhead.ip3_pol_w()).as_vector()),
       ip3_pol_b(LayerAdapter(policyhead.ip3_pol_b()).as_vector()),
-      ip4_pol_w(LayerAdapter(policyhead.ip4_pol_w()).as_vector()) {
+      ip4_pol_w(LayerAdapter(policyhead.ip4_pol_w()).as_vector()),
+      pair_u(LayerAdapter(policyhead.pair_u()).as_vector()) {
   pol_encoder_head_count = policyhead.pol_headcount();
   for (const auto& enc : policyhead.pol_encoder()) {
     pol_encoder.emplace_back(enc);

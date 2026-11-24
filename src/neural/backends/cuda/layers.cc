@@ -26,6 +26,7 @@
 */
 #include "layers.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <vector>
@@ -1583,6 +1584,7 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
     void* scratch, bool attention_body, ActivationFunction act,
     int max_batch_size, bool use_gemm_ex)
     : BaseLayer<DataType>(64 * 64 + 24 * 8, 1, 1, ip),
+      max_batch_size_(max_batch_size),
       attention_body_(attention_body),
       // Old networks without attention body (e.g. T79) use hardcoded SELU
       // activations.
@@ -1625,6 +1627,11 @@ AttentionPolicyHead<DataType>::AttentionPolicyHead(
   }
 
   allocAndUpload<DataType>(&ip4_pol_w_, weights.ip4_pol_w, scratch);
+
+  if (!weights.pair_u.empty()) {
+    pair_d_e_ = weights.pair_u.size();
+    allocAndUpload<float>(&pair_u_, weights.pair_u, scratch);
+  }
 
   for (const auto& enc : weights.pol_encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
@@ -1749,6 +1756,28 @@ EncoderBlock<DataType>::EncoderBlock(
     // GPU memory already allocated in AttentionBody.
     smol_global = smolgen_global_scratch;
   }
+
+  // Attention-logit terms from the attack graph and the pair stream.
+  const auto& mha = cpu_weights.mha;
+  if (!mha.attack_w.empty() || !mha.attack_gate_q.empty() ||
+      !mha.attack_gate_k.empty()) {
+    const size_t c = static_cast<size_t>(heads) * kAttackGraphChannels;
+    const size_t depth = mha_q_size_ / heads;
+    if (mha.attack_w.size() != c || mha.attack_gate_q.size() != c * depth ||
+        mha.attack_gate_k.size() != c * depth) {
+      throw Exception("Attack-graph attention weights have unexpected sizes.");
+    }
+    allocAndUpload<float>(&attack_w, mha.attack_w, scratch);
+    allocAndUpload<float>(&attack_gate_q, mha.attack_gate_q, scratch);
+    allocAndUpload<float>(&attack_gate_k, mha.attack_gate_k, scratch);
+  }
+  if (!mha.pair_att_w.empty()) {
+    if (mha.pair_att_w.size() % heads != 0) {
+      throw Exception("pair_att_w size is not a multiple of the head count.");
+    }
+    pair_d_e_ = mha.pair_att_w.size() / heads;
+    allocAndUpload<DataType>(&pair_att_w, mha.pair_att_w, scratch);
+  }
 }
 
 template <typename DataType>
@@ -1851,7 +1880,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                                   DataType* scratch, DataType* buffer1,
                                   DataType* buffer2, cublasHandle_t cublas,
                                   cudaStream_t stream,
-                                  DataType*** offset_pointers) const {
+                                  DataType*** offset_pointers,
+                                  const uint64_t* attack_bits,
+                                  const DataType* pair_stream) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
@@ -1945,6 +1976,26 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                              max_batch, ACTIVATION_NONE, stream);
   }
 
+  // Attention-logit terms from the pair stream and the attack graph, summed
+  // into buffer2 after smolgen's; buffer2 is then the logits' bias.
+  if (pair_att_w) {
+    // buffer2[n, h, p] (+)= pair_att_w[h, :] . pair_stream[n, p, :]
+    assert(pair_stream != nullptr);
+    cublasXGemmStridedBatched<DataType>(
+        cublas, CUBLAS_OP_T, CUBLAS_OP_N, 64 * 64, encoder_heads_, pair_d_e_,
+        1.0f, pair_stream, pair_d_e_, 64 * 64 * pair_d_e_, pair_att_w,
+        pair_d_e_, 0, has_smolgen_ ? 1.0f : 0.0f, buffer2, 64 * 64,
+        64 * 64 * encoder_heads_, N, use_gemm_ex_);
+  }
+  if (attack_w) {
+    assert(attack_bits != nullptr);
+    addAttackGraphBias<DataType>(buffer2, attack_bits, mha_q, mha_k, attack_w,
+                                 attack_gate_q, attack_gate_k, N,
+                                 encoder_heads_, depth, d_model,
+                                 has_smolgen_ || pair_att_w, stream);
+  }
+  const bool has_logit_bias = has_smolgen_ || pair_att_w || attack_w;
+
   // Apply split_heads() to q, k and v
   // which basically transposes (batch_size, 64, num_heads, depth)
   // to (batch_size, num_heads, 64, depth)
@@ -1969,7 +2020,7 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     // TODO: check if we need skip in a different tensor than same tensor as
     // output!
     fusedMHA<DataType>(buffer2, mha_q, mha_k, mha_v,
-                       has_smolgen_ ? buffer2 : nullptr, N, encoder_heads_,
+                       has_logit_bias ? buffer2 : nullptr, N, encoder_heads_,
                        depth, stream);
   } else
 #endif
@@ -2015,9 +2066,9 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
 
     // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
     // attention_weights -> buffer1
-    if (has_smolgen_) {
-      // Add smolgen weights to the scaled matmul_qk attention logits before
-      // softmax.
+    if (has_logit_bias) {
+      // Add smolgen weights (and the attack-graph and pair stream terms) to
+      // the scaled matmul_qk attention logits before softmax.
       Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, stream);
     } else {
       Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1,
@@ -2170,6 +2221,14 @@ void AttentionPolicyHead<DataType>::Eval(
         wq /*B*/, policy_d_model_ /*LDB*/, 64 * policy_d_model_, /*strideB*/
         0.0f, output /*C*/,  // output (policy_attn_logits)
         64 /*LDC*/, 64 * 64 + 8 * 24 /*strideC*/, N, use_gemm_ex_);
+
+    if (pair_u_) {
+      // policy_attn_logits[from, to] += pair_u . Z[from, to] / dk
+      AttackGraphState<DataType> state(scratch, scratch_size,
+                                       max_batch_size_);
+      addPairPolicyLogits<DataType>(output, state.pair, pair_u_, factor, N,
+                                    pair_d_e_, 64 * 64 + 8 * 24, stream);
+    }
   }
 
   // Compute promotion_logits in a single kernel (and put the result just after
@@ -2191,6 +2250,7 @@ AttentionPolicyHead<DataType>::~AttentionPolicyHead() {
   ReportCUDAErrors(cudaFree(ip4_pol_w_));
   ReportCUDAErrors(cudaFree(wqk_w_));
   ReportCUDAErrors(cudaFree(wqk_b_));
+  if (pair_u_) ReportCUDAErrors(cudaFree(pair_u_));
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
@@ -2226,6 +2286,10 @@ EncoderBlock<DataType>::~EncoderBlock() {
     ReportCUDAErrors(cudaFree(smol_ln2_gammas));
     ReportCUDAErrors(cudaFree(smol_ln2_betas));
   }
+  if (attack_w) ReportCUDAErrors(cudaFree(attack_w));
+  if (attack_gate_q) ReportCUDAErrors(cudaFree(attack_gate_q));
+  if (attack_gate_k) ReportCUDAErrors(cudaFree(attack_gate_k));
+  if (pair_att_w) ReportCUDAErrors(cudaFree(pair_att_w));
 }
 
 template <typename DataType>
@@ -2264,7 +2328,8 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                                        int num_res_blocks, int input_c,
                                        int max_batch_size,
                                        bool is_pe_dense_embedding,
-                                       bool use_gemm_ex, bool fused_mha)
+                                       bool use_gemm_ex, bool fused_mha,
+                                       const AttentionBodyConstants& constants)
     : BaseLayer<DataType>(weights.ip_emb_b.size(), 8, 8, nullptr, false,
                           use_gemm_ex),
       embedding_op_size_(weights.ip_emb_b.size()),
@@ -2272,6 +2337,7 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
       activations_(activations),
       num_resi_blocks_(num_res_blocks),
       input_c_(input_c),
+      max_batch_size_(max_batch_size),
       has_gating_(weights.ip_mult_gate.size() > 0 &&
                   weights.ip_add_gate.size() > 0),
       has_smolgen_(weights.has_smolgen),
@@ -2324,8 +2390,26 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
   }
 
   if (has_gating_) {
-    allocAndUpload<DataType>(&ip_mult_gate_, weights.ip_mult_gate, scratch);
+    if (constants.input_gate_relu) {
+      std::vector<float> mult = weights.ip_mult_gate;
+      for (auto& g : mult) g = std::max(g, 0.0f);
+      allocAndUpload<DataType>(&ip_mult_gate_, mult, scratch);
+    } else {
+      allocAndUpload<DataType>(&ip_mult_gate_, weights.ip_mult_gate, scratch);
+    }
     allocAndUpload<DataType>(&ip_add_gate_, weights.ip_add_gate, scratch);
+  }
+
+  // Static pair stream.
+  if (!weights.pair_p_in.empty() || !weights.pair_t_off.empty()) {
+    pair_d_e_ = weights.pair_t_off.size() / 225;
+    if (weights.pair_t_off.size() != 225 * static_cast<size_t>(pair_d_e_) ||
+        weights.pair_p_in.size() !=
+            static_cast<size_t>(kAttackGraphChannels) * pair_d_e_) {
+      throw Exception("Pair stream weights have unexpected sizes.");
+    }
+    allocAndUpload<float>(&pair_p_in_, weights.pair_p_in, scratch);
+    allocAndUpload<float>(&pair_t_off_, weights.pair_t_off, scratch);
   }
 
   if (has_smolgen_) {
@@ -2334,14 +2418,29 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
   }
 
   int num_encoders = weights.encoder.size();
-  float alpha = (float)pow(2.0 * num_encoders, -0.25);
+  const float deepnorm_alpha = (float)pow(2.0 * num_encoders, -0.25);
+  float alpha = constants.encoder_alpha > 0.0f ? constants.encoder_alpha
+                                               : deepnorm_alpha;
+  embedding_ffn_alpha_ = constants.embedding_ffn_alpha > 0.0f
+                             ? constants.embedding_ffn_alpha
+                             : deepnorm_alpha;
+  const float eps = constants.epsilon > 0.0f
+                        ? constants.epsilon
+                        : (is_pe_dense_embedding_ ? 1e-3f : 1e-6f);
+  has_attack_graph_ = UsesAttackGraph(weights);
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        is_pe_dense_embedding_ ? 1e-3 : 1e-6, use_gemm_ex, use_fused_mha_);
+        eps, use_gemm_ex, use_fused_mha_);
     encoder_weights_.emplace_back(pW);
+    if (pW->pair_att_w && pW->pair_d_e_ != pair_d_e_) {
+      throw Exception("pair_att_w does not match the pair stream.");
+    }
+  }
+  if (has_attack_graph_ && num_res_blocks > 0) {
+    throw Exception("Attack-graph attention needs a pure transformer body.");
   }
 }
 
@@ -2371,6 +2470,8 @@ AttentionBody<DataType>::~AttentionBody() {
   if (has_smolgen_) {
     ReportCUDAErrors(cudaFree(smolgen_global_));
   }
+  if (pair_p_in_) ReportCUDAErrors(cudaFree(pair_p_in_));
+  if (pair_t_off_) ReportCUDAErrors(cudaFree(pair_t_off_));
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
@@ -2384,6 +2485,20 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   DataType* output_tensor = (DataType*)output;
   DataType* buffer1 = (DataType*)input2;
   DataType* buffer2 = buffer1 + scratch_size / (2 * sizeof(DataType));
+
+  // Attack graph and pair stream, from the input planes.
+  const uint64_t* attack_bits = nullptr;
+  const DataType* pair_stream = nullptr;
+  if (has_attack_graph_) {
+    AttackGraphState<DataType> state(scratch, scratch_size, max_batch_size_);
+    computeAttackGraph<DataType>(state.bits, input, N, kInputPlanes, stream);
+    attack_bits = state.bits;
+    if (pair_p_in_) {
+      computePairStream<DataType>(state.pair, state.bits, pair_p_in_,
+                                  pair_t_off_, N, pair_d_e_, stream);
+      pair_stream = state.pair;
+    }
+  }
 
   int inputC = input_c_;
   if (num_resi_blocks_ == 0) {
@@ -2500,11 +2615,10 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
                   num_inputs, buffer1, num_inputs, 0.0f, buffer2, num_outputs);
       // Embedding LN: skip connection and layer normilization (also bias add of
       // prev gemm) buffer2 -> embedding
-      float alpha = (float)pow(2. * encoder_weights_.size(), -0.25);
       LayerNorm<DataType>(N * 64, embedding_ffn_size_, embedding, buffer2,
                           ip_emb_ffn_d2_b_, temp, ip_emb_ffn_ln_g_,
-                          ip_emb_ffn_ln_b_, 1e-3, alpha, ACTIVATION_NONE,
-                          stream);
+                          ip_emb_ffn_ln_b_, 1e-3, embedding_ffn_alpha_,
+                          ACTIVATION_NONE, stream);
     }
 
   } else {
@@ -2533,7 +2647,7 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   // 2. Encoder blocks
   for (const auto pEnc : encoder_weights_) {
     pEnc->Eval(N, output_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
-               stream, offset_pointers);
+               stream, offset_pointers, attack_bits, pair_stream);
   }  // End of encoder blocks
 }
 

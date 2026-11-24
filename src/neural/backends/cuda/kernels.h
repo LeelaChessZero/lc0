@@ -164,6 +164,37 @@ template <typename T>
 void addBiasSwiGLU(T* output, const T* input, const T* bias, const T* gate,
                    int N, int C, cudaStream_t stream);
 
+// Attack graph and static pair stream (NETWORK_ATTENTIONBODY_BT6); see
+// common_kernels.cu for the channels. bits: one uint64 per (position, i, j),
+// bit c = attack-graph channel c at (i, j).
+constexpr int kAttackGraphChannels = 34;
+
+// bits [N, 64, 64] from the NCHW input planes [N, input_planes, 64].
+template <typename T>
+void computeAttackGraph(uint64_t* bits, const T* planes, int N,
+                        int input_planes, cudaStream_t stream);
+
+// z [N, 64 * 64, pair_d_e] = rms(E @ p_in + t_off[rel(i, j)]);
+// p_in [kAttackGraphChannels, pair_d_e], t_off [225, pair_d_e].
+template <typename T>
+void computePairStream(T* z, const uint64_t* bits, const float* p_in,
+                       const float* t_off, int N, int pair_d_e,
+                       cudaStream_t stream);
+
+// logits [N, heads, 64, 64] (+)= the attack-graph terms of the attention
+// logits: attack_w [heads, C], gate_q / gate_k [heads, C, depth].
+template <typename T>
+void addAttackGraphBias(T* logits, const uint64_t* bits, const T* q,
+                        const T* k, const float* attack_w, const float* gate_q,
+                        const float* gate_k, int N, int heads, int depth,
+                        int d_model, bool accumulate, cudaStream_t stream);
+
+// logits[n * stride + p] += factor * (u . z[n, p, :]), p < 64 * 64.
+template <typename T>
+void addPairPolicyLogits(T* logits, const T* z, const float* u, float factor,
+                         int N, int pair_d_e, int stride,
+                         cudaStream_t stream);
+
 template <typename T>
 void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
                        int d_model, T* k, T* q, T* b1, T* v, T* b2,

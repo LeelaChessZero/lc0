@@ -29,6 +29,7 @@
 #include <cassert>
 
 #include "cuda_common.h"
+#include "kernels.h"
 #include "neural/tables/activation_function.h"
 #include "neural/tables/attention_policy_map.h"
 #include "utils/exception.h"
@@ -1359,6 +1360,387 @@ void addBiasSwiGLU(T* output, const T* input, const T* bias, const T* gate,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+// ---------------------------------------------------------------------------
+// Attack graph and static pair stream (NETWORK_ATTENTIONBODY_BT6).
+//
+// The attack graph E [kAttackGraphChannels, 64, 64] holds binary channels over
+// square pairs (i, j), computed from the piece planes of the position and of
+// the position before it. It is stored as one uint64 per (position, i, j):
+// bit c < 17 is base channel c at (i, j), bit 17 + c is base channel c at
+// (j, i) (the "_T" channels). The base channels, in the order of
+// NetworkFormat.bt6.edge_channel: attacks_stm, attacks_opp, defends_stm,
+// defends_opp, xray_stm, xray_opp, pinray_stm, pinray_opp, kingring1_opp,
+// kingring1_own, kingring2_opp, kingring2_own, blockescape, gained_stm,
+// gained_opp, lost_stm, lost_opp.
+
+namespace {
+__device__ __forceinline__ uint64_t SquareBit(int r, int c) {
+  return (r >= 0 && r < 8 && c >= 0 && c < 8) ? (1ull << (8 * r + c)) : 0ull;
+}
+
+__device__ uint64_t KnightAttacks(int s) {
+  const int r = s >> 3, c = s & 7;
+  return SquareBit(r + 1, c + 2) | SquareBit(r + 2, c + 1) |
+         SquareBit(r - 1, c + 2) | SquareBit(r - 2, c + 1) |
+         SquareBit(r + 1, c - 2) | SquareBit(r + 2, c - 1) |
+         SquareBit(r - 1, c - 2) | SquareBit(r - 2, c - 1);
+}
+
+__device__ uint64_t KingAttacks(int s) {
+  const int r = s >> 3, c = s & 7;
+  return SquareBit(r + 1, c) | SquareBit(r - 1, c) | SquareBit(r, c + 1) |
+         SquareBit(r, c - 1) | SquareBit(r + 1, c + 1) |
+         SquareBit(r + 1, c - 1) | SquareBit(r - 1, c + 1) |
+         SquareBit(r - 1, c - 1);
+}
+
+// The squares at king distance exactly 2 from s.
+__device__ uint64_t KingRing2(int s) {
+  const int r = s >> 3, c = s & 7;
+  uint64_t m = 0;
+  for (int dr = -2; dr <= 2; ++dr) {
+    for (int dc = -2; dc <= 2; ++dc) {
+      if (max(abs(dr), abs(dc)) == 2) m |= SquareBit(r + dr, c + dc);
+    }
+  }
+  return m;
+}
+
+// Directions 0-3 diagonal, 4-7 orthogonal; kOppositeDir[d] points back.
+__constant__ int kDirRank[8] = {1, 1, -1, -1, 1, -1, 0, 0};
+__constant__ int kDirFile[8] = {1, -1, 1, -1, 0, 0, 1, -1};
+__constant__ int kOppositeDir[8] = {3, 2, 1, 0, 5, 4, 7, 6};
+
+struct SquareRays {
+  uint64_t reach[8];  // up to and including the first occupied square
+  uint64_t xray[8];   // beyond it, up to and including the second
+  uint64_t first[8];  // the first occupied square (or 0)
+};
+
+__device__ void ComputeSquareRays(int s, uint64_t occ, SquareRays& out) {
+  const int r0 = s >> 3, c0 = s & 7;
+  for (int d = 0; d < 8; ++d) {
+    uint64_t reach = 0, xray = 0, first = 0;
+    int blockers = 0;
+    int r = r0 + kDirRank[d], c = c0 + kDirFile[d];
+    while (r >= 0 && r < 8 && c >= 0 && c < 8 && blockers < 2) {
+      const uint64_t b = 1ull << (8 * r + c);
+      if (blockers == 0) {
+        reach |= b;
+      } else {
+        xray |= b;
+      }
+      if (occ & b) {
+        if (blockers == 0) first = b;
+        ++blockers;
+      }
+      r += kDirRank[d];
+      c += kDirFile[d];
+    }
+    out.reach[d] = reach;
+    out.xray[d] = xray;
+    out.first[d] = first;
+  }
+}
+
+// The squares attacked from s by the side whose pieces are the six planes
+// m[base .. base + 5] (pawn, knight, bishop, rook, queen, king).
+__device__ uint64_t SideAttacksFrom(int s, const uint64_t* m, int base,
+                                    bool us, uint64_t diag, uint64_t orth) {
+  const uint64_t b = 1ull << s;
+  const int r = s >> 3, c = s & 7;
+  uint64_t a = 0;
+  if (m[base + 0] & b) {
+    a |= us ? (SquareBit(r + 1, c - 1) | SquareBit(r + 1, c + 1))
+            : (SquareBit(r - 1, c - 1) | SquareBit(r - 1, c + 1));
+  }
+  if (m[base + 1] & b) a |= KnightAttacks(s);
+  if (m[base + 5] & b) a |= KingAttacks(s);
+  if ((m[base + 2] | m[base + 4]) & b) a |= diag;
+  if ((m[base + 3] | m[base + 4]) & b) a |= orth;
+  return a;
+}
+}  // namespace
+
+// One block of 64 threads per position; thread = square. planes is the NCHW
+// input [N, input_planes, 64]; planes 0-11 are the position's pieces and
+// 13-24 those of the position before it.
+template <typename T>
+__global__ void computeAttackGraph_kernel(uint64_t* bits, const T* planes,
+                                          int input_planes) {
+  constexpr int kPlanesRead = 25;
+  __shared__ unsigned long long plane_masks[kPlanesRead];
+  __shared__ uint64_t rows[17][64];
+  const int n = blockIdx.x;
+  const int i = threadIdx.x;
+  const T* p = planes + static_cast<size_t>(n) * input_planes * 64;
+  if (i < kPlanesRead) plane_masks[i] = 0;
+  __syncthreads();
+  // (Shared atomics rather than a warp ballot: independent of the warp size.)
+  for (int k = 0; k < kPlanesRead; ++k) {
+    if ((float)p[k * 64 + i] > 0.5f) atomicOr(&plane_masks[k], 1ull << i);
+  }
+  __syncthreads();
+  uint64_t m[kPlanesRead];
+  for (int k = 0; k < kPlanesRead; ++k) m[k] = plane_masks[k];
+  const uint64_t bi = 1ull << i;
+
+  // The position (planes 0-11).
+  uint64_t occ_us = 0, occ_them = 0;
+  for (int k = 0; k < 6; ++k) occ_us |= m[k];
+  for (int k = 6; k < 12; ++k) occ_them |= m[k];
+  const uint64_t occ = occ_us | occ_them;
+  SquareRays ry;
+  ComputeSquareRays(i, occ, ry);
+  const uint64_t diag = ry.reach[0] | ry.reach[1] | ry.reach[2] | ry.reach[3];
+  const uint64_t orth = ry.reach[4] | ry.reach[5] | ry.reach[6] | ry.reach[7];
+  const uint64_t xdiag = ry.xray[0] | ry.xray[1] | ry.xray[2] | ry.xray[3];
+  const uint64_t xorth = ry.xray[4] | ry.xray[5] | ry.xray[6] | ry.xray[7];
+  const uint64_t a_stm = SideAttacksFrom(i, m, 0, true, diag, orth);
+  const uint64_t a_opp = SideAttacksFrom(i, m, 6, false, diag, orth);
+  uint64_t x_stm = 0, x_opp = 0;
+  if ((m[2] | m[4]) & bi) x_stm |= xdiag;
+  if ((m[3] | m[4]) & bi) x_stm |= xorth;
+  if ((m[8] | m[10]) & bi) x_opp |= xdiag;
+  if ((m[9] | m[10]) & bi) x_opp |= xorth;
+
+  // pinray (i, t): a slider of the matching kind is the first piece behind i
+  // (seen from i in the opposite direction) and t is the first piece beyond.
+  uint64_t pin_stm = 0, pin_opp = 0;
+  if (occ & bi) {
+    for (int d = 0; d < 8; ++d) {
+      const uint64_t f = ry.first[d];
+      const uint64_t g = ry.first[kOppositeDir[d]];
+      if (!f || !g) continue;
+      const bool diagonal = d < 4;
+      const uint64_t s_us = diagonal ? (m[2] | m[4]) : (m[3] | m[4]);
+      const uint64_t s_them = diagonal ? (m[8] | m[10]) : (m[9] | m[10]);
+      if (s_us & g) pin_stm |= f;
+      if (s_them & g) pin_opp |= f;
+    }
+  }
+
+  // King rings: attacker -> king when the attacker covers a ring square.
+  uint64_t kr1_opp = 0, kr1_own = 0, kr2_opp = 0, kr2_own = 0;
+  for (uint64_t k = m[11]; k; k &= k - 1) {
+    const int ks = __ffsll(static_cast<long long>(k)) - 1;
+    if (a_stm & KingAttacks(ks)) kr1_opp |= 1ull << ks;
+    if (a_stm & KingRing2(ks)) kr2_opp |= 1ull << ks;
+  }
+  for (uint64_t k = m[5]; k; k &= k - 1) {
+    const int ks = __ffsll(static_cast<long long>(k)) - 1;
+    if (a_opp & KingAttacks(ks)) kr1_own |= 1ull << ks;
+    if (a_opp & KingRing2(ks)) kr2_own |= 1ull << ks;
+  }
+  const uint64_t blockescape =
+      (occ & bi) ? (KingAttacks(i) & (m[5] | m[11])) : 0;
+
+  // The position before (planes 13-24): attacks only.
+  const uint64_t* mp = m + 13;
+  uint64_t occ_p = 0;
+  for (int k = 0; k < 12; ++k) occ_p |= mp[k];
+  SquareRays rp;
+  ComputeSquareRays(i, occ_p, rp);
+  const uint64_t diag_p =
+      rp.reach[0] | rp.reach[1] | rp.reach[2] | rp.reach[3];
+  const uint64_t orth_p =
+      rp.reach[4] | rp.reach[5] | rp.reach[6] | rp.reach[7];
+  const uint64_t ap_stm = SideAttacksFrom(i, mp, 0, true, diag_p, orth_p);
+  const uint64_t ap_opp = SideAttacksFrom(i, mp, 6, false, diag_p, orth_p);
+
+  const uint64_t own[17] = {a_stm,          a_opp,         a_stm & occ_us,
+                            a_opp & occ_them, x_stm,       x_opp,
+                            pin_stm,        pin_opp,       kr1_opp,
+                            kr1_own,        kr2_opp,       kr2_own,
+                            blockescape,    a_stm & ~ap_stm, a_opp & ~ap_opp,
+                            ap_stm & ~a_stm, ap_opp & ~a_opp};
+#pragma unroll
+  for (int c = 0; c < 17; ++c) rows[c][i] = own[c];
+  __syncthreads();
+
+  // Thread j writes column j of every row r (coalesced).
+  const int j = i;
+  uint64_t* out = bits + static_cast<size_t>(n) * 64 * 64;
+  for (int r = 0; r < 64; ++r) {
+    uint64_t b = 0;
+#pragma unroll
+    for (int c = 0; c < 17; ++c) {
+      b |= ((rows[c][r] >> j) & 1ull) << c;
+      b |= ((own[c] >> r) & 1ull) << (17 + c);
+    }
+    out[r * 64 + j] = b;
+  }
+}
+
+template <typename T>
+void computeAttackGraph(uint64_t* bits, const T* planes, int N,
+                        int input_planes, cudaStream_t stream) {
+  computeAttackGraph_kernel<T><<<N, 64, 0, stream>>>(bits, planes,
+                                                     input_planes);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// z[n, i * 64 + j, :] = rms(sum over the set bits c of p_in[c, :]
+//                          + t_off[rel(i, j), :]), eps 1e-6, in float.
+template <typename T, int kDe>
+__global__ void computePairStream_kernel(T* z, const uint64_t* bits,
+                                         const float* p_in,
+                                         const float* t_off, int total) {
+  __shared__ float s_p[kAttackGraphChannels * kDe];
+  __shared__ float s_t[225 * kDe];
+  for (int k = threadIdx.x; k < kAttackGraphChannels * kDe; k += blockDim.x) {
+    s_p[k] = p_in[k];
+  }
+  for (int k = threadIdx.x; k < 225 * kDe; k += blockDim.x) s_t[k] = t_off[k];
+  __syncthreads();
+  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total) return;
+  const int i = (idx >> 6) & 63, j = idx & 63;
+  const int rel = 15 * ((i >> 3) - (j >> 3) + 7) + ((i & 7) - (j & 7) + 7);
+  float v[kDe];
+#pragma unroll
+  for (int d = 0; d < kDe; ++d) v[d] = s_t[rel * kDe + d];
+  for (uint64_t b = bits[idx]; b; b &= b - 1) {
+    const int c = __ffsll(static_cast<long long>(b)) - 1;
+#pragma unroll
+    for (int d = 0; d < kDe; ++d) v[d] += s_p[c * kDe + d];
+  }
+  float ss = 0.0f;
+#pragma unroll
+  for (int d = 0; d < kDe; ++d) ss += v[d] * v[d];
+  const float scale = rsqrtf(ss / kDe + 1e-6f);
+  T* out = z + static_cast<size_t>(idx) * kDe;
+#pragma unroll
+  for (int d = 0; d < kDe; ++d) out[d] = (T)(v[d] * scale);
+}
+
+template <typename T>
+void computePairStream(T* z, const uint64_t* bits, const float* p_in,
+                       const float* t_off, int N, int pair_d_e,
+                       cudaStream_t stream) {
+  const int total = N * 64 * 64;
+  const int kBlockSize = 256;
+  const int blocks = DivUp(total, kBlockSize);
+  switch (pair_d_e) {
+    case 8:
+      computePairStream_kernel<T, 8>
+          <<<blocks, kBlockSize, 0, stream>>>(z, bits, p_in, t_off, total);
+      break;
+    case 16:
+      computePairStream_kernel<T, 16>
+          <<<blocks, kBlockSize, 0, stream>>>(z, bits, p_in, t_off, total);
+      break;
+    case 32:
+      computePairStream_kernel<T, 32>
+          <<<blocks, kBlockSize, 0, stream>>>(z, bits, p_in, t_off, total);
+      break;
+    default:
+      throw Exception("Unsupported pair stream width (8, 16 or 32).");
+  }
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// One block of 64 threads per (position, head). logits [N, heads, 64, 64]
+// gets, at (i, j), the sum over the attack-graph channels c set at (i, j) of
+//   attack_w[h, c] + q[n, i, h, :] . gate_q[h, c, :]
+//                  + k[n, j, h, :] . gate_k[h, c, :].
+// q and k are [N, 64, d_model] with head h at columns h * depth.
+template <typename T>
+__global__ void addAttackGraphBias_kernel(T* logits, const uint64_t* bits,
+                                          const T* q, const T* k,
+                                          const float* attack_w,
+                                          const float* gate_q,
+                                          const float* gate_k, int heads,
+                                          int depth, int d_model,
+                                          bool accumulate) {
+  constexpr int C = kAttackGraphChannels;
+  constexpr int kLd = C + 1;
+  __shared__ float s_gq[64 * kLd];
+  __shared__ float s_gk[64 * kLd];
+  __shared__ float s_aw[C];
+  const int n = blockIdx.x / heads;
+  const int h = blockIdx.x % heads;
+  const int t = threadIdx.x;
+  if (t < C) s_aw[t] = attack_w[h * C + t];
+
+  // Row t of q . gate_q[h]^T and of k . gate_k[h]^T.
+  {
+    float aq[C], ak[C];
+#pragma unroll
+    for (int c = 0; c < C; ++c) aq[c] = ak[c] = 0.0f;
+    const size_t row = (static_cast<size_t>(n) * 64 + t) * d_model + h * depth;
+    const float* wq = gate_q + static_cast<size_t>(h) * C * depth;
+    const float* wk = gate_k + static_cast<size_t>(h) * C * depth;
+    for (int d = 0; d < depth; ++d) {
+      const float qv = (float)q[row + d];
+      const float kv = (float)k[row + d];
+#pragma unroll
+      for (int c = 0; c < C; ++c) {
+        aq[c] += qv * wq[c * depth + d];
+        ak[c] += kv * wk[c * depth + d];
+      }
+    }
+#pragma unroll
+    for (int c = 0; c < C; ++c) {
+      s_gq[t * kLd + c] = aq[c];
+      s_gk[t * kLd + c] = ak[c];
+    }
+  }
+  __syncthreads();
+
+  const int j = t;
+  const uint64_t* b = bits + static_cast<size_t>(n) * 64 * 64 + j;
+  T* out = logits + static_cast<size_t>(blockIdx.x) * 64 * 64 + j;
+  for (int i = 0; i < 64; ++i) {
+    float acc = 0.0f;
+    for (uint64_t m = b[i * 64]; m; m &= m - 1) {
+      const int c = __ffsll(static_cast<long long>(m)) - 1;
+      acc += s_aw[c] + s_gq[i * kLd + c] + s_gk[j * kLd + c];
+    }
+    if (accumulate) acc += (float)out[i * 64];
+    out[i * 64] = (T)acc;
+  }
+}
+
+template <typename T>
+void addAttackGraphBias(T* logits, const uint64_t* bits, const T* q,
+                        const T* k, const float* attack_w, const float* gate_q,
+                        const float* gate_k, int N, int heads, int depth,
+                        int d_model, bool accumulate, cudaStream_t stream) {
+  addAttackGraphBias_kernel<T><<<N * heads, 64, 0, stream>>>(
+      logits, bits, q, k, attack_w, gate_q, gate_k, heads, depth, d_model,
+      accumulate);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// logits[n * stride + p] += factor * (u . z[n, p, :]) for p < 64 * 64: the
+// pair stream term of an attention policy head.
+template <typename T>
+__global__ void addPairPolicyLogits_kernel(T* logits, const T* z,
+                                           const float* u, float factor,
+                                           int pair_d_e, int stride,
+                                           int total) {
+  const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx >= total) return;
+  const T* zr = z + static_cast<size_t>(idx) * pair_d_e;
+  float s = 0.0f;
+  for (int d = 0; d < pair_d_e; ++d) s += u[d] * (float)zr[d];
+  T* o = logits + static_cast<size_t>(idx >> 12) * stride + (idx & 4095);
+  *o = (T)((float)*o + factor * s);
+}
+
+template <typename T>
+void addPairPolicyLogits(T* logits, const T* z, const float* u, float factor,
+                         int N, int pair_d_e, int stride,
+                         cudaStream_t stream) {
+  const int total = N * 64 * 64;
+  const int kBlockSize = 256;
+  addPairPolicyLogits_kernel<T>
+      <<<DivUp(total, kBlockSize), kBlockSize, 0, stream>>>(
+          logits, z, u, factor, pair_d_e, stride, total);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 template <typename T, int kWorkPerThread>
 __global__ void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
                                          int depth, int d_model, T* k, T* q,
@@ -1732,6 +2114,36 @@ template void addBiasSwiGLU<float>(float* output, const float* input,
                                    const float* bias, const float* gate, int N,
                                    int C, cudaStream_t stream);
 
+template void computeAttackGraph<half>(uint64_t* bits, const half* planes,
+                                      int N, int input_planes,
+                                      cudaStream_t stream);
+template void computePairStream<half>(half* z, const uint64_t* bits,
+                                     const float* p_in, const float* t_off,
+                                     int N, int pair_d_e, cudaStream_t stream);
+template void addAttackGraphBias<half>(
+    half* logits, const uint64_t* bits, const half* q, const half* k,
+    const float* attack_w, const float* gate_q, const float* gate_k, int N,
+    int heads, int depth, int d_model, bool accumulate, cudaStream_t stream);
+template void addPairPolicyLogits<half>(half* logits, const half* z,
+                                       const float* u, float factor, int N,
+                                       int pair_d_e, int stride,
+                                       cudaStream_t stream);
+
+template void computeAttackGraph<float>(uint64_t* bits, const float* planes,
+                                      int N, int input_planes,
+                                      cudaStream_t stream);
+template void computePairStream<float>(float* z, const uint64_t* bits,
+                                     const float* p_in, const float* t_off,
+                                     int N, int pair_d_e, cudaStream_t stream);
+template void addAttackGraphBias<float>(
+    float* logits, const uint64_t* bits, const float* q, const float* k,
+    const float* attack_w, const float* gate_q, const float* gate_k, int N,
+    int heads, int depth, int d_model, bool accumulate, cudaStream_t stream);
+template void addPairPolicyLogits<float>(float* logits, const float* z,
+                                       const float* u, float factor, int N,
+                                       int pair_d_e, int stride,
+                                       cudaStream_t stream);
+
 template void genOffsetPointers<float>(float** offsets, int heads,
                                        int max_batch, int depth, int d_model,
                                        float* k, float* q, float* b1, float* v,
@@ -1851,6 +2263,24 @@ template void addBiasSwiGLU<__nv_bfloat16>(
     __nv_bfloat16* output, const __nv_bfloat16* input,
     const __nv_bfloat16* bias, const __nv_bfloat16* gate, int N, int C,
     cudaStream_t stream);
+
+template void computeAttackGraph<__nv_bfloat16>(
+    uint64_t* bits, const __nv_bfloat16* planes, int N, int input_planes,
+    cudaStream_t stream);
+template void computePairStream<__nv_bfloat16>(__nv_bfloat16* z,
+                                              const uint64_t* bits,
+                                              const float* p_in,
+                                              const float* t_off, int N,
+                                              int pair_d_e,
+                                              cudaStream_t stream);
+template void addAttackGraphBias<__nv_bfloat16>(
+    __nv_bfloat16* logits, const uint64_t* bits, const __nv_bfloat16* q,
+    const __nv_bfloat16* k, const float* attack_w, const float* gate_q,
+    const float* gate_k, int N, int heads, int depth, int d_model,
+    bool accumulate, cudaStream_t stream);
+template void addPairPolicyLogits<__nv_bfloat16>(
+    __nv_bfloat16* logits, const __nv_bfloat16* z, const float* u, float factor,
+    int N, int pair_d_e, int stride, cudaStream_t stream);
 #endif
 }  // namespace cudnn_backend
 }  // namespace lczero

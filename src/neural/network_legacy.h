@@ -81,6 +81,12 @@ struct BaseWeights {
     Vec dense_b;
     Smolgen smolgen;
     bool has_smolgen;
+    // Attention-logit terms from the attack graph E [C, 64, 64] and the pair
+    // stream Z [pair_d_e, 64, 64] (net.proto MHA); row-major, empty if absent.
+    Vec attack_w;       // [heads, C]
+    Vec attack_gate_q;  // [heads, C, depth]
+    Vec attack_gate_k;  // [heads, C, depth]
+    Vec pair_att_w;     // [heads, pair_d_e]
   };
 
   struct FFN {
@@ -146,6 +152,11 @@ struct BaseWeights {
   // Smolgen global weights
   Vec smolgen_w;
   bool has_smolgen;
+
+  // Static pair stream Z = rms(E @ p_in + t_off[rel(i, j)]) (net.proto
+  // PairStream); row-major, empty if absent.
+  Vec pair_p_in;   // [C, pair_d_e]
+  Vec pair_t_off;  // [225, pair_d_e]
 };
 
 struct LegacyWeights : public BaseWeights {
@@ -203,6 +214,8 @@ struct MultiHeadWeights : public BaseWeights {
     Vec ip4_pol_w;
     int pol_encoder_head_count;
     std::vector<EncoderLayer> pol_encoder;
+    // logits[from, to] += pair_u . Z[:, from, to]; empty if absent.
+    Vec pair_u;  // [pair_d_e]
   };
 
   struct ValueHead {
