@@ -932,6 +932,7 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
   stats->average_depth = cum_depth_ / (total_playouts_ ? total_playouts_ : 1);
   stats->edge_n.clear();
   stats->win_found = false;
+  stats->win_is_most_visited = false;
   stats->may_resign = true;
   stats->num_losing_edges = 0;
   stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNormal;
@@ -944,6 +945,8 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
         GetFpu(params_, root_node_, /* is_root_node */ true, draw_score);
     float max_q_plus_m = -1000;
     uint64_t max_n = 0;
+    uint32_t max_non_tb_win_n = 0;
+    uint32_t max_other_n = 0;
     bool max_n_has_max_q_plus_m = true;
     const auto m_evaluator = backend_attributes_.has_mlh
                                  ? MEvaluator(params_, root_node_)
@@ -954,8 +957,15 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
       const auto m = m_evaluator.GetMUtility(edge, q);
       const auto q_plus_m = q + m;
       stats->edge_n.push_back(n);
-      if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f) {
+      const bool is_terminal_win =
+          n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) > 0.0f;
+      if (is_terminal_win) {
         stats->win_found = true;
+      }
+      if (is_terminal_win && !edge.IsTbTerminal()) {
+        max_non_tb_win_n = std::max(max_non_tb_win_n, n);
+      } else {
+        max_other_n = std::max(max_other_n, n);
       }
       if (n > 0 && edge.IsTerminal() && edge.GetWL(0.0f) < 0.0f) {
         stats->num_losing_edges += 1;
@@ -982,6 +992,8 @@ void Search::PopulateCommonIterationStats(IterationStats* stats) {
         max_q_plus_m = q_plus_m;
       }
     }
+    stats->win_is_most_visited =
+        max_non_tb_win_n > 0 && max_non_tb_win_n > max_other_n;
     if (!max_n_has_max_q_plus_m) {
       stats->time_usage_hint_ = IterationStats::TimeUsageHint::kNeedMoreTime;
     }
