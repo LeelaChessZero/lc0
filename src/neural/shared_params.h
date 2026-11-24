@@ -39,6 +39,8 @@ struct SharedBackendParams {
   static const constexpr char* kAutoDiscover = "<autodiscover>";
 
   static const OptionId kPolicySoftmaxTemp;
+  static const OptionId kPolicyBlendOptimistic;
+  static const OptionId kPolicyBlendSoft;
   static const OptionId kHistoryFill;
   static const OptionId kWeightsId;
   static const OptionId kBackendId;

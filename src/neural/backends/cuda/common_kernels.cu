@@ -85,6 +85,33 @@ void addVectors(T* c, T* a, T* b, int size, int asize, int bsize,
 }
 
 template <typename T>
+__global__ void blendPolicyLogits_kernel(T* main, const T* opt, const T* soft,
+                                         float w_main, float w_opt,
+                                         float w_soft, int count) {
+  int i = threadIdx.x + blockDim.x * blockIdx.x;
+  if (i < count) {
+    float val = w_main * (float)main[i];
+    if (opt) val += w_opt * (float)opt[i];
+    if (soft) val += w_soft * (float)soft[i];
+    main[i] = (T)val;
+  }
+}
+
+// Pools the policy heads geometrically, which in log space is a weighted sum
+// of their logits.
+template <typename T>
+void blendPolicyLogits(T* main, const T* opt, const T* soft, float w_main,
+                       float w_opt, float w_soft, int count,
+                       cudaStream_t stream) {
+  const int kBlockSize = 256;
+  int blocks = DivUp(count, kBlockSize);
+
+  blendPolicyLogits_kernel<<<blocks, kBlockSize, 0, stream>>>(
+      main, opt, soft, w_main, w_opt, w_soft, count);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+template <typename T>
 __global__ void addVectorsHNC_NHC_kernel(T* a, T* b, int N, int H, int C) {
   int i = threadIdx.x + blockDim.x * blockIdx.x;
   if (i < N * H * C) {
@@ -2349,6 +2376,15 @@ template void addVectors<half>(half* c, half* a, half* b, int size, int asize,
                                int bsize, ActivationFunction act,
                                cudaStream_t stream);
 
+template void blendPolicyLogits<float>(float* main, const float* opt,
+                                       const float* soft, float w_main,
+                                       float w_opt, float w_soft, int count,
+                                       cudaStream_t stream);
+template void blendPolicyLogits<half>(half* main, const half* opt,
+                                      const half* soft, float w_main,
+                                      float w_opt, float w_soft, int count,
+                                      cudaStream_t stream);
+
 template void addVectorsHNC_NHC<float>(float* a, float* b, int N, int H, int C,
                                        cudaStream_t stream);
 template void addVectorsHNC_NHC<half>(half* a, half* b, int N, int H, int C,
@@ -2732,6 +2768,9 @@ template void batchNorm<__nv_bfloat16>(
 template void addVectors<__nv_bfloat16>(
     __nv_bfloat16* c, __nv_bfloat16* a, __nv_bfloat16* b, int size, int asize,
     int bsize, ActivationFunction act, cudaStream_t stream);
+template void blendPolicyLogits<__nv_bfloat16>(
+    __nv_bfloat16* main, const __nv_bfloat16* opt, const __nv_bfloat16* soft,
+    float w_main, float w_opt, float w_soft, int count, cudaStream_t stream);
 
 template void addVectorsHNC_NHC<__nv_bfloat16>(__nv_bfloat16* a,
                                                __nv_bfloat16* b, int N, int H,

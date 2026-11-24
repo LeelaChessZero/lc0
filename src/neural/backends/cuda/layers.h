@@ -552,11 +552,16 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   using BaseLayer<DataType>::use_gemm_ex_;
 
  public:
+  // With shared_embedding the head does not own the policy embedding: Eval
+  // expects input2 to already hold the embedding another head computed from
+  // the same body output, and only runs the query/key projections and the
+  // promotion logits on top of it. Requires a head without policy encoder
+  // blocks, since those would rewrite the embedding in place.
   AttentionPolicyHead(BaseLayer<DataType>* ip,
                       const MultiHeadWeights::PolicyHead& weights,
                       void* scratch, bool attention_body,
                       ActivationFunction act, int max_batch_size,
-                      bool use_gemm_ex);
+                      bool use_gemm_ex, bool shared_embedding = false);
   ~AttentionPolicyHead();
   void Eval(int N, DataType* output, const DataType* input,
             const DataType* input2, void* scratch, size_t scratch_size,
@@ -582,6 +587,8 @@ class AttentionPolicyHead : public BaseLayer<DataType> {
   int pair_d_e_ = 0;
   int max_batch_size_;
   bool attention_body_;
+  // The embedding is computed by another head and handed over in input2.
+  bool shared_embedding_;
   ActivationFunction act_;
 
   std::vector<EncoderBlock<DataType>*> encoder_weights_;
