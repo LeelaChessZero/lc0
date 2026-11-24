@@ -2199,6 +2199,15 @@ void SearchWorker::FetchSingleNodeResult(NodeToProcess* node_to_process) {
                    : params_.GetWDLRescaleDiff(),
                sign, false, params_.GetWDLMaxS());
   }
+  // A tablebase win or loss is exact, so the node starts from that value
+  // instead of the network's; it still gets expanded and searched. The eval
+  // belongs to this node, so the network cache keeps the raw output.
+  const auto [tb_lower, tb_upper] = node->GetBounds();
+  if (node->IsTbBound() && tb_lower == tb_upper &&
+      tb_lower != GameResult::DRAW) {
+    node_to_process->eval->q = tb_lower == GameResult::WHITE_WON ? 1.0f : -1.0f;
+    node_to_process->eval->d = 0.0f;
+  }
   for (size_t p_idx = 0; auto& edge : node->Edges()) {
     edge.edge()->SetP(node_to_process->eval->p[p_idx++]);
   }
