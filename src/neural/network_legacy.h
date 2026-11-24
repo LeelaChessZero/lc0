@@ -277,6 +277,10 @@ struct MultiHeadWeights : public BaseWeights {
   // Policy and value multiheads
   std::unordered_map<std::string, ValueHead> value_heads;
   std::unordered_map<std::string, PolicyHead> policy_heads;
+  // Heads of the head maps that need more than the structs above hold (child-Q
+  // bins, depth attention): not loaded, named here for error messages.
+  std::vector<std::string> unsupported_policy_heads;
+  std::vector<std::string> unsupported_value_heads;
 };
 
 enum InputEmbedding {

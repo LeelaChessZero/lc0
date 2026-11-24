@@ -59,6 +59,20 @@ namespace {
 template <typename DataType>
 class CudaNetwork;
 
+// The error for a head the net does not offer; a head of the file that needs
+// features this backend lacks says so.
+static std::string MissingHeadMessage(
+    const std::string& kind, const std::string& name,
+    const std::vector<std::string>& unsupported, const std::string& features) {
+  if (std::find(unsupported.begin(), unsupported.end(), name) !=
+      unsupported.end()) {
+    return "The " + kind + " head '" + name + "' needs features (" + features +
+           ") that this backend does not support.";
+  }
+  return "The " + kind + " head you specified '" + name +
+         "' does not exist in this net.";
+}
+
 static size_t getMaxAttentionHeadSize(
     const MultiHeadWeights::PolicyHead& weights, int N) {
   const size_t embedding_op_size = weights.ip_pol_b.size();
@@ -494,15 +508,17 @@ class CudaNetwork : public Network {
         options.GetOrDefault<std::string>("policy_head", "vanilla");
     // Check that selected policy head exists.
     if (!weights.policy_heads.contains(policy_head)) {
-      throw Exception("The policy head you specified '" + policy_head +
-                      "' does not exist in this net.");
+      throw Exception(MissingHeadMessage("policy", policy_head,
+                                         weights.unsupported_policy_heads,
+                                         "child-Q bins or depth attention"));
     }
     std::string value_head =
         options.GetOrDefault<std::string>("value_head", "winner");
     // Check that selected value head exists.
     if (!weights.value_heads.contains(value_head)) {
-      throw Exception("The value head you specified '" + value_head +
-                      "' does not exist in this net.");
+      throw Exception(MissingHeadMessage("value", value_head,
+                                         weights.unsupported_value_heads,
+                                         "depth attention"));
     }
     const size_t pair_d_e = weights.pair_t_off.size() / 225;
     if (!weights.policy_heads.at(policy_head).pair_u.empty() &&

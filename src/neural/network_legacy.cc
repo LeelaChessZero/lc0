@@ -328,6 +328,24 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
           std::forward_as_tuple(weights.policy_heads().opponent(), ip_pol_w,
                                 ip_pol_b));
     }
+    // Named heads beyond the fixed ones. A head that needs more than these
+    // structs hold (child-Q bins, depth attention) is not loaded, only noted.
+    // An entry without a name (some files carry an empty one) is skipped.
+    for (const auto& entry : weights.policy_heads().policy_head_map()) {
+      const std::string name(entry.key());
+      if (name.empty()) continue;
+      const auto& head = entry.value();
+      if (head.has_cq_w_bins() || head.has_depth_square_attention()) {
+        unsupported_policy_heads.push_back(name);
+        continue;
+      }
+      if (!policy_heads
+               .emplace(std::piecewise_construct, std::forward_as_tuple(name),
+                        std::forward_as_tuple(head, ip_pol_w, ip_pol_b))
+               .second) {
+        throw Exception("Policy head '" + name + "' is given twice.");
+      }
+    }
   } else {
     if (weights.has_policy() || weights.has_policy1() ||
         weights.has_ip_pol_w()) {
@@ -355,6 +373,19 @@ MultiHeadWeights::MultiHeadWeights(const pblczero::Weights& weights)
     }
     if (weights.value_heads().has_st()) {
       value_heads.emplace("st", weights.value_heads().st());
+    }
+    for (const auto& entry : weights.value_heads().value_head_map()) {
+      const std::string name(entry.key());
+      if (name.empty()) continue;
+      const auto& head = entry.value();
+      if (head.has_depth_square_attention() ||
+          head.has_depth_global_attention()) {
+        unsupported_value_heads.push_back(name);
+        continue;
+      }
+      if (!value_heads.emplace(name, head).second) {
+        throw Exception("Value head '" + name + "' is given twice.");
+      }
     }
   } else {
     if (weights.has_value() || weights.has_ip_val_w()) {
