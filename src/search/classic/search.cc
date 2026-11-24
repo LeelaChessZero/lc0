@@ -2253,10 +2253,19 @@ void SearchWorker::DoBackupUpdateSingleNode(
     bool old_update_parent_bounds = update_parent_bounds;
     // If parent already is terminal further adjustment is not required.
     if (p->IsTerminal()) n_to_fix = 0;
-    // Try setting parent bounds except the root or those already terminal.
-    update_parent_bounds =
-        update_parent_bounds && p != search_->root_node_ && !p->IsTerminal() &&
-        MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
+    // Try setting parent bounds except the root, or refining already-terminal
+    // interior nodes when a child proves a better terminal outcome.
+    if (update_parent_bounds && p != search_->root_node_) {
+      if (!p->IsTerminal()) {
+        update_parent_bounds =
+            MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
+      } else {
+        update_parent_bounds =
+            MaybeRefineTerminal(p, &n_to_fix, &v_delta, &d_delta, &m_delta);
+      }
+    } else {
+      update_parent_bounds = false;
+    }
 
     // Q will be flipped for opponent.
     v = -v;
@@ -2291,6 +2300,9 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
                                   float* v_delta, float* d_delta,
                                   float* m_delta) const {
   auto losing_m = 0.0f;
+  auto best_eog_win_m = std::numeric_limits<float>::infinity();
+  auto best_tb_win_m = std::numeric_limits<float>::infinity();
+  auto has_eog_win = false;
   auto prefer_tb = false;
 
   // Determine the maximum (lower, upper) bounds across all children.
@@ -2307,11 +2319,14 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
     lower = std::max(edge_lower, lower);
     upper = std::max(edge_upper, upper);
 
-    // Checkmate is the best, so short-circuit.
     const auto is_tb = edge.IsTbTerminal();
-    if (edge_lower == GameResult::WHITE_WON && !is_tb) {
-      prefer_tb = false;
-      break;
+    if (edge_lower == GameResult::WHITE_WON) {
+      if (!is_tb) {
+        has_eog_win = true;
+        best_eog_win_m = std::min(best_eog_win_m, edge.GetM(m));
+      } else {
+        best_tb_win_m = std::min(best_tb_win_m, edge.GetM(m));
+      }
     } else if (edge_upper == GameResult::BLACK_WON) {
       // Track the longest loss.
       losing_m = std::max(losing_m, edge.GetM(0.0f));
@@ -2339,9 +2354,15 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
     float cur_v = p->GetWL();
     float cur_d = p->GetD();
     float cur_m = p->GetM();
+    float terminal_m = m;
+    if (upper == GameResult::WHITE_WON) {
+      prefer_tb = !has_eog_win;
+      terminal_m = has_eog_win ? best_eog_win_m : best_tb_win_m;
+    } else if (upper == GameResult::BLACK_WON) {
+      terminal_m = std::max(losing_m, m);
+    }
     p->MakeTerminal(
-        -upper,
-        (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
+        -upper, terminal_m + 1.0f,
         prefer_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame);
     // Negate v_delta because we're calculating for the parent, but immediately
     // afterwards we'll negate v_delta in case it has come from the child.
@@ -2353,6 +2374,84 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, int* n_to_fix,
   }
 
   // Bounds were set, so indicate we should check the parent too.
+  return true;
+}
+
+bool SearchWorker::MaybeRefineTerminal(Node* p, int* n_to_fix, float* v_delta,
+                                       float* d_delta, float* m_delta) const {
+  if (!p->HasChildren() || p->IsTwoFoldTerminal()) return false;
+
+  const float cur_m = p->GetM();
+  const bool cur_is_tb = p->IsTbTerminal();
+  float new_m = cur_m;
+  Node::Terminal new_type =
+      cur_is_tb ? Node::Terminal::Tablebase : Node::Terminal::EndOfGame;
+  GameResult result = GameResult::DRAW;
+
+  if (p->GetWL() < 0.0f) {
+    // Previous mover lost: p's mover has at least one proven winning child.
+    bool has_eog_win = false;
+    bool has_tb_win = false;
+    float best_eog_m = std::numeric_limits<float>::infinity();
+    float best_tb_m = std::numeric_limits<float>::infinity();
+    for (const auto& edge : p->Edges()) {
+      if (!edge.IsTerminal()) continue;
+      if (edge.GetBounds().first != GameResult::WHITE_WON) continue;
+      if (!edge.IsTbTerminal()) {
+        has_eog_win = true;
+        best_eog_m = std::min(best_eog_m, edge.GetM(0.0f));
+      } else {
+        has_tb_win = true;
+        best_tb_m = std::min(best_tb_m, edge.GetM(0.0f));
+      }
+    }
+    if (has_eog_win) {
+      const float candidate_m = best_eog_m + 1.0f;
+      if (!cur_is_tb && candidate_m >= cur_m) return false;
+      new_m = candidate_m;
+      new_type = Node::Terminal::EndOfGame;
+      result = GameResult::BLACK_WON;
+    } else if (has_tb_win && cur_is_tb) {
+      const float candidate_m = best_tb_m + 1.0f;
+      if (candidate_m >= cur_m) return false;
+      new_m = candidate_m;
+      new_type = Node::Terminal::Tablebase;
+      result = GameResult::BLACK_WON;
+    } else {
+      return false;
+    }
+  } else if (p->GetWL() > 0.0f) {
+    // Previous mover won: every child of p must be a proven loss for p's mover.
+    float losing_m = 0.0f;
+    bool prefer_tb = false;
+    for (const auto& edge : p->Edges()) {
+      if (!edge.IsTerminal() ||
+          edge.GetBounds().second != GameResult::BLACK_WON) {
+        return false;
+      }
+      losing_m = std::max(losing_m, edge.GetM(0.0f));
+      prefer_tb = prefer_tb || edge.IsTbTerminal();
+    }
+    const float candidate_m = losing_m + 1.0f;
+    const bool upgrade_to_eog = cur_is_tb && !prefer_tb;
+    if (!upgrade_to_eog && candidate_m == cur_m) return false;
+    new_m = candidate_m;
+    new_type = (cur_is_tb && prefer_tb) ? Node::Terminal::Tablebase
+                                        : Node::Terminal::EndOfGame;
+    result = GameResult::WHITE_WON;
+  } else {
+    return false;
+  }
+
+  p->MakeTerminal(result, new_m, new_type);
+  const float delta_m = p->GetM() - cur_m;
+  if (delta_m != 0.0f) {
+    *n_to_fix = p->GetN();
+    assert(*n_to_fix > 0);
+    *v_delta = 0.0f;
+    *d_delta = 0.0f;
+    *m_delta = delta_m;
+  }
   return true;
 }
 
