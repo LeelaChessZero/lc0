@@ -361,6 +361,7 @@ class EncoderBlock {
   DataType *ln1_gammas, *ln1_betas;
 
   DataType *ffn_dense1_w, *ffn_dense1_b;
+  DataType *ffn_dense_gate_w = nullptr;  // ACTIVATION_SWIGLU
   DataType *ffn_dense2_w, *ffn_dense2_b;
 
   DataType *ln2_gammas, *ln2_betas;
@@ -499,6 +500,7 @@ class AttentionBody : public BaseLayer<DataType> {
   DataType *ip_emb_ln_g_, *ip_emb_ln_b_;  // input embedding layernorm gamma and beta
   DataType *ip_mult_gate_, *ip_add_gate_;   // input gating
   DataType *ip_emb_ffn_d1_w_, *ip_emb_ffn_d1_b_;  // input embedding FFN dense1 weights
+  DataType *ip_emb_ffn_dg_w_ = nullptr;  // input embedding FFN gate (SwiGLU)
   DataType *ip_emb_ffn_d2_w_, *ip_emb_ffn_d2_b_;  // input embedding FFN dense2 weights
   DataType *ip_emb_ffn_ln_g_, *ip_emb_ffn_ln_b_;  // input embedding FFN layernorm gamma and beta
   DataType *smolgen_global_;  // global smolgen weights for all encoder layers

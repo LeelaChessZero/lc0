@@ -1337,6 +1337,28 @@ void applyInputGating(T* output, const T* input, const T* mult, const T* add,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+// output = (input + bias) * sigmoid(gate): the gated FFN (ACTIVATION_SWIGLU).
+// input, gate and output are [N, C]; bias is [C].
+template <typename T>
+__global__ void addBiasSwiGLU_kernel(T* output, const T* input, const T* bias,
+                                     const T* gate, int size, int C) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= size) return;
+  const float x = (float)input[i] + (float)bias[i % C];
+  const float g = (float)gate[i];
+  output[i] = (T)(x / (1.0f + __expf(-g)));
+}
+
+template <typename T>
+void addBiasSwiGLU(T* output, const T* input, const T* bias, const T* gate,
+                   int N, int C, cudaStream_t stream) {
+  const int size = N * C;
+  const int kBlockSize = 256;
+  addBiasSwiGLU_kernel<T><<<DivUp(size, kBlockSize), kBlockSize, 0, stream>>>(
+      output, input, bias, gate, size, C);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
 template <typename T, int kWorkPerThread>
 __global__ void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
                                          int depth, int d_model, T* k, T* q,
@@ -1703,6 +1725,13 @@ template void applyInputGating<float>(float* output, const float* input,
                                       int N, int C, int output_size,
                                       cudaStream_t stream);
 
+template void addBiasSwiGLU<half>(half* output, const half* input,
+                                  const half* bias, const half* gate, int N,
+                                  int C, cudaStream_t stream);
+template void addBiasSwiGLU<float>(float* output, const float* input,
+                                   const float* bias, const float* gate, int N,
+                                   int C, cudaStream_t stream);
+
 template void genOffsetPointers<float>(float** offsets, int heads,
                                        int max_batch, int depth, int d_model,
                                        float* k, float* q, float* b1, float* v,
@@ -1817,6 +1846,11 @@ template void genOffsetPointers<__nv_bfloat16>(
     __nv_bfloat16** offsets, int heads, int max_batch, int depth, int d_model,
     __nv_bfloat16* k, __nv_bfloat16* q, __nv_bfloat16* b1, __nv_bfloat16* v,
     __nv_bfloat16* b2, cudaStream_t stream);
+
+template void addBiasSwiGLU<__nv_bfloat16>(
+    __nv_bfloat16* output, const __nv_bfloat16* input,
+    const __nv_bfloat16* bias, const __nv_bfloat16* gate, int N, int C,
+    cudaStream_t stream);
 #endif
 }  // namespace cudnn_backend
 }  // namespace lczero

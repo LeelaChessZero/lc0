@@ -159,6 +159,11 @@ template <typename T>
 void applyInputGating(T* output, const T* input, const T* mult, const T* add,
                       int N, int HW, int C, cudaStream_t stream);
 
+// output = (input + bias) * sigmoid(gate), the gated FFN (ACTIVATION_SWIGLU).
+template <typename T>
+void addBiasSwiGLU(T* output, const T* input, const T* bias, const T* gate,
+                   int N, int C, cudaStream_t stream);
+
 template <typename T>
 void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
                        int d_model, T* k, T* q, T* b1, T* v, T* b2,

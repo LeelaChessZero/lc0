@@ -89,6 +89,7 @@ struct BaseWeights {
     Vec dense1_b;
     Vec dense2_w;
     Vec dense2_b;
+    Vec dense_gate_w;  // ACTIVATION_SWIGLU only
   };
 
   struct EncoderLayer {

@@ -96,6 +96,8 @@ static size_t getMaxAttentionHeadSize(
 
 static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
   const size_t embedding_op_size = weights.ip_emb_b.size();
+  // The embedding FFN's hidden width can exceed the encoder's.
+  const size_t embedding_dff = weights.ip_emb_ffn.dense1_b.size();
 
   size_t encoder_d_model = 0;
   size_t encoder_dff = 0;
@@ -113,7 +115,8 @@ static size_t getMaxAttentionBodySize(const MultiHeadWeights& weights, int N) {
 
   size_t size =
       N * 64 *
-      std::max(std::max(embedding_op_size, encoder_dff), encoder_d_model);
+      std::max({embedding_op_size, embedding_dff, encoder_dff,
+                encoder_d_model});
 
   // size of matmul_qk matrix = encoder_heads_ * Batch * 64 * 64
   const size_t matmul_qk_size = encoder_heads * N * 64 * 64;

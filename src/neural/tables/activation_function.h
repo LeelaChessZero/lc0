@@ -32,6 +32,9 @@ enum ActivationFunction {
   ACTIVATION_SWISH = 7,
   ACTIVATION_RELU_2 = 8,
   ACTIVATION_SOFTMAX = 9,
+  // Gated FFN: (x W1 + b1) * sigmoid(x Wg), Wg = FFN.dense_gate_w. Only valid
+  // as the FFN activation.
+  ACTIVATION_SWIGLU = 10,
 };
 
 struct Activations {

@@ -1704,6 +1704,14 @@ EncoderBlock<DataType>::EncoderBlock(
 
   allocAndUpload<DataType>(&ffn_dense1_w, cpu_weights.ffn.dense1_w, scratch);
   allocAndUpload<DataType>(&ffn_dense1_b, cpu_weights.ffn.dense1_b, scratch);
+  if (ffn_activation_ == ACTIVATION_SWIGLU) {
+    if (cpu_weights.ffn.dense_gate_w.size() !=
+        cpu_weights.ffn.dense1_w.size()) {
+      throw Exception("SwiGLU FFN needs dense_gate_w of dense1_w's shape.");
+    }
+    allocAndUpload<DataType>(&ffn_dense_gate_w, cpu_weights.ffn.dense_gate_w,
+                             scratch);
+  }
 
   allocAndUpload<DataType>(&ffn_dense2_w, cpu_weights.ffn.dense2_w, scratch);
   allocAndUpload<DataType>(&ffn_dense2_b, cpu_weights.ffn.dense2_b, scratch);
@@ -2058,8 +2066,18 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
     cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                 num_inputs, 1.0f, (const DataType*)ffn_dense1_w, num_inputs,
                 scratch, num_inputs, 0.0f, in_out_tensor, num_outputs);
-    addBiasBatched(in_out_tensor, in_out_tensor, ffn_dense1_b, 1, batch,
-                   num_outputs, ffn_activation_, stream);
+    if (ffn_activation_ == ACTIVATION_SWIGLU) {
+      // Gate, scratch -> buffer1; in_out_tensor = (in_out_tensor + b1) *
+      // sigmoid(buffer1).
+      cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                  num_inputs, 1.0f, (const DataType*)ffn_dense_gate_w,
+                  num_inputs, scratch, num_inputs, 0.0f, buffer1, num_outputs);
+      addBiasSwiGLU(in_out_tensor, in_out_tensor, ffn_dense1_b, buffer1, batch,
+                    num_outputs, stream);
+    } else {
+      addBiasBatched(in_out_tensor, in_out_tensor, ffn_dense1_b, 1, batch,
+                     num_outputs, ffn_activation_, stream);
+    }
   }
 
   // #FFN dense 2, in_out_tensor -> buffer1
@@ -2192,6 +2210,7 @@ EncoderBlock<DataType>::~EncoderBlock() {
   ReportCUDAErrors(cudaFree(ln1_betas));
   ReportCUDAErrors(cudaFree(ffn_dense1_w));
   ReportCUDAErrors(cudaFree(ffn_dense1_b));
+  if (ffn_dense_gate_w) ReportCUDAErrors(cudaFree(ffn_dense_gate_w));
   ReportCUDAErrors(cudaFree(ffn_dense2_w));
   ReportCUDAErrors(cudaFree(ffn_dense2_b));
   ReportCUDAErrors(cudaFree(ln2_gammas));
@@ -2272,6 +2291,15 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
                              scratch);
     allocAndUpload<DataType>(&ip_emb_ffn_d1_b_, weights.ip_emb_ffn.dense1_b,
                              scratch);
+    if (activations_.ffn_activation == ACTIVATION_SWIGLU) {
+      if (weights.ip_emb_ffn.dense_gate_w.size() !=
+          weights.ip_emb_ffn.dense1_w.size()) {
+        throw Exception(
+            "SwiGLU embedding FFN needs dense_gate_w of dense1_w's shape.");
+      }
+      allocAndUpload<DataType>(&ip_emb_ffn_dg_w_,
+                               weights.ip_emb_ffn.dense_gate_w, scratch);
+    }
 
     allocAndUpload<DataType>(&ip_emb_ffn_d2_w_, weights.ip_emb_ffn.dense2_w,
                              scratch);
@@ -2328,6 +2356,7 @@ AttentionBody<DataType>::~AttentionBody() {
     ReportCUDAErrors(cudaFree(ip_emb_ln_b_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d1_w_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d1_b_));
+    if (ip_emb_ffn_dg_w_) ReportCUDAErrors(cudaFree(ip_emb_ffn_dg_w_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d2_w_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_d2_b_));
     ReportCUDAErrors(cudaFree(ip_emb_ffn_ln_g_));
@@ -2448,8 +2477,17 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
                   num_inputs, 1.0f, (const DataType*)ip_emb_ffn_d1_w_,
                   num_inputs, temp, num_inputs, 0.0f, buffer1, num_outputs);
-      addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch, num_outputs,
-                     activations_.ffn_activation, stream);
+      if (activations_.ffn_activation == ACTIVATION_SWIGLU) {
+        // Gate, temp -> buffer2; buffer1 = (buffer1 + b1) * sigmoid(buffer2).
+        cublasXgemm(cublas, CUBLAS_OP_T, CUBLAS_OP_N, num_outputs, batch,
+                    num_inputs, 1.0f, (const DataType*)ip_emb_ffn_dg_w_,
+                    num_inputs, temp, num_inputs, 0.0f, buffer2, num_outputs);
+        addBiasSwiGLU(buffer1, buffer1, ip_emb_ffn_d1_b_, buffer2, batch,
+                      num_outputs, stream);
+      } else {
+        addBiasBatched(buffer1, buffer1, ip_emb_ffn_d1_b_, 1, batch,
+                       num_outputs, activations_.ffn_activation, stream);
+      }
     }
 
     // embedding FFN dense 2

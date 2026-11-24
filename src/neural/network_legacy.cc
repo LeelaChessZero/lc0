@@ -152,7 +152,8 @@ BaseWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
     : dense1_w(LayerAdapter(ffn.dense1_w()).as_vector()),
       dense1_b(LayerAdapter(ffn.dense1_b()).as_vector()),
       dense2_w(LayerAdapter(ffn.dense2_w()).as_vector()),
-      dense2_b(LayerAdapter(ffn.dense2_b()).as_vector()) {}
+      dense2_b(LayerAdapter(ffn.dense2_b()).as_vector()),
+      dense_gate_w(LayerAdapter(ffn.dense_gate_w()).as_vector()) {}
 
 BaseWeights::EncoderLayer::EncoderLayer(
     const pblczero::Weights::EncoderLayer& encoder)
