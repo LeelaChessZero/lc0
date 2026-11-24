@@ -1847,6 +1847,422 @@ void addToResidual(float* residual, const T* y, const T* bias, float alpha,
   ReportCUDAErrors(cudaGetLastError());
 }
 
+// ---------------------------------------------------------------------------
+// Edge stream: a float state e [N, 64 * 64, d_e] (square pair (i, j), channels
+// last) that the attention of a block reads through its doors and that the
+// sites update.
+
+namespace {
+// Sum and max over a block of 64 threads in x (any blockDim.y): shared-memory
+// tree over red[threadIdx.y][64], no assumption on the warp size.
+__device__ float RowSum64(float v, float* red) {
+  float* r = red + threadIdx.y * 64;
+  r[threadIdx.x] = v;
+  __syncthreads();
+  for (int s = 32; s > 0; s >>= 1) {
+    if (threadIdx.x < s) r[threadIdx.x] += r[threadIdx.x + s];
+    __syncthreads();
+  }
+  const float out = r[0];
+  __syncthreads();
+  return out;
+}
+
+__device__ float RowMax64(float v, float* red) {
+  float* r = red + threadIdx.y * 64;
+  r[threadIdx.x] = v;
+  __syncthreads();
+  for (int s = 32; s > 0; s >>= 1) {
+    if (threadIdx.x < s)
+      r[threadIdx.x] = fmaxf(r[threadIdx.x], r[threadIdx.x + s]);
+    __syncthreads();
+  }
+  const float out = r[0];
+  __syncthreads();
+  return out;
+}
+
+__device__ __forceinline__ float SigmoidF(float x) {
+  return 1.0f / (1.0f + __expf(-x));
+}
+
+constexpr int kDoorHeadsPerBlock = 4;
+}  // namespace
+
+// One block per (n, i), threads (j, y), head h = y, y + 4, ...: the doors,
+// the softmax over j and the G gate of row (n, h, i); with o_e the readback
+// e[n, i, j, :] += sum_h L[n, h, i, j] o_e[h, :] of the final logits L.
+template <typename T, int kDe>
+__global__ void edgeDoorSoftmax_kernel(T* logits, const T* bias, float* e,
+                                       const float* doors, const float* o_e,
+                                       float gate_scale, int heads) {
+  constexpr int kRec = 3 * kDe + 3;
+  extern __shared__ float s_doors[];  // [heads][kRec], then o_e [heads][kDe]
+  __shared__ float red[kDoorHeadsPerBlock * 64];
+  __shared__ float s_rb[kDoorHeadsPerBlock][64][9];  // readback, 8 at a time
+  const int tid = threadIdx.y * 64 + threadIdx.x;
+  const int nthreads = 64 * kDoorHeadsPerBlock;
+  float* s_oe = s_doors + heads * kRec;
+  for (int k = tid; k < heads * kRec; k += nthreads) s_doors[k] = doors[k];
+  if (o_e) {
+    for (int k = tid; k < heads * kDe; k += nthreads) s_oe[k] = o_e[k];
+  }
+  __syncthreads();
+
+  const int n = blockIdx.x >> 6;
+  const int i = blockIdx.x & 63;
+  const int j = threadIdx.x;
+  float* ep = e + (static_cast<size_t>(n) * 4096 + i * 64 + j) * kDe;
+  float ev[kDe], rb[kDe];
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    ev[c] = ep[c];
+    rb[c] = 0.0f;
+  }
+  // Every y-row of threads runs the same number of heads, so the block-wide
+  // barriers in the reductions line up.
+  const int rounds = (heads + kDoorHeadsPerBlock - 1) / kDoorHeadsPerBlock;
+  for (int r = 0; r < rounds; r++) {
+    const int h = r * kDoorHeadsPerBlock + threadIdx.y;
+    const bool active = h < heads;
+    float L = 0.0f, g = 0.0f;
+    size_t idx = 0;
+    if (active) {
+      const float* w = s_doors + h * kRec;
+      float et = 0.0f, m = 0.0f;
+      g = w[3 * kDe + 2];
+#pragma unroll
+      for (int c = 0; c < kDe; c++) {
+        et += w[c] * ev[c];
+        m += w[kDe + c] * ev[c];
+        g += w[2 * kDe + c] * ev[c];
+      }
+      idx = ((static_cast<size_t>(n) * heads + h) * 64 + i) * 64 + j;
+      L = (float)logits[idx];
+      if (bias) L += (float)bias[idx];
+      L = (w[3 * kDe] * L + w[3 * kDe + 1] * et) * (1.0f + m);
+      if (o_e) {
+#pragma unroll
+        for (int c = 0; c < kDe; c++) rb[c] += L * s_oe[h * kDe + c];
+      }
+    }
+    const float mx = RowMax64(active ? L : -INFINITY, red);
+    const float ex = active ? __expf(L - mx) : 0.0f;
+    const float sum = RowSum64(ex, red);
+    if (active) {
+      logits[idx] = (T)(ex / sum * gate_scale * SigmoidF(g));
+    }
+  }
+  if (o_e) {
+    // The heads' readback sums, 8 channels at a time (fixed order: the
+    // result does not depend on scheduling).
+#pragma unroll
+    for (int c0 = 0; c0 < kDe; c0 += 8) {
+#pragma unroll
+      for (int c = 0; c < 8; c++) s_rb[threadIdx.y][j][c] = rb[c0 + c];
+      __syncthreads();
+      if (threadIdx.y == 0) {
+#pragma unroll
+        for (int c = 0; c < 8; c++) {
+          float acc = ev[c0 + c];
+          for (int y = 0; y < kDoorHeadsPerBlock; y++) acc += s_rb[y][j][c];
+          ep[c0 + c] = acc;
+        }
+      }
+      __syncthreads();
+    }
+  }
+}
+
+template <typename T>
+void edgeDoorSoftmax(T* logits, const T* bias, float* e, const float* doors,
+                     const float* o_e, float gate_scale, int N, int heads,
+                     int d_e, cudaStream_t stream) {
+  const dim3 block(64, kDoorHeadsPerBlock);
+  const size_t smem =
+      static_cast<size_t>(heads) * (3 * d_e + 3 + d_e) * sizeof(float);
+  switch (d_e) {
+    case 8:
+      edgeDoorSoftmax_kernel<T, 8><<<N * 64, block, smem, stream>>>(
+          logits, bias, e, doors, o_e, gate_scale, heads);
+      break;
+    case 16:
+      edgeDoorSoftmax_kernel<T, 16><<<N * 64, block, smem, stream>>>(
+          logits, bias, e, doors, o_e, gate_scale, heads);
+      break;
+    case 32:
+      edgeDoorSoftmax_kernel<T, 32><<<N * 64, block, smem, stream>>>(
+          logits, bias, e, doors, o_e, gate_scale, heads);
+      break;
+    default:
+      throw Exception("unsupported edge stream width");
+  }
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+// ---- edge stream site: triplet, then the edge FFN.
+
+// Per pair p: n = rms(e[p]); v[p] = n tri_v; eg[p] = n tri_eg + tri_eg_b.
+template <int kDe>
+__global__ void edgeTripletIn_kernel(int pairs, const float* e,
+                                     const float* tri_v, const float* tri_eg,
+                                     const float* tri_eg_b, int eg_width,
+                                     float* v, float* eg) {
+  extern __shared__ float s_w[];  // tri_v [kDe][2 kDe], tri_eg, tri_eg_b
+  float* s_eg = s_w + kDe * 2 * kDe;
+  float* s_b = s_eg + kDe * eg_width;
+  for (int k = threadIdx.x; k < kDe * 2 * kDe; k += blockDim.x) {
+    s_w[k] = tri_v[k];
+  }
+  for (int k = threadIdx.x; k < kDe * eg_width; k += blockDim.x) {
+    s_eg[k] = tri_eg[k];
+  }
+  for (int k = threadIdx.x; k < eg_width; k += blockDim.x) s_b[k] = tri_eg_b[k];
+  __syncthreads();
+  const int p = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p >= pairs) return;
+  float x[kDe];
+  float ss = 0.0f;
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    x[c] = e[static_cast<size_t>(p) * kDe + c];
+    ss += x[c] * x[c];
+  }
+  const float sc = rsqrtf(ss / kDe + 1e-6f);
+#pragma unroll
+  for (int c = 0; c < kDe; c++) x[c] *= sc;
+  for (int o = 0; o < 2 * kDe; o++) {
+    float a = 0.0f;
+#pragma unroll
+    for (int c = 0; c < kDe; c++) a += x[c] * s_w[c * 2 * kDe + o];
+    v[static_cast<size_t>(p) * 2 * kDe + o] = a;
+  }
+  for (int o = 0; o < eg_width; o++) {
+    float a = s_b[o];
+#pragma unroll
+    for (int c = 0; c < kDe; c++) a += x[c] * s_eg[c * eg_width + o];
+    eg[static_cast<size_t>(p) * eg_width + o] = a;
+  }
+}
+
+// One block of 64 threads per (n, h, i), eg = [a_in | g_in | a_out | g_out]
+// (triplet_heads each): a_in[n, h, i, k] = softmax_k(eg[n, (i, k), h]) *
+// sigmoid(eg[n, (i, k), ht + h]) and a_out[n, h, k, i] = softmax over the
+// source square k of eg[n, (k, i), 2 ht + h] * sigmoid(eg[n, (k, i), 3 ht +
+// h]).
+__global__ void edgeTripletAttention_kernel(const float* eg, int ht,
+                                            float* a_in, float* a_out) {
+  __shared__ float red[64];
+  const int i = blockIdx.x & 63;
+  const int h = (blockIdx.x >> 6) % ht;
+  const size_t n = (blockIdx.x >> 6) / ht;
+  const int k = threadIdx.x;
+  const int w = 4 * ht;
+  const float* g = eg + n * 4096 * w;
+  {
+    const float x = g[(i * 64 + k) * w + h];
+    const float mx = RowMax64(x, red);
+    const float ex = __expf(x - mx);
+    const float sum = RowSum64(ex, red);
+    a_in[((n * ht + h) * 64 + i) * 64 + k] =
+        ex / sum * SigmoidF(g[(i * 64 + k) * w + ht + h]);
+  }
+  {
+    const float x = g[(k * 64 + i) * w + 2 * ht + h];
+    const float mx = RowMax64(x, red);
+    const float ex = __expf(x - mx);
+    const float sum = RowSum64(ex, red);
+    a_out[(n * ht + h) * 4096 + k * 64 + i] =
+        ex / sum * SigmoidF(g[(k * 64 + i) * w + 3 * ht + h]);
+  }
+}
+
+// One block of 256 threads per (n, h): thread (j, row group) computes
+// va_in[n, (i, j), h kDot + d] = sum_k A_in[i, k] v_in[(k, j) | (j, k)] and
+// va_out[n, (i, j), kDe + h kDot + d] = sum_k A_out[k, i] v_out[(j, k) |
+// (k, j)] (path form | TGT-Ag form) for 16 rows i.
+template <int kDe, int kDot>
+__global__ void __launch_bounds__(256)
+    edgeTripletContract_kernel(const float* v, const float* a_in,
+                               const float* a_out, int ht, bool path,
+                               float* va) {
+  __shared__ float s_ain[64 * 64], s_aout[64 * 64];
+  const size_t n = blockIdx.x / ht;
+  const int h = blockIdx.x % ht;
+  const float* ai = a_in + static_cast<size_t>(blockIdx.x) * 4096;
+  const float* ao = a_out + static_cast<size_t>(blockIdx.x) * 4096;
+  for (int k = threadIdx.x; k < 4096; k += 256) {
+    s_ain[k] = ai[k];
+    s_aout[k] = ao[k];
+  }
+  __syncthreads();
+  const int j = threadIdx.x & 63;
+  const int ib = (threadIdx.x >> 6) * 16;
+  const float* vn = v + n * 4096 * 2 * kDe;
+  float* out = va + n * 4096 * 2 * kDe;
+  float acc[16][kDot];
+  for (int side = 0; side < 2; side++) {
+#pragma unroll
+    for (int r = 0; r < 16; r++) {
+#pragma unroll
+      for (int d = 0; d < kDot; d++) acc[r][d] = 0.0f;
+    }
+    const int ch = side * kDe + h * kDot;
+    for (int k = 0; k < 64; k++) {
+      const bool kj = (side == 0) == path;
+      const int pr = kj ? (k * 64 + j) : (j * 64 + k);
+      float x[kDot];
+#pragma unroll
+      for (int d = 0; d < kDot; d++) x[d] = vn[pr * 2 * kDe + ch + d];
+#pragma unroll
+      for (int r = 0; r < 16; r++) {
+        const float a =
+            side == 0 ? s_ain[(ib + r) * 64 + k] : s_aout[k * 64 + ib + r];
+#pragma unroll
+        for (int d = 0; d < kDot; d++) acc[r][d] += a * x[d];
+      }
+    }
+#pragma unroll
+    for (int r = 0; r < 16; r++) {
+#pragma unroll
+      for (int d = 0; d < kDot; d++) {
+        out[((ib + r) * 64 + j) * 2 * kDe + ch + d] = acc[r][d];
+      }
+    }
+  }
+}
+
+// Per pair p: e[p] += va[p] tri_o; nrm[p] = rms(e[p]).
+template <int kDe>
+__global__ void edgeTripletOut_kernel(int pairs, const float* va,
+                                      const float* tri_o, float* e,
+                                      float* nrm) {
+  __shared__ float s_o[2 * kDe * kDe];
+  for (int k = threadIdx.x; k < 2 * kDe * kDe; k += blockDim.x) {
+    s_o[k] = tri_o[k];
+  }
+  __syncthreads();
+  const int p = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p >= pairs) return;
+  float y[kDe];
+#pragma unroll
+  for (int c = 0; c < kDe; c++) y[c] = e[static_cast<size_t>(p) * kDe + c];
+  for (int o = 0; o < 2 * kDe; o++) {
+    const float a = va[static_cast<size_t>(p) * 2 * kDe + o];
+#pragma unroll
+    for (int c = 0; c < kDe; c++) y[c] += a * s_o[o * kDe + c];
+  }
+  float ss = 0.0f;
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    e[static_cast<size_t>(p) * kDe + c] = y[c];
+    ss += y[c] * y[c];
+  }
+  const float sc = rsqrtf(ss / kDe + 1e-6f);
+#pragma unroll
+  for (int c = 0; c < kDe; c++)
+    nrm[static_cast<size_t>(p) * kDe + c] = y[c] * sc;
+}
+
+// Per pair p = (n, i, j), with n_ = nrm and pt = (n, j, i): e[p] = rms(e[p] +
+// relu(n_[p] ffn_in + ffn_in_b + n_[pt] ffn_rev) ffn_out).
+template <int kDe>
+__global__ void edgeFfn_kernel(int pairs, const float* nrm, const float* ffn_in,
+                               const float* ffn_in_b, const float* ffn_rev,
+                               const float* ffn_out, int hidden, float* e) {
+  extern __shared__ float s_w[];  // in [kDe][hid], rev, b [hid], out [hid][kDe]
+  float* s_rev = s_w + kDe * hidden;
+  float* s_b = s_rev + kDe * hidden;
+  float* s_out = s_b + hidden;
+  for (int k = threadIdx.x; k < kDe * hidden; k += blockDim.x) {
+    s_w[k] = ffn_in[k];
+    s_rev[k] = ffn_rev ? ffn_rev[k] : 0.0f;
+    s_out[k] = ffn_out[k];
+  }
+  for (int k = threadIdx.x; k < hidden; k += blockDim.x) s_b[k] = ffn_in_b[k];
+  __syncthreads();
+  const int p = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p >= pairs) return;
+  const int ij = p & 4095;
+  const int pt = (p - ij) + ((ij & 63) << 6) + (ij >> 6);
+  float x[kDe], a[kDe], at[kDe];
+#pragma unroll
+  for (int c = 0; c < kDe; c++) {
+    x[c] = e[static_cast<size_t>(p) * kDe + c];
+    a[c] = nrm[static_cast<size_t>(p) * kDe + c];
+    at[c] = nrm[static_cast<size_t>(pt) * kDe + c];
+  }
+  for (int m = 0; m < hidden; m++) {
+    float t = s_b[m];
+#pragma unroll
+    for (int c = 0; c < kDe; c++) {
+      t += a[c] * s_w[c * hidden + m] + at[c] * s_rev[c * hidden + m];
+    }
+    t = fmaxf(t, 0.0f);
+#pragma unroll
+    for (int c = 0; c < kDe; c++) x[c] += t * s_out[m * kDe + c];
+  }
+  float ss = 0.0f;
+#pragma unroll
+  for (int c = 0; c < kDe; c++) ss += x[c] * x[c];
+  const float sc = rsqrtf(ss / kDe + 1e-6f);
+#pragma unroll
+  for (int c = 0; c < kDe; c++) e[static_cast<size_t>(p) * kDe + c] = x[c] * sc;
+}
+
+size_t edgeStreamUpdateScratchBytes(int N, int d_e, int triplet_heads) {
+  const size_t pairs = static_cast<size_t>(N) * 4096;
+  // v (later the normalised state) [2 d_e], eg [4 ht], va [2 d_e] per pair;
+  // a_in, a_out [ht, 64, 64] per position.
+  return pairs * (4 * d_e + 6 * triplet_heads) * sizeof(float);
+}
+
+template <int kDe, int kDot>
+static void edgeStreamUpdateImpl(float* e, float* scratch,
+                                 const EdgeStreamUpdateWeights& w, int N,
+                                 cudaStream_t stream) {
+  constexpr int ht = kDe / kDot;
+  const int pairs = N * 4096;
+  float* v = scratch;
+  float* eg = v + static_cast<size_t>(pairs) * 2 * kDe;
+  float* va = eg + static_cast<size_t>(pairs) * 4 * ht;
+  float* a_in = va + static_cast<size_t>(pairs) * 2 * kDe;
+  float* a_out = a_in + static_cast<size_t>(pairs) * ht;
+  float* nrm = v;  // v is dead once va is written
+  const int kBlock = 128;
+  const int blocks = DivUp(pairs, kBlock);
+  const size_t ffn_smem = (3 * kDe * w.hidden + w.hidden) * sizeof(float);
+  if (ffn_smem > 48 * 1024) throw Exception("unsupported edge FFN width");
+  edgeTripletIn_kernel<kDe>
+      <<<blocks, kBlock,
+         (kDe * 2 * kDe + kDe * 4 * ht + 4 * ht) * sizeof(float), stream>>>(
+          pairs, e, w.tri_v, w.tri_eg, w.tri_eg_b, 4 * ht, v, eg);
+  edgeTripletAttention_kernel<<<N * ht * 64, 64, 0, stream>>>(eg, ht, a_in,
+                                                              a_out);
+  edgeTripletContract_kernel<kDe, kDot>
+      <<<N * ht, 256, 0, stream>>>(v, a_in, a_out, ht, w.path, va);
+  edgeTripletOut_kernel<kDe>
+      <<<blocks, kBlock, 0, stream>>>(pairs, va, w.tri_o, e, nrm);
+  edgeFfn_kernel<kDe><<<blocks, kBlock, ffn_smem, stream>>>(
+      pairs, nrm, w.ffn_in, w.ffn_in_b, w.ffn_rev, w.ffn_out, w.hidden, e);
+  ReportCUDAErrors(cudaGetLastError());
+}
+
+void edgeStreamUpdate(float* e, void* scratch, const EdgeStreamUpdateWeights& w,
+                      int N, int d_e, cudaStream_t stream) {
+  float* s = static_cast<float*>(scratch);
+  const int dot = w.triplet_heads > 0 ? d_e / w.triplet_heads : 0;
+  if (d_e == 16 && dot == 4) {
+    edgeStreamUpdateImpl<16, 4>(e, s, w, N, stream);
+  } else if (d_e == 32 && dot == 4) {
+    edgeStreamUpdateImpl<32, 4>(e, s, w, N, stream);
+  } else if (d_e == 32 && dot == 8) {
+    edgeStreamUpdateImpl<32, 8>(e, s, w, N, stream);
+  } else {
+    throw Exception("unsupported edge stream width / triplet heads");
+  }
+}
+
 template <typename T, int kWorkPerThread>
 __global__ void genOffsetPointers_kernel(T** offsets, int heads, int block_size,
                                          int depth, int d_model, T* k, T* q,
@@ -2253,6 +2669,10 @@ template void layerNormRows<half, float, half, half>(
 template void addToResidual<half>(float* residual, const half* y,
                                   const half* bias, float alpha, int N, int C,
                                   cudaStream_t stream);
+template void edgeDoorSoftmax<half>(half* logits, const half* bias, float* e,
+                                    const float* doors, const float* o_e,
+                                    float gate_scale, int N, int heads, int d_e,
+                                    cudaStream_t stream);
 
 template void computeAttackGraph<float>(uint64_t* bits, const float* planes,
                                       int N, int input_planes,
@@ -2279,6 +2699,10 @@ template void layerNormRows<float, float, float, float>(
 template void addToResidual<float>(float* residual, const float* y,
                                    const float* bias, float alpha, int N, int C,
                                    cudaStream_t stream);
+template void edgeDoorSoftmax<float>(float* logits, const float* bias, float* e,
+                                     const float* doors, const float* o_e,
+                                     float gate_scale, int N, int heads,
+                                     int d_e, cudaStream_t stream);
 
 template void genOffsetPointers<float>(float** offsets, int heads,
                                        int max_batch, int depth, int d_model,
@@ -2441,6 +2865,12 @@ template void addToResidual<__nv_bfloat16>(float* residual,
                                            const __nv_bfloat16* bias,
                                            float alpha, int N, int C,
                                            cudaStream_t stream);
+template void edgeDoorSoftmax<__nv_bfloat16>(__nv_bfloat16* logits,
+                                             const __nv_bfloat16* bias,
+                                             float* e, const float* doors,
+                                             const float* o_e, float gate_scale,
+                                             int N, int heads, int d_e,
+                                             cudaStream_t stream);
 #endif
 }  // namespace cudnn_backend
 }  // namespace lczero

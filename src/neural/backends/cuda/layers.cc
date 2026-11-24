@@ -1653,7 +1653,8 @@ EncoderBlock<DataType>::EncoderBlock(
     int size, float alpha, DataType* smolgen_global_scratch,
     int smolgen_global_size, int max_batch_size, ActivationFunction smolgen_act,
     ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
-    bool fused_mha, float output_gate_scale, bool prenorm)
+    bool fused_mha, float output_gate_scale, bool prenorm,
+    float edge_gate_scale)
     : embedding_op_size_(size),
       encoder_heads_(heads),
       alpha_(alpha),
@@ -1662,10 +1663,13 @@ EncoderBlock<DataType>::EncoderBlock(
       smolgen_activation_(smolgen_act),
       ffn_activation_(ffn_act),
       max_batch_size_(max_batch_size),
-      use_fused_mha_(fused_mha),
+      // The edge doors act on the full logits, which the fused attention
+      // never materialises.
+      use_fused_mha_(fused_mha && cpu_weights.mha.edge_e_w.empty()),
       use_gemm_ex_(use_gemm_ex) {
   output_gate_scale_ = output_gate_scale;
   prenorm_ = prenorm;
+  edge_gate_scale_ = edge_gate_scale;
   mha_q_size_ = cpu_weights.mha.q_b.size();
   mha_k_size_ = cpu_weights.mha.k_b.size();
   mha_v_size_ = cpu_weights.mha.v_b.size();
@@ -1804,6 +1808,32 @@ EncoderBlock<DataType>::EncoderBlock(
     pair_d_e_ = mha.pair_att_w.size() / heads;
     allocAndUpload<DataType>(&pair_att_w, mha.pair_att_w, scratch);
   }
+
+  // Edge doors, packed per head: [edge_e_w, edge_m_w, edge_g_w, edge_t_node,
+  // edge_t_edge, edge_g_b].
+  if (!mha.edge_e_w.empty()) {
+    const size_t h = heads;
+    edge_d_e_ = mha.edge_e_w.size() / h;
+    const size_t d = edge_d_e_;
+    if (mha.edge_e_w.size() != h * d || mha.edge_m_w.size() != h * d ||
+        mha.edge_g_w.size() != h * d || mha.edge_g_b.size() != h ||
+        mha.edge_t_edge.size() != h || mha.edge_t_node.size() != h) {
+      throw Exception("Edge door weights have unexpected sizes.");
+    }
+    const size_t rec = 3 * d + 3;
+    std::vector<float> doors(h * rec);
+    for (size_t k = 0; k < h; k++) {
+      for (size_t c = 0; c < d; c++) {
+        doors[k * rec + c] = mha.edge_e_w[k * d + c];
+        doors[k * rec + d + c] = mha.edge_m_w[k * d + c];
+        doors[k * rec + 2 * d + c] = mha.edge_g_w[k * d + c];
+      }
+      doors[k * rec + 3 * d] = mha.edge_t_node[k];
+      doors[k * rec + 3 * d + 1] = mha.edge_t_edge[k];
+      doors[k * rec + 3 * d + 2] = mha.edge_g_b[k];
+    }
+    allocAndUpload<float>(&edge_doors_, doors, scratch);
+  }
 }
 
 template <typename DataType>
@@ -1909,7 +1939,8 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
                                   DataType*** offset_pointers,
                                   const uint64_t* attack_bits,
                                   const DataType* pair_stream,
-                                  float* residual) const {
+                                  float* residual, float* edge,
+                                  const float* edge_readback) const {
   const int d_model = mha_q_size_;
   const int depth = d_model / encoder_heads_;
 
@@ -2103,7 +2134,14 @@ void EncoderBlock<DataType>::Eval(int N, DataType* in_out_tensor,
 
     // attention_weights = tf.nn.softmax(scaled_attention_logits, axis = -1)
     // attention_weights -> buffer1
-    if (has_logit_bias) {
+    if (edge_doors_) {
+      // The edge doors around the softmax (and the site's readback).
+      assert(edge != nullptr);
+      edgeDoorSoftmax<DataType>(buffer1, has_logit_bias ? buffer2 : nullptr,
+                                edge, edge_doors_, edge_readback,
+                                edge_gate_scale_, N, encoder_heads_,
+                                edge_d_e_, stream);
+    } else if (has_logit_bias) {
       // Add smolgen weights (and the attack-graph and pair stream terms) to
       // the scaled matmul_qk attention logits before softmax.
       Softmax(encoder_heads_ * N * 64, 64, buffer1, buffer1, buffer2, stream);
@@ -2348,6 +2386,7 @@ EncoderBlock<DataType>::~EncoderBlock() {
   if (attack_w) ReportCUDAErrors(cudaFree(attack_w));
   if (attack_gate_q) ReportCUDAErrors(cudaFree(attack_gate_q));
   if (attack_gate_k) ReportCUDAErrors(cudaFree(attack_gate_k));
+  if (edge_doors_) ReportCUDAErrors(cudaFree(edge_doors_));
   if (pair_att_w) ReportCUDAErrors(cudaFree(pair_att_w));
 }
 
@@ -2471,6 +2510,64 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
     allocAndUpload<float>(&pair_t_off_, weights.pair_t_off, scratch);
   }
 
+  // Edge stream: the seed and the sites.
+  if (!weights.edge_p_in.empty() || !weights.edge_t_off.empty()) {
+    edge_d_e_ = weights.edge_t_off.size() / 225;
+    if (weights.edge_t_off.size() != 225 * static_cast<size_t>(edge_d_e_) ||
+        weights.edge_p_in.size() !=
+            static_cast<size_t>(kAttackGraphChannels) * edge_d_e_) {
+      throw Exception("Edge stream weights have unexpected sizes.");
+    }
+    allocAndUpload<float>(&edge_p_in_, weights.edge_p_in, scratch);
+    allocAndUpload<float>(&edge_t_off_, weights.edge_t_off, scratch);
+  }
+  if (weights.edge_updates.size() != constants.edge_update_after.size() ||
+      (!weights.edge_updates.empty() && !edge_p_in_)) {
+    throw Exception("Edge stream sites do not match their weights.");
+  }
+  for (size_t k = 0; k < weights.edge_updates.size(); k++) {
+    const auto& u = weights.edge_updates[k];
+    const size_t d = edge_d_e_;
+    const size_t h = encoder_head_count_;
+    const size_t hidden = u.ffn_in_b.size();
+    const size_t ht = u.tri_eg_b.size() / 4;
+    if (u.o_e.size() != h * d || u.tri_v.size() != d * 2 * d ||
+        u.tri_eg_b.size() != 4 * ht || ht == 0 || d % ht != 0 ||
+        u.tri_eg.size() != d * 4 * ht || u.tri_o.size() != 2 * d * d ||
+        u.ffn_in.size() != d * hidden || u.ffn_out.size() != hidden * d ||
+        (!u.ffn_rev.empty() && u.ffn_rev.size() != d * hidden)) {
+      throw Exception("Edge stream site weights have unexpected sizes.");
+    }
+    const int after = constants.edge_update_after[k];
+    if (after < 0 || after >= static_cast<int>(weights.encoder.size()) ||
+        (k > 0 && after <= edge_sites_.back().after_block) ||
+        weights.encoder[after].mha.edge_e_w.empty()) {
+      throw Exception("Edge stream sites must follow blocks with edge doors.");
+    }
+    auto upload = [&](const std::vector<float>& v) -> const float* {
+      if (v.empty()) return nullptr;
+      float* p = nullptr;
+      allocAndUpload<float>(&p, v, scratch);
+      edge_site_memory_.push_back(p);
+      return p;
+    };
+    EdgeSite site;
+    site.after_block = after;
+    site.o_e = upload(u.o_e);
+    site.weights.tri_v = upload(u.tri_v);
+    site.weights.tri_eg = upload(u.tri_eg);
+    site.weights.tri_eg_b = upload(u.tri_eg_b);
+    site.weights.tri_o = upload(u.tri_o);
+    site.weights.ffn_in = upload(u.ffn_in);
+    site.weights.ffn_in_b = upload(u.ffn_in_b);
+    site.weights.ffn_rev = upload(u.ffn_rev);
+    site.weights.ffn_out = upload(u.ffn_out);
+    site.weights.hidden = static_cast<int>(hidden);
+    site.weights.triplet_heads = static_cast<int>(ht);
+    site.weights.path = constants.triplet_path;
+    edge_sites_.push_back(site);
+  }
+
   if (has_smolgen_) {
     allocAndUpload<DataType>(&smolgen_global_, weights.smolgen_w, scratch);
     smolgen_global_size_ = 64 * 64;
@@ -2506,16 +2603,22 @@ AttentionBody<DataType>::AttentionBody(const MultiHeadWeights& weights,
   const float output_gate_scale = constants.output_gate_scale > 0.0f
                                       ? constants.output_gate_scale
                                       : 1.0f;
+  const float edge_gate_scale =
+      constants.edge_gate_scale > 0.0f ? constants.edge_gate_scale : 1.0f;
   has_attack_graph_ = UsesAttackGraph(weights);
   for (const auto& enc : weights.encoder) {
     EncoderBlock<DataType>* pW = new EncoderBlock<DataType>(
         enc, scratch, encoder_head_count_, embedding_op_size_, alpha,
         smolgen_global_, smolgen_global_size_, max_batch_size,
         activations_.smolgen_activation, activations_.ffn_activation,
-        eps, use_gemm_ex, use_fused_mha_, output_gate_scale, prenorm_);
+        eps, use_gemm_ex, use_fused_mha_, output_gate_scale, prenorm_,
+        edge_gate_scale);
     encoder_weights_.emplace_back(pW);
     if (pW->pair_att_w && pW->pair_d_e_ != pair_d_e_) {
       throw Exception("pair_att_w does not match the pair stream.");
+    }
+    if (pW->edge_doors_ && pW->edge_d_e_ != edge_d_e_) {
+      throw Exception("Edge doors do not match the edge stream.");
     }
   }
   if (has_attack_graph_ && num_res_blocks > 0) {
@@ -2553,6 +2656,9 @@ AttentionBody<DataType>::~AttentionBody() {
   if (pair_t_off_) ReportCUDAErrors(cudaFree(pair_t_off_));
   if (final_norm_g_) ReportCUDAErrors(cudaFree(final_norm_g_));
   if (final_norm_b_) ReportCUDAErrors(cudaFree(final_norm_b_));
+  if (edge_p_in_) ReportCUDAErrors(cudaFree(edge_p_in_));
+  if (edge_t_off_) ReportCUDAErrors(cudaFree(edge_t_off_));
+  for (float* p : edge_site_memory_) ReportCUDAErrors(cudaFree(p));
   for (const auto pEnc : encoder_weights_) delete pEnc;
 }
 
@@ -2567,14 +2673,27 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   DataType* buffer1 = (DataType*)input2;
   DataType* buffer2 = buffer1 + scratch_size / (2 * sizeof(DataType));
 
-  // Pre-norm: the float residual stream, after the AttackGraphState.
+  // Pre-norm: the float residual stream, after the AttackGraphState; the
+  // edge stream's state after that.
+  const size_t attack_graph_bytes =
+      has_attack_graph_
+          ? AttackGraphState<DataType>::Bytes(max_batch_size_, pair_d_e_)
+          : 0;
+  const size_t residual_bytes =
+      prenorm_ ? PrenormResidual::Bytes(max_batch_size_, embedding_op_size_)
+               : 0;
   float* residual = nullptr;
   if (prenorm_) {
-    residual = PrenormResidual::At(
-        scratch, scratch_size,
-        has_attack_graph_
-            ? AttackGraphState<DataType>::Bytes(max_batch_size_, pair_d_e_)
-            : 0);
+    residual = PrenormResidual::At(scratch, scratch_size, attack_graph_bytes);
+  }
+  float* edge = nullptr;
+  void* edge_site_scratch = nullptr;
+  if (edge_p_in_) {
+    EdgeStreamState state(scratch, scratch_size,
+                          attack_graph_bytes + residual_bytes, max_batch_size_,
+                          edge_d_e_);
+    edge = state.e;
+    edge_site_scratch = state.site_scratch;
   }
 
   // Attack graph and pair stream, from the input planes.
@@ -2588,6 +2707,11 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
       computePairStream<DataType>(state.pair, state.bits, pair_p_in_,
                                   pair_t_off_, N, pair_d_e_, stream);
       pair_stream = state.pair;
+    }
+    if (edge) {
+      // The edge stream's seed, rms(E @ p_in + t_off[rel]), in float.
+      computePairStream<float>(edge, state.bits, edge_p_in_, edge_t_off_, N,
+                               edge_d_e_, stream);
     }
   }
 
@@ -2743,9 +2867,22 @@ void AttentionBody<DataType>::Eval(int N, DataType* output,
   }
 
   // 2. Encoder blocks
-  for (const auto pEnc : encoder_weights_) {
-    pEnc->Eval(N, output_tensor, (DataType*)scratch, buffer1, buffer2, cublas,
-               stream, offset_pointers, attack_bits, pair_stream, residual);
+  size_t next_site = 0;
+  for (size_t b = 0; b < encoder_weights_.size(); b++) {
+    const EdgeSite* site = nullptr;
+    if (next_site < edge_sites_.size() &&
+        edge_sites_[next_site].after_block == static_cast<int>(b)) {
+      site = &edge_sites_[next_site++];
+    }
+    encoder_weights_[b]->Eval(N, output_tensor, (DataType*)scratch, buffer1,
+                              buffer2, cublas, stream, offset_pointers,
+                              attack_bits, pair_stream, residual, edge,
+                              site ? site->o_e : nullptr);
+    if (site) {
+      // The edge stream's site (the block added the readback).
+      edgeStreamUpdate(edge, edge_site_scratch, site->weights, N, edge_d_e_,
+                       stream);
+    }
   }  // End of encoder blocks
 
   // Pre-norm: the heads read final_norm(residual).

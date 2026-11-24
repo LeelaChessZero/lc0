@@ -215,6 +215,46 @@ template <typename T>
 void addToResidual(float* residual, const T* y, const T* bias, float alpha,
                    int N, int C, cudaStream_t stream);
 
+// The edge-stream doors of a block's attention, in place of the softmax:
+// logits [N, heads, 64, 64] = q k^T / sqrt(depth) on entry (bias, the same
+// shape, added when non-null), the gated attention weights on exit. For row
+// (n, h, i), with e the edge state [N, 64 * 64, d_e] and doors[h] = [edge_e_w
+// (d_e), edge_m_w (d_e), edge_g_w (d_e), edge_t_node, edge_t_edge, edge_g_b]:
+//   L = (t_node L + t_edge (edge_e_w . e)) * (1 + edge_m_w . e)
+//   W = softmax_j(L) * gate_scale * sigmoid(edge_g_w . e + edge_g_b).
+// With o_e [heads, d_e] (an edge-stream site follows the block) it also adds
+// the readback e += sum_h L[h] o_e[h, :]. d_e 8, 16 or 32.
+template <typename T>
+void edgeDoorSoftmax(T* logits, const T* bias, float* e, const float* doors,
+                     const float* o_e, float gate_scale, int N, int heads,
+                     int d_e, cudaStream_t stream);
+
+// The weights of an edge-stream site (net.proto EdgeStreamUpdate), row-major
+// float on the device.
+struct EdgeStreamUpdateWeights {
+  const float* tri_v = nullptr;     // [d_e, 2 d_e]
+  const float* tri_eg = nullptr;    // [d_e, 4 triplet_heads]
+  const float* tri_eg_b = nullptr;  // [4 triplet_heads]
+  const float* tri_o = nullptr;     // [2 d_e, d_e]
+  const float* ffn_in = nullptr;    // [d_e, hidden]
+  const float* ffn_in_b = nullptr;  // [hidden]
+  const float* ffn_rev = nullptr;   // [d_e, hidden] or null
+  const float* ffn_out = nullptr;   // [hidden, d_e]
+  int hidden = 0;
+  int triplet_heads = 0;
+  bool path = true;  // triplet path form (else TGT-Ag)
+};
+
+// The scratch an edge-stream site needs for N positions.
+size_t edgeStreamUpdateScratchBytes(int N, int d_e, int triplet_heads);
+
+// An edge-stream site after the readback: e += triplet(rms(e)); e = rms(e +
+// FFN(rms(e))). e [N, 64 * 64, d_e] float, in place. d_e 16 (triplet heads 4)
+// or 32 (triplet heads 4 or 8).
+void edgeStreamUpdate(float* e, void* scratch,
+                      const EdgeStreamUpdateWeights& weights, int N, int d_e,
+                      cudaStream_t stream);
+
 template <typename T>
 void genOffsetPointers(T** offsets, int heads, int max_batch, int depth,
                        int d_model, T* k, T* q, T* b1, T* v, T* b2,

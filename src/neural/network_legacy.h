@@ -91,6 +91,16 @@ struct BaseWeights {
     // scale * sigmoid(x @ output_gate_w + output_gate_b) before dense_w.
     Vec output_gate_w;  // like q_w
     Vec output_gate_b;  // like q_b
+    // Edge-stream doors: the logits L and weights W of a block read the edge
+    // state e [d_e, 64, 64] as L = (edge_t_node L + edge_t_edge (edge_e_w . e))
+    // * (1 + edge_m_w . e) and W = softmax(L) * scale * sigmoid(edge_g_w . e +
+    // edge_g_b) (net.proto MHA); row-major, empty if absent.
+    Vec edge_e_w;     // [heads, d_e]
+    Vec edge_m_w;     // [heads, d_e]
+    Vec edge_g_w;     // [heads, d_e]
+    Vec edge_g_b;     // [heads]
+    Vec edge_t_edge;  // [heads]
+    Vec edge_t_node;  // [heads]
   };
 
   struct FFN {
@@ -161,6 +171,24 @@ struct BaseWeights {
   // PairStream); row-major, empty if absent.
   Vec pair_p_in;   // [C, pair_d_e]
   Vec pair_t_off;  // [225, pair_d_e]
+
+  // Edge stream (net.proto EdgeStream): seed e = rms(E @ p_in +
+  // t_off[rel(i, j)]), then one update per site; row-major, empty if absent.
+  struct EdgeStreamUpdate {
+    explicit EdgeStreamUpdate(const pblczero::Weights::EdgeStreamUpdate& u);
+    Vec o_e;       // [heads, d_e] logit readback
+    Vec tri_v;     // [d_e, 2 d_e]
+    Vec tri_eg;    // [d_e, 4 triplet_heads]
+    Vec tri_eg_b;  // [4 triplet_heads]
+    Vec tri_o;     // [2 d_e, d_e]
+    Vec ffn_in;    // [d_e, hidden]
+    Vec ffn_in_b;  // [hidden]
+    Vec ffn_rev;   // [d_e, hidden], empty without rev_edge
+    Vec ffn_out;   // [hidden, d_e]
+  };
+  Vec edge_p_in;   // [C, d_e]
+  Vec edge_t_off;  // [225, d_e]
+  std::vector<EdgeStreamUpdate> edge_updates;  // in site order
 
   // Final norm of a pre-norm encoder tower (net.proto encoder_final_norm);
   // empty if absent.

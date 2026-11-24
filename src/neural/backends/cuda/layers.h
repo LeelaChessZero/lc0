@@ -33,8 +33,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "cuda_common.h"
+#include "kernels.h"
 #include "neural/network_legacy.h"
 #include "neural/tables/activation_function.h"
 
@@ -100,10 +102,37 @@ struct PrenormResidual {
   static constexpr size_t kAlign = 256;
 };
 
+// The edge stream's state e, N x 64 * 64 x d_e floats, then the scratch of
+// its sites, after the PrenormResidual (when the net has one): the network
+// allocates scratch_size + attack graph bytes + residual bytes + Bytes().
+struct EdgeStreamState {
+  float* e;
+  void* site_scratch;
+
+  static size_t Bytes(int max_batch_size, int d_e, size_t site_scratch_bytes) {
+    return 2 * kAlign + StateBytes(max_batch_size, d_e) + site_scratch_bytes;
+  }
+  EdgeStreamState(void* scratch, size_t scratch_size, size_t preceding_bytes,
+                  int max_batch_size, int d_e) {
+    char* base = static_cast<char*>(scratch);
+    const size_t offset = AlignUp(scratch_size + preceding_bytes);
+    e = reinterpret_cast<float*>(base + offset);
+    site_scratch = base + AlignUp(offset + StateBytes(max_batch_size, d_e));
+  }
+
+ private:
+  static constexpr size_t kAlign = 256;
+  static size_t AlignUp(size_t x) { return (x + kAlign - 1) / kAlign * kAlign; }
+  static size_t StateBytes(int max_batch_size, int d_e) {
+    return static_cast<size_t>(max_batch_size) * 64 * 64 * d_e * sizeof(float);
+  }
+};
+
 // Whether the attention body computes an AttackGraphState for these weights:
-// a pair stream, or attack-graph / pair stream terms in an encoder block.
+// a pair stream, an edge stream, or attack-graph / pair stream terms in an
+// encoder block.
 inline bool UsesAttackGraph(const MultiHeadWeights& weights) {
-  bool uses = !weights.pair_p_in.empty();
+  bool uses = !weights.pair_p_in.empty() || !weights.edge_p_in.empty();
   for (const auto& enc : weights.encoder) {
     uses = uses || !enc.mha.attack_w.empty() || !enc.mha.pair_att_w.empty();
   }
@@ -121,6 +150,10 @@ struct AttentionBodyConstants {
   // Pre-norm blocks (x += a * MHA(ln1(x)); x += a * FFN(ln2(x))) on a float
   // residual stream, then the final norm; post-norm blocks otherwise.
   bool prenorm = false;
+  // Edge stream: site k follows block edge_update_after[k].
+  std::vector<int> edge_update_after;
+  bool triplet_path = false;     // triplet path form (else TGT-Ag)
+  float edge_gate_scale = 0.0f;  // 1 (the doors' G gate)
 };
 
 template <typename DataType>
@@ -419,18 +452,22 @@ class EncoderBlock {
                int max_batch_size, ActivationFunction smolgen_act,
                ActivationFunction ffn_act, float default_eps, bool use_gemm_ex,
                bool fused_mha, float output_gate_scale = 1.0f,
-               bool prenorm = false);
+               bool prenorm = false, float edge_gate_scale = 1.0f);
   ~EncoderBlock();
 
   // attack_bits and pair_stream: the AttackGraphState, for blocks with
   // attack-graph terms or pair_att_w. residual: the PrenormResidual of a
   // pre-norm block, which reads and updates it (inpop is then scratch too).
+  // edge: the EdgeStreamState, for blocks with edge doors; edge_readback: the
+  // o_e of the edge-stream site after this block, whose readback the block
+  // adds into edge.
   void Eval(int N, DataType* inpop, DataType* scratch0, DataType* scratch1,
             DataType* scratch2, cublasHandle_t cublas, cudaStream_t stream,
             DataType*** offset_pointers,
             const uint64_t* attack_bits = nullptr,
             const DataType* pair_stream = nullptr,
-            float* residual = nullptr) const;
+            float* residual = nullptr, float* edge = nullptr,
+            const float* edge_readback = nullptr) const;
 
   // all GPU side pointers
   DataType *mha_q_w, *mha_q_b;
@@ -490,6 +527,11 @@ class EncoderBlock {
   bool has_output_gate_ = false;
   float output_gate_scale_;
   bool prenorm_ = false;
+
+  // Edge doors [heads][3 d_e + 3] (kernels.h edgeDoorSoftmax).
+  float* edge_doors_ = nullptr;
+  int edge_d_e_ = 0;
+  float edge_gate_scale_ = 1.0f;
 
   const int max_batch_size_;
   const bool use_fused_mha_;
@@ -606,6 +648,16 @@ class AttentionBody : public BaseLayer<DataType> {
   float *pair_p_in_ = nullptr, *pair_t_off_ = nullptr;  // static pair stream
   // Final norm of a pre-norm tower.
   DataType *final_norm_g_ = nullptr, *final_norm_b_ = nullptr;
+  // Edge stream: the seed's weights and the sites.
+  float *edge_p_in_ = nullptr, *edge_t_off_ = nullptr;
+  int edge_d_e_ = 0;
+  struct EdgeSite {
+    int after_block;
+    const float* o_e;  // [heads, d_e]
+    EdgeStreamUpdateWeights weights;
+  };
+  std::vector<EdgeSite> edge_sites_;
+  std::vector<float*> edge_site_memory_;  // every site's device arrays
   int embedding_dense_size_;
   int embedding_op_size_;
   int embedding_ffn_size_;

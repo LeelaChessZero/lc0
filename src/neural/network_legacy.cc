@@ -85,6 +85,8 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
       has_smolgen(weights.has_smolgen_w()),
       pair_p_in(RowMajorByDims(weights.pair_stream().p_in())),
       pair_t_off(RowMajorByDims(weights.pair_stream().t_off())),
+      edge_p_in(RowMajorByDims(weights.edge_stream().p_in())),
+      edge_t_off(RowMajorByDims(weights.edge_stream().t_off())),
       encoder_final_norm_gammas(
           LayerAdapter(weights.encoder_final_norm().gammas()).as_vector()),
       encoder_final_norm_betas(
@@ -95,6 +97,9 @@ BaseWeights::BaseWeights(const pblczero::Weights& weights)
   encoder_head_count = weights.headcount();
   for (const auto& enc : weights.encoder()) {
     encoder.emplace_back(enc);
+  }
+  for (const auto& update : weights.edge_stream().update()) {
+    edge_updates.emplace_back(update);
   }
 }
 
@@ -183,11 +188,29 @@ BaseWeights::MHA::MHA(const pblczero::Weights::MHA& mha)
       attack_gate_k(RowMajorByDims(mha.attack_gate_k())),
       pair_att_w(RowMajorByDims(mha.pair_att_w())),
       output_gate_w(LayerAdapter(mha.output_gate_w()).as_vector()),
-      output_gate_b(LayerAdapter(mha.output_gate_b()).as_vector()) {
+      output_gate_b(LayerAdapter(mha.output_gate_b()).as_vector()),
+      edge_e_w(RowMajorByDims(mha.edge_e_w())),
+      edge_m_w(RowMajorByDims(mha.edge_m_w())),
+      edge_g_w(RowMajorByDims(mha.edge_g_w())),
+      edge_g_b(LayerAdapter(mha.edge_g_b()).as_vector()),
+      edge_t_edge(LayerAdapter(mha.edge_t_edge()).as_vector()),
+      edge_t_node(LayerAdapter(mha.edge_t_node()).as_vector()) {
   if (mha.has_rpe_q() || mha.has_rpe_k() || mha.has_rpe_v()) {
     throw Exception("RPE weights file not supported.");
   }
 }
+
+BaseWeights::EdgeStreamUpdate::EdgeStreamUpdate(
+    const pblczero::Weights::EdgeStreamUpdate& u)
+    : o_e(RowMajorByDims(u.o_e())),
+      tri_v(RowMajorByDims(u.tri_v())),
+      tri_eg(RowMajorByDims(u.tri_eg())),
+      tri_eg_b(LayerAdapter(u.tri_eg_b()).as_vector()),
+      tri_o(RowMajorByDims(u.tri_o())),
+      ffn_in(RowMajorByDims(u.ffn_in())),
+      ffn_in_b(LayerAdapter(u.ffn_in_b()).as_vector()),
+      ffn_rev(RowMajorByDims(u.ffn_rev())),
+      ffn_out(RowMajorByDims(u.ffn_out())) {}
 
 BaseWeights::FFN::FFN(const pblczero::Weights::FFN& ffn)
     : dense1_w(LayerAdapter(ffn.dense1_w()).as_vector()),
