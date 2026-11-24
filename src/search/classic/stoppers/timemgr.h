@@ -53,6 +53,9 @@ struct IterationStats {
   // TODO: remove this in favor of time_usage_hint_=kImmediateMove when
   // smooth time manager is the default.
   bool win_found = false;
+  // True if a non-tablebase (board-verified) terminal win strictly leads all
+  // non-winning / tablebase root edges in visit count.
+  bool win_is_most_visited = false;
   bool may_resign = false;
   int num_losing_edges = 0;
 

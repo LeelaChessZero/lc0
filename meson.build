@@ -1191,6 +1191,14 @@ if get_option('gtest')
                'src/neural/memcache.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
+
+  test('StoppersTest',
+    executable('stoppers_test',
+               'src/search/classic/stoppers/stoppers_test.cc',
+               'src/search/classic/stoppers/stoppers.cc',
+               'src/search/classic/stoppers/timemgr.cc',
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest),
+    args: '--gtest_output=xml:stoppers_test.xml', timeout: 90)
 endif
 
 

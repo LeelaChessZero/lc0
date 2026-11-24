@@ -204,13 +204,15 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
     LOGFILE << "Only one possible move. Moving immediately.";
     return true;
   }
-  if (stats.edge_n.size() <= static_cast<size_t>(stats.num_losing_edges) +
+  if (stats.batches_since_movestart >= minimum_batches_ &&
+      stats.edge_n.size() <= static_cast<size_t>(stats.num_losing_edges) +
                                  (stats.may_resign ? 0 : 1)) {
     LOGFILE << "At most one non losing move, stopping search.";
     return true;
   }
-  if (stats.win_found) {
-    LOGFILE << "Terminal win found, stopping search.";
+  // A board-verified mate-in-1 cannot be improved upon; stop immediately.
+  if (stats.mate_depth <= 1) {
+    LOGFILE << "Mate in 1 found, stopping search.";
     return true;
   }
   if (stats.nodes_since_movestart > 0 && !first_eval_time_) {
@@ -239,6 +241,18 @@ bool SmartPruningStopper::ShouldStop(const IterationStats& stats,
   // very realistic.
   hints->UpdateEstimatedRemainingPlayouts(remaining_playouts);
   if (stats.batches_since_movestart < minimum_batches_) return false;
+
+  // For non-TB forced wins past the initial tolerance window, stop once a
+  // short mate (<= 2) is confirmed or a proven non-TB win strictly leads all
+  // other candidates in visits. Tablebase-only wins and lower-visit slow mates
+  // fall through to the standard visit-gap check below so search does not
+  // prematurely lock onto the first proof found.
+  if (stats.mate_depth <= 2 ||
+      (stats.win_found && stats.win_is_most_visited)) {
+    LOGFILE << "Proven non-TB win confirmed (mate_depth=" << stats.mate_depth
+            << "), stopping search.";
+    return true;
+  }
 
   uint32_t largest_n = 0;
   uint32_t second_largest_n = 0;
