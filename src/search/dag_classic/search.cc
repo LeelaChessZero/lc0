@@ -2488,6 +2488,13 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
   auto lower = GameResult::BLACK_WON;
   auto upper = GameResult::BLACK_WON;
   for (const auto& edge : p->Edges()) {
+    // Until its first visit is backed up, a child may still be in ExtendNode on
+    // another thread and GetM() returns the fallback, so treat it as unknown.
+    if (edge.GetN() == 0) {
+      upper = GameResult::WHITE_WON;
+      all_hard = false;
+      continue;
+    }
     const auto [edge_lower, edge_upper] = edge.GetBounds();
     lower = std::max(edge_lower, lower);
     upper = std::max(edge_upper, upper);
@@ -2617,7 +2624,7 @@ bool SearchWorker::MaybeRefineTerminal(
     float best_eog_m = std::numeric_limits<float>::infinity();
     float best_tb_m = std::numeric_limits<float>::infinity();
     for (const auto& edge : p->Edges()) {
-      if (!edge.IsTerminal()) continue;
+      if (edge.GetN() == 0 || !edge.IsTerminal()) continue;
       if (edge.GetBounds().first != GameResult::WHITE_WON) continue;
       if (!edge.IsTbTerminal()) {
         has_eog_win = true;
@@ -2641,7 +2648,7 @@ bool SearchWorker::MaybeRefineTerminal(
     float losing_m = 0.0f;
     bool prefer_tb = false;
     for (const auto& edge : p->Edges()) {
-      if (!edge.IsTerminal() ||
+      if (edge.GetN() == 0 || !edge.IsTerminal() ||
           edge.GetBounds().second != GameResult::BLACK_WON) {
         return false;
       }

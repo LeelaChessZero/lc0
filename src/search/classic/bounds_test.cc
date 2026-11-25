@@ -475,6 +475,66 @@ TEST(ClassicBoundsTest, SeededSoftBoundNotWidenedByLooserChildPartialBound) {
   EXPECT_TRUE(p->IsTbBound());
 }
 
+TEST(ClassicBoundsTest, RefineTerminalWaitsForUnvisitedTablebaseWin) {
+  NodeTree tree;
+  tree.ResetToPosition(ChessBoard::kStartposFen, {});
+  Node* root = tree.GetCurrentHead();
+
+  // root -> p (BLACK_WON, TB, m=9) -> {c1 (WHITE_WON, TB, m=8, visited),
+  //   c2 (WHITE_WON, TB, m=6, extended but not backed up yet),
+  //   c3 (draw, first visit)}
+  root->CreateEdges({MakeMove("e2e4")});
+  root->TryStartScoreUpdate();
+  root->FinalizeScoreUpdate(0.0f, 0.0f, 10.0f, 1);
+
+  auto root_it = root->Edges();
+  Node* p = root_it.GetOrSpawnNode(root);
+  p->CreateEdges({MakeMove("d1h5"), MakeMove("f1c4"), MakeMove("g1f3")});
+  p->MakeTerminal(GameResult::BLACK_WON, 9.0f, Node::Terminal::Tablebase);
+  p->TryStartScoreUpdate();
+  p->FinalizeScoreUpdate(-1.0f, 0.0f, 9.0f, 1);
+  root->TryStartScoreUpdate();
+  root->FinalizeScoreUpdate(1.0f, 0.0f, 10.0f, 1);
+
+  auto p_it = p->Edges();
+  Node* c1 = p_it.GetOrSpawnNode(p);
+  c1->MakeTerminal(GameResult::WHITE_WON, 8.0f, Node::Terminal::Tablebase);
+  c1->TryStartScoreUpdate();
+  c1->FinalizeScoreUpdate(1.0f, 0.0f, 8.0f, 1);
+
+  ++p_it;
+  Node* c2 = p_it.GetOrSpawnNode(p);
+  c2->MakeTerminal(GameResult::WHITE_WON, 6.0f, Node::Terminal::Tablebase);
+  ASSERT_TRUE(c2->TryStartScoreUpdate());
+
+  ++p_it;
+  Node* c3 = p_it.GetOrSpawnNode(p);
+  c3->MakeTerminal(GameResult::DRAW);
+
+  DummyBackend backend;
+  ClassicOptions opts;
+  Search search(tree, &backend, std::make_unique<NullUciResponder>(), {},
+                std::chrono::steady_clock::now(),
+                std::make_unique<ChainedSearchStopper>(), false, false,
+                opts.Get(), nullptr);
+  SearchWorker worker(&search, search.GetParams());
+
+  // c2 has N == 0, so its moves-left is not known yet and p keeps m = 9.
+  ASSERT_TRUE(root->TryStartScoreUpdate());
+  ASSERT_TRUE(p->TryStartScoreUpdate());
+  ASSERT_TRUE(c3->TryStartScoreUpdate());
+  SearchBoundsTestPeer::Backup(worker, c3, 0.0f, 1.0f, 0.0f, 2);
+  EXPECT_TRUE(p->IsTbTerminal());
+  EXPECT_FLOAT_EQ(p->GetM(), 9.0f);
+
+  // Once c2 is backed up, p takes its shorter win.
+  ASSERT_TRUE(root->TryStartScoreUpdate());
+  ASSERT_TRUE(p->TryStartScoreUpdate());
+  SearchBoundsTestPeer::Backup(worker, c2, 1.0f, 0.0f, 6.0f, 2);
+  EXPECT_TRUE(p->IsTbTerminal());
+  EXPECT_FLOAT_EQ(p->GetM(), 7.0f);
+}
+
 }  // namespace classic
 
 #ifdef HAVE_DAG_CLASSIC
@@ -806,6 +866,76 @@ TEST(DagClassicBoundsTest, SoftBoundPropagatesAndSyncsAcrossTransposition) {
   EXPECT_TRUE(p2->WLDMInvariantsHold());
   EXPECT_TRUE(gp2_ln->WLDMInvariantsHold());
   EXPECT_TRUE(gp2->WLDMInvariantsHold());
+}
+
+TEST(DagClassicBoundsTest, RefineTerminalWaitsForUnvisitedCheckmate) {
+  NodeTree tree;
+  tree.ResetToPosition(ChessBoard::kStartposFen, {});
+  Node* root = tree.GetCurrentHead();
+  auto root_ln = std::make_shared<LowNode>(MoveList{MakeMove("e2e4")});
+  root_ln->FinalizeScoreUpdate(0.0f, 0.0f, 10.0f, 1);
+  root->SetLowNode(root_ln);
+  root->TryStartScoreUpdate();
+  root->FinalizeScoreUpdate(0.0f, 0.0f, 11.0f, 1);
+
+  // p's mover already has a proven win through c1 (pl m = 9). c2 is a
+  // checkmate that ExtendNode created but that has not been backed up yet,
+  // and c3 is a stalemate on its first visit.
+  Node* p = root->Edges().GetOrSpawnNode(root);
+  auto pl = std::make_shared<LowNode>(
+      MoveList{MakeMove("d1h5"), MakeMove("f1c4"), MakeMove("g1f3")});
+  pl->MakeTerminal(GameResult::WHITE_WON, 9.0f, Terminal::EndOfGame);
+  pl->FinalizeScoreUpdate(1.0f, 0.0f, 9.0f, 1);
+  p->SetLowNode(pl);
+  p->MakeTerminal(GameResult::BLACK_WON, 10.0f, Terminal::EndOfGame);
+  p->TryStartScoreUpdate();
+  p->FinalizeScoreUpdate(-1.0f, 0.0f, 10.0f, 1);
+  root_ln->FinalizeScoreUpdate(-1.0f, 0.0f, 10.0f, 1);
+  root->TryStartScoreUpdate();
+  root->FinalizeScoreUpdate(1.0f, 0.0f, 11.0f, 1);
+
+  auto pl_it = p->Edges();
+  Node* c1 = pl_it.GetOrSpawnNode(p);
+  c1->MakeTerminal(GameResult::WHITE_WON, 9.0f, Terminal::EndOfGame);
+  c1->TryStartScoreUpdate();
+  c1->FinalizeScoreUpdate(1.0f, 0.0f, 9.0f, 1);
+
+  ++pl_it;
+  Node* c2 = pl_it.GetOrSpawnNode(p);
+  c2->MakeTerminal(GameResult::WHITE_WON);
+  ASSERT_TRUE(c2->TryStartScoreUpdate());
+
+  ++pl_it;
+  Node* c3 = pl_it.GetOrSpawnNode(p);
+  c3->MakeTerminal(GameResult::DRAW);
+
+  DummyBackend backend;
+  DagClassicOptions opts;
+  TranspositionTable tt;
+  Search search(tree, &backend, std::make_unique<NullUciResponder>(), {},
+                std::chrono::steady_clock::now(),
+                std::make_unique<classic::ChainedSearchStopper>(), false, false,
+                opts.Get(), &tt, nullptr);
+  SearchWorker worker(&search, search.GetParams());
+
+  // c2 has N == 0, so its moves-left is not known yet and pl keeps m = 9.
+  ASSERT_TRUE(root->TryStartScoreUpdate());
+  ASSERT_TRUE(p->TryStartScoreUpdate());
+  ASSERT_TRUE(c3->TryStartScoreUpdate());
+  BackupPath path3 = {{root, 0, 0}, {p, 0, 0}, {c3, 0, 0}};
+  SearchBoundsTestPeer::Backup(worker, path3, tree.GetPositionHistory());
+  EXPECT_FLOAT_EQ(pl->GetM(), 9.0f);
+  EXPECT_FLOAT_EQ(p->GetM(), 10.0f);
+
+  // Once c2 is backed up, pl is a mate in one move.
+  ASSERT_TRUE(root->TryStartScoreUpdate());
+  ASSERT_TRUE(p->TryStartScoreUpdate());
+  BackupPath path2 = {{root, 0, 0}, {p, 0, 0}, {c2, 0, 0}};
+  SearchBoundsTestPeer::Backup(worker, path2, tree.GetPositionHistory());
+  EXPECT_FLOAT_EQ(pl->GetM(), 1.0f);
+  EXPECT_FLOAT_EQ(p->GetM(), 2.0f);
+  EXPECT_TRUE(pl->WLDMInvariantsHold());
+  EXPECT_TRUE(p->WLDMInvariantsHold());
 }
 
 }  // namespace dag_classic
