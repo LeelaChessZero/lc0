@@ -298,7 +298,9 @@ void Node::SortEdges() {
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  if (type != Terminal::TwoFold) SetBounds(result, result);
+  if (type != Terminal::TwoFold) {
+    SetBounds(result, result, type == Terminal::Tablebase);
+  }
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -318,6 +320,9 @@ void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
 
 void Node::MakeNotTerminal() {
   terminal_type_ = Terminal::NonTerminal;
+  lower_bound_ = GameResult::BLACK_WON;
+  upper_bound_ = GameResult::WHITE_WON;
+  tb_bound_ = false;
   n_ = 0;
 
   // If we have edges, we've been extended (1 visit), so include children too.
@@ -340,9 +345,10 @@ void Node::MakeNotTerminal() {
   }
 }
 
-void Node::SetBounds(GameResult lower, GameResult upper) {
+void Node::SetBounds(GameResult lower, GameResult upper, bool tb_bound) {
   lower_bound_ = lower;
   upper_bound_ = upper;
+  tb_bound_ = tb_bound;
 }
 
 bool Node::TryStartScoreUpdate() {

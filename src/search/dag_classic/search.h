@@ -209,6 +209,7 @@ class Search {
   std::unique_ptr<UciResponder> uci_responder_;
   ContemptMode contempt_mode_;
   friend class SearchWorker;
+  friend struct SearchBoundsTestPeer;
 };
 
 // Single thread worker of the search engine.
@@ -494,6 +495,9 @@ class SearchWorker {
   // Returns whether a node's bounds were set based on its children.
   bool MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix, float* v_delta,
                       float* d_delta, float* m_delta) const;
+  // Refines an already-terminal low node's moves-left or upgrades Tablebase to
+  // EndOfGame when a child proves a strictly better terminal.
+  bool MaybeRefineTerminal(Node* p, const std::shared_ptr<LowNode>& pl) const;
   void PickNodesToExtend(int collision_limit);
   void PickNodesToExtendTask(const BackupPath& path, int collision_limit,
                              PositionHistory& history,
@@ -546,6 +550,8 @@ class SearchWorker {
   std::vector<TaskWorkspace> task_workspaces_;
   TaskWorkspace main_workspace_;
   bool exiting_ = false;
+
+  friend struct SearchBoundsTestPeer;
 };
 
 }  // namespace dag_classic

@@ -1191,6 +1191,35 @@ if get_option('gtest')
                'src/neural/memcache.cc', pb_files,
     include_directories: includes, link_with: lc0_lib, dependencies: [gtest, gmock]),
     args: '--gtest_output=xml:engine_test.xml', timeout: 90)
+
+  test('StoppersTest',
+    executable('stoppers_test',
+               'src/search/classic/stoppers/stoppers_test.cc',
+               'src/search/classic/stoppers/stoppers.cc',
+               'src/search/classic/stoppers/timemgr.cc',
+    include_directories: includes, link_with: lc0_lib, dependencies: gtest),
+    args: '--gtest_output=xml:stoppers_test.xml', timeout: 90)
+
+  bounds_test_files = [
+    'src/search/classic/bounds_test.cc',
+    'src/search/classic/params.cc',
+    'src/search/classic/search.cc',
+    'src/search/classic/stoppers/stoppers.cc',
+    'src/search/classic/stoppers/timemgr.cc',
+  ]
+  bounds_test_cpp_args = []
+  if get_option('dag_classic')
+    bounds_test_files += [
+      'src/search/dag_classic/node.cc',
+      'src/search/dag_classic/search.cc',
+    ]
+    bounds_test_cpp_args += ['-DHAVE_DAG_CLASSIC']
+  endif
+  test('SearchBoundsTest',
+    executable('search_bounds_test', bounds_test_files + pb_files,
+    include_directories: includes, link_with: lc0_lib,
+    dependencies: [gtest] + deps, cpp_args: bounds_test_cpp_args),
+    args: '--gtest_output=xml:search_bounds_test.xml', timeout: 90)
 endif
 
 

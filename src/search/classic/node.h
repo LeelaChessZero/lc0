@@ -138,7 +138,8 @@ class Node {
         terminal_type_(Terminal::NonTerminal),
         lower_bound_(GameResult::BLACK_WON),
         upper_bound_(GameResult::WHITE_WON),
-        solid_children_(false) {}
+        solid_children_(false),
+        tb_bound_(false) {}
 
   // We have a custom destructor, but its behavior does not need to be emulated
   // during move operations so default is fine.
@@ -176,6 +177,14 @@ class Node {
   bool IsTerminal() const { return terminal_type_ != Terminal::NonTerminal; }
   bool IsTbTerminal() const { return terminal_type_ == Terminal::Tablebase; }
   bool IsTwoFoldTerminal() const { return terminal_type_ == Terminal::TwoFold; }
+  bool IsTbBound() const { return tb_bound_; }
+  bool HasTbProvenance() const {
+    return IsTerminal() ? IsTbTerminal() : tb_bound_;
+  }
+  bool HasTightenedBounds() const {
+    return lower_bound_ != GameResult::BLACK_WON ||
+           upper_bound_ != GameResult::WHITE_WON;
+  }
   typedef std::pair<GameResult, GameResult> Bounds;
   Bounds GetBounds() const { return {lower_bound_, upper_bound_}; }
   uint8_t GetNumEdges() const { return num_edges_; }
@@ -194,7 +203,7 @@ class Node {
                     Terminal type = Terminal::EndOfGame);
   // Makes the node not terminal and updates its visits.
   void MakeNotTerminal();
-  void SetBounds(GameResult lower, GameResult upper);
+  void SetBounds(GameResult lower, GameResult upper, bool tb_bound = false);
 
   // If this node is not in the process of being expanded by another thread
   // (which can happen only if n==0 and n-in-flight==1), mark the node as
@@ -328,6 +337,8 @@ class Node {
   GameResult upper_bound_ : 2;
   // Whether the child_ is actually an array of equal length to edges.
   bool solid_children_ : 1;
+  // Whether non-terminal bounds were derived from a tablebase probe.
+  bool tb_bound_ : 1;
 
   // TODO(mooskagh) Unfriend NodeTree.
   friend class NodeTree;
@@ -392,6 +403,10 @@ class EdgeAndNode {
   // Whether the node is known to be terminal.
   bool IsTerminal() const { return node_ ? node_->IsTerminal() : false; }
   bool IsTbTerminal() const { return node_ ? node_->IsTbTerminal() : false; }
+  bool IsTbBound() const { return node_ ? node_->IsTbBound() : false; }
+  bool HasTbProvenance() const {
+    return node_ ? node_->HasTbProvenance() : false;
+  }
   Node::Bounds GetBounds() const {
     return node_ ? node_->GetBounds()
                  : Node::Bounds{GameResult::BLACK_WON, GameResult::WHITE_WON};

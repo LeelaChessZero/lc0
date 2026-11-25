@@ -139,6 +139,7 @@ void Node::Trim() {
   lower_bound_ = GameResult::BLACK_WON;
   upper_bound_ = GameResult::WHITE_WON;
   repetition_ = false;
+  tb_bound_ = false;
 }
 
 LowNode::~LowNode() {
@@ -209,7 +210,7 @@ void Edge::SortEdges(Edge* edges, int num_edges) {
 }
 
 void LowNode::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  SetBounds(result, result);
+  SetBounds(result, result, type == Terminal::Tablebase);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -233,6 +234,7 @@ void LowNode::MakeNotTerminal(const Node* node) {
   terminal_type_ = Terminal::NonTerminal;
   lower_bound_ = GameResult::BLACK_WON;
   upper_bound_ = GameResult::WHITE_WON;
+  tb_bound_ = false;
   n_ = 0;
   wl_ = 0.0;
   d_ = 0.0;
@@ -261,9 +263,10 @@ void LowNode::MakeNotTerminal(const Node* node) {
   assert(WLDMInvariantsHold());
 }
 
-void LowNode::SetBounds(GameResult lower, GameResult upper) {
+void LowNode::SetBounds(GameResult lower, GameResult upper, bool tb_bound) {
   lower_bound_ = lower;
   upper_bound_ = upper;
+  tb_bound_ = tb_bound;
 }
 
 uint8_t Node::GetNumEdges() const {
@@ -271,7 +274,7 @@ uint8_t Node::GetNumEdges() const {
 }
 
 void Node::MakeTerminal(GameResult result, float plies_left, Terminal type) {
-  SetBounds(result, result);
+  SetBounds(result, result, type == Terminal::Tablebase);
   terminal_type_ = type;
   m_ = plies_left;
   if (result == GameResult::DRAW) {
@@ -306,6 +309,7 @@ void Node::MakeNotTerminal(bool also_low_node) {
     auto [lower_bound, upper_bound] = low_node_->GetBounds();
     lower_bound_ = -upper_bound;
     upper_bound_ = -lower_bound;
+    tb_bound_ = low_node_->IsTbBound();
     n_ = low_node_->GetN();
     wl_ = -low_node_->GetWL();
     d_ = low_node_->GetD();
@@ -313,6 +317,7 @@ void Node::MakeNotTerminal(bool also_low_node) {
   } else {  // Real terminal.
     lower_bound_ = GameResult::BLACK_WON;
     upper_bound_ = GameResult::WHITE_WON;
+    tb_bound_ = false;
     n_ = 0.0f;
     wl_ = 0.0f;
     d_ = 0.0f;
@@ -322,9 +327,10 @@ void Node::MakeNotTerminal(bool also_low_node) {
   assert(WLDMInvariantsHold());
 }
 
-void Node::SetBounds(GameResult lower, GameResult upper) {
+void Node::SetBounds(GameResult lower, GameResult upper, bool tb_bound) {
   lower_bound_ = lower;
   upper_bound_ = upper;
+  tb_bound_ = tb_bound;
 }
 
 bool Node::TryStartScoreUpdate() {
