@@ -2176,6 +2176,36 @@ bool SearchWorker::MaybeAdjustForTerminalOrTransposition(
     uint32_t& n_to_fix, float& v_delta, float& d_delta, float& m_delta,
     bool& update_parent_bounds) const {
   if (n->IsTerminal()) {
+    if (nl && nl->IsTerminal() && params_.GetStickyEndgames()) {
+      const float nl_m = nl->GetM() + 1.0f;
+      const Terminal nl_tt = nl->GetTerminalType();
+      const bool upgrade_type =
+          n->IsTbTerminal() && nl_tt == Terminal::EndOfGame;
+      const bool refine_m =
+          (nl_m != n->GetM()) &&
+          (upgrade_type || nl_tt == (n->IsTbTerminal() ? Terminal::Tablebase
+                                                       : Terminal::EndOfGame));
+      if (upgrade_type || refine_m) {
+        const float cur_m = n->GetM();
+        GameResult r;
+        if (n->GetWL() > 0.0f) {
+          r = GameResult::WHITE_WON;
+        } else if (n->GetWL() < 0.0f) {
+          r = GameResult::BLACK_WON;
+        } else {
+          r = GameResult::DRAW;
+        }
+        n->MakeTerminal(r, nl_m, upgrade_type ? Terminal::EndOfGame : nl_tt);
+        const float delta_m = n->GetM() - cur_m;
+        if (delta_m != 0.0f) {
+          n_to_fix = n->GetN();
+          v_delta = 0.0f;
+          d_delta = 0.0f;
+          m_delta = delta_m;
+        }
+        update_parent_bounds = true;
+      }
+    }
     v = n->GetWL();
     d = n->GetD();
     m = n->GetM();
@@ -2333,10 +2363,18 @@ void SearchWorker::DoBackupUpdateSingleNode(
     }
 
     bool old_update_parent_bounds = update_parent_bounds;
-    // Try setting parent bounds except the root or those already terminal.
-    update_parent_bounds =
-        update_parent_bounds && p != search_->root_node_ && !pl->IsTerminal() &&
-        MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
+    // Try setting parent bounds except the root, or refining already-terminal
+    // low nodes when a child proves a better terminal outcome.
+    if (update_parent_bounds && p != search_->root_node_) {
+      if (!pl->IsTerminal()) {
+        update_parent_bounds =
+            MaybeSetBounds(p, m, &n_to_fix, &v_delta, &d_delta, &m_delta);
+      } else {
+        update_parent_bounds = MaybeRefineTerminal(p, pl);
+      }
+    } else {
+      update_parent_bounds = false;
+    }
 
     // Q will be flipped for opponent.
     v = -v;
@@ -2381,6 +2419,9 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
                                   float* v_delta, float* d_delta,
                                   float* m_delta) const {
   auto losing_m = 0.0f;
+  auto best_eog_win_m = std::numeric_limits<float>::infinity();
+  auto best_tb_win_m = std::numeric_limits<float>::infinity();
+  auto has_eog_win = false;
   auto prefer_tb = false;
 
   // Determine the maximum (lower, upper) bounds across all edges.
@@ -2393,15 +2434,24 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
   auto lower = GameResult::BLACK_WON;
   auto upper = GameResult::BLACK_WON;
   for (const auto& edge : p->Edges()) {
+    // Until its first visit is backed up, a child may still be in ExtendNode on
+    // another thread and GetM() returns the fallback, so treat it as unknown.
+    if (edge.GetN() == 0) {
+      upper = GameResult::WHITE_WON;
+      continue;
+    }
     const auto [edge_lower, edge_upper] = edge.GetBounds();
     lower = std::max(edge_lower, lower);
     upper = std::max(edge_upper, upper);
 
-    // Checkmate is the best, so short-circuit.
     const auto is_tb = edge.IsTbTerminal();
-    if (edge_lower == GameResult::WHITE_WON && !is_tb) {
-      prefer_tb = false;
-      break;
+    if (edge_lower == GameResult::WHITE_WON) {
+      if (!is_tb) {
+        has_eog_win = true;
+        best_eog_win_m = std::min(best_eog_win_m, edge.GetM(m));
+      } else {
+        best_tb_win_m = std::min(best_tb_win_m, edge.GetM(m));
+      }
     } else if (edge_upper == GameResult::BLACK_WON) {
       // Track the longest loss.
       losing_m = std::max(losing_m, edge.GetM(0.0f));
@@ -2427,17 +2477,21 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
     // it terminal preferring shorter wins and longer losses.
     *n_to_fix = p->GetN();
     assert(*n_to_fix > 0);
-    pl->MakeTerminal(
-        upper, (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m),
-        prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
+    float terminal_m = m;
+    if (upper == GameResult::WHITE_WON) {
+      prefer_tb = !has_eog_win;
+      terminal_m = has_eog_win ? best_eog_win_m : best_tb_win_m;
+    } else if (upper == GameResult::BLACK_WON) {
+      terminal_m = std::max(losing_m, m);
+    }
+    pl->MakeTerminal(upper, terminal_m,
+                     prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
     // v, d and m will be set in MaybeAdjustForTerminalOrTransposition.
     *v_delta = pl->GetWL() + p->GetWL();
     *d_delta = pl->GetD() - p->GetD();
     *m_delta = pl->GetM() + 1 - p->GetM();
-    p->MakeTerminal(
-        -upper,
-        (upper == GameResult::BLACK_WON ? std::max(losing_m, m) : m) + 1.0f,
-        prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
+    p->MakeTerminal(-upper, terminal_m + 1.0f,
+                    prefer_tb ? Terminal::Tablebase : Terminal::EndOfGame);
   } else {
     pl->SetBounds(lower, upper);
     p->SetBounds(-upper, -lower);
@@ -2445,6 +2499,60 @@ bool SearchWorker::MaybeSetBounds(Node* p, float m, uint32_t* n_to_fix,
 
   // Bounds were set, so indicate we should check the parent too.
   return true;
+}
+
+bool SearchWorker::MaybeRefineTerminal(
+    Node* p, const std::shared_ptr<LowNode>& pl) const {
+  if (!pl || !pl->HasChildren()) return false;
+
+  const float cur_m = pl->GetM();
+  const bool cur_is_tb = pl->GetTerminalType() == Terminal::Tablebase;
+  if (pl->GetWL() > 0.0f) {
+    // Current mover at pl has at least one proven winning child.
+    bool has_eog_win = false;
+    bool has_tb_win = false;
+    float best_eog_m = std::numeric_limits<float>::infinity();
+    float best_tb_m = std::numeric_limits<float>::infinity();
+    for (const auto& edge : p->Edges()) {
+      if (edge.GetN() == 0 || !edge.IsTerminal()) continue;
+      if (edge.GetBounds().first != GameResult::WHITE_WON) continue;
+      if (!edge.IsTbTerminal()) {
+        has_eog_win = true;
+        best_eog_m = std::min(best_eog_m, edge.GetM(0.0f));
+      } else {
+        has_tb_win = true;
+        best_tb_m = std::min(best_tb_m, edge.GetM(0.0f));
+      }
+    }
+    if (has_eog_win) {
+      if (!cur_is_tb && best_eog_m >= cur_m) return false;
+      pl->MakeTerminal(GameResult::WHITE_WON, best_eog_m, Terminal::EndOfGame);
+      return true;
+    } else if (has_tb_win && cur_is_tb && best_tb_m < cur_m) {
+      pl->MakeTerminal(GameResult::WHITE_WON, best_tb_m, Terminal::Tablebase);
+      return true;
+    }
+    return false;
+  } else if (pl->GetWL() < 0.0f) {
+    // Current mover at pl is losing: every child must be a proven loss.
+    float losing_m = 0.0f;
+    bool prefer_tb = false;
+    for (const auto& edge : p->Edges()) {
+      if (edge.GetN() == 0 || !edge.IsTerminal() ||
+          edge.GetBounds().second != GameResult::BLACK_WON) {
+        return false;
+      }
+      losing_m = std::max(losing_m, edge.GetM(0.0f));
+      prefer_tb = prefer_tb || edge.IsTbTerminal();
+    }
+    const bool upgrade_to_eog = cur_is_tb && !prefer_tb;
+    if (!upgrade_to_eog && losing_m == cur_m) return false;
+    pl->MakeTerminal(
+        GameResult::BLACK_WON, losing_m,
+        (cur_is_tb && prefer_tb) ? Terminal::Tablebase : Terminal::EndOfGame);
+    return true;
+  }
+  return false;
 }
 
 // 7. Update the Search's status and progress information.
